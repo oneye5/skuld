@@ -14,7 +14,7 @@ def create_future_labels(df: pd.DataFrame) -> pd.DataFrame:
     """
     For each row, create a label indicating whether the Close price increases
     by at least THRESHOLD_PCT within FUTURE_DELTA_MILLIS milliseconds.
-    The label is 1 if it increases, 0 otherwise.
+    The label is 1 if it increases, 0 if it doesn't, and -1 if no valid future data exists.
     """
     df = df.sort_values([TICKER_COL, TIMESTAMP_COL]).reset_index(drop=True)
     df["future_ts"] = df[TIMESTAMP_COL] + LABEL_LOOKAHEAD_MILLIS
@@ -33,19 +33,18 @@ def create_future_labels(df: pd.DataFrame) -> pd.DataFrame:
         ]
         g["future_close"] = future_prices
 
-        # Compute label as 1 if future_close >= threshold increase, else 0
-        g[LABEL_COL] = (
-            ((g["future_close"] - g[CLOSE_COL]) / (g[CLOSE_COL] + 0.0000000001)) >= THRESHOLD_PCT
+        # Compute label: 1 if increase >= threshold, 0 if not, -1 if no valid future data
+        g[LABEL_COL] = g.apply(
+            lambda row: -1 if pd.isna(row["future_close"])
+            else int(((row["future_close"] - row[CLOSE_COL]) / (row[CLOSE_COL] + 0.0000000001)) >= THRESHOLD_PCT),
+            axis=1
         ).astype("int8")
 
         labeled_frames.append(g)
 
     df_out = pd.concat(labeled_frames, ignore_index=True)
 
-    # Drop rows without a valid future price
-    df_out = df_out.dropna(subset=["future_close"])
-
-    # Drop helper columns
+    # Drop helper columns (keep all rows now)
     df_out = df_out.drop(columns=["future_ts", "future_close"])
 
     return df_out
@@ -87,6 +86,11 @@ def restore_ticker_column(df: pd.DataFrame, prefix: str = TICKER_PREFIX) -> pd.D
 # =======================================================
 # === FULL PREPROCESSING PIPELINE =====================
 # =======================================================
+
+def remove_unlabeled(in_csv_path: str, out_csv_path: str):
+    df = load_csv(in_csv_path)
+    df_valid = df[df[LABEL_COL] != -1].copy()
+    save_csv(df_valid, out_csv_path)
 
 def preprocess(wide_csv_path: str, output_csv_path: str):
     """

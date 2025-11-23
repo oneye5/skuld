@@ -1,6 +1,6 @@
 
 from src.preprocessing.long_to_wide_csv import long_to_wide_and_impute
-from src.preprocessing.preprocessing import preprocess
+from src.preprocessing.preprocessing import preprocess, remove_unlabeled
 from src.preprocessing.train_test_split import split_and_save
 from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
@@ -10,6 +10,7 @@ from src.learner.learner import train_model, predict
 def run():
     long_to_wide_and_impute(str(LONG_CSV_PATH), str(WIDE_CSV_PATH))
     preprocess(str(WIDE_CSV_PATH), str(PREPROCESSED_CSV_PATH))
+    remove_unlabeled(str(PREPROCESSED_CSV_PATH), str(PREPROCESSED_CSV_PATH))
 
     full_df = load_csv(str(PREPROCESSED_CSV_PATH))
     data_end_ts = full_df[TIMESTAMP_COL].max()

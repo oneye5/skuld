@@ -41,20 +41,16 @@ def split_and_save(preprocessed_csv_path: str, from_ts: int, to_ts: int):
     # Perform the split
     train_df, test_df = time_based_split(df, from_ts, to_ts)
 
-    root = get_skuld_root()
-    train_csv = root / "python-ml" / "data" / "train.csv"
-    test_csv = root / "python-ml" / "data" / "test.csv"
-
-    save_csv(train_df, str(train_csv))
-    save_csv(test_df, str(test_csv))
+    save_csv(train_df, str(TRAIN_CSV_PATH))
+    save_csv(test_df, str(TEST_CSV_PATH))
 
     print(f"--- Split Complete ---")
     print(f"Train Window:  Start -> {from_ts}")
     print(f"Test Window:   {from_ts} -> {to_ts}")
     print(f"Dropped Data:  {to_ts} -> End")
     print(f"----------------------")
-    print(f"Train CSV saved to: {train_csv} ({len(train_df)} rows)")
-    print(f"Test CSV saved to:  {test_csv} ({len(test_df)} rows)")
+    print(f"Train CSV saved to: {TRAIN_CSV_PATH} ({len(train_df)} rows)")
+    print(f"Test CSV saved to:  {TEST_CSV_PATH} ({len(test_df)} rows)")
 
 
 if __name__ == "__main__":

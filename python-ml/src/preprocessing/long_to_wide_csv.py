@@ -1,9 +1,7 @@
 from pathlib import Path
 import pandas as pd
-
 from src.config.config import *
 from src.utils.csv_utils import load_csv, save_csv
-from src.utils.path_utils import get_skuld_root
 
 
 def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str):
@@ -41,7 +39,7 @@ def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str):
     )
     df_ticker_present = df_ticker_wide.notna().astype(int).add_suffix('_present')
 
-    # ffill per ticker
+    # fill per ticker
     df_ticker_wide = df_ticker_wide.groupby(level=TICKER_COL).ffill().fillna(0)
 
     # Reset multi-index for merging
@@ -76,12 +74,7 @@ def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str):
 
 
 if __name__ == "__main__":
-    skuld_root = get_skuld_root()
+    print("Loading from:", LONG_CSV_PATH)
+    print("Saving to:   ", WIDE_CSV_PATH)
 
-    long_csv = skuld_root / "data" / "data_long.csv"
-    imputed_csv = skuld_root / "python-ml" / "data" / "data_wide_imputed.csv"
-
-    print("Loading from:", long_csv)
-    print("Saving to:   ", imputed_csv)
-
-    long_to_wide_and_impute(str(long_csv), str(imputed_csv))
+    long_to_wide_and_impute(str(LONG_CSV_PATH), str(WIDE_CSV_PATH))

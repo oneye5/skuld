@@ -13,19 +13,6 @@ from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
 
 # =======================================================
-# === PATHS =============================================
-# =======================================================
-
-_root = get_skuld_root()
-_data_dir = _root / "python-ml" / "data"
-
-# Input/Output definitions
-_full_csv = _data_dir / "data_preprocessed.csv"
-_aggregated_preds_file = _data_dir / "predictions_combined.csv"
-_wide_imputed = _root / "python-ml" / "data" / "data_wide_imputed.csv"
-
-
-# =======================================================
 # === MULTI-FILE LOADER =================================
 # =======================================================
 
@@ -255,18 +242,18 @@ def restore_ticker_column(df: pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     threshold = 0.55
     print("Loading and combining prediction files...")
-    combined_preds = load_combined_predictions(_data_dir, pattern="predictions*.csv")
+    combined_preds = load_combined_predictions(PY_DATA_DIR_PATH, pattern="predictions*.csv")
 
     if not combined_preds.empty:
-        save_csv(combined_preds, str(_aggregated_preds_file))
+        save_csv(combined_preds, str(AGGREGATE_PREDICTIONS_CSV_PATH))
         trades, metrics = run_evaluation(
             combined_preds,
-            str(_full_csv),
-            str(_wide_imputed),
+            str(PREPROCESSED_CSV_PATH),
+            str(WIDE_CSV_PATH),
             threshold
         )
 
         if not trades.empty:
-            save_csv(trades, str(_root / "python-ml" / "data" / "trade_simulation.csv"))
+            save_csv(trades, str(TRADE_SIMULATION_CSV_PATH))
 
-        save_csv(metrics, str(_root / "python-ml" / "data" / "evaluation_metrics.csv"))
+        save_csv(metrics, str(EVALUATION_RESULTS_CSV_PATH))

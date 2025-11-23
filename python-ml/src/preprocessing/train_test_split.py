@@ -58,11 +58,8 @@ def split_and_save(preprocessed_csv_path: str, from_ts: int, to_ts: int):
 
 
 if __name__ == "__main__":
-    root = get_skuld_root()
-    preprocessed_csv = root / "python-ml" / "data" / "data_preprocessed.csv"
-
     FROM_TS = 1715000000000 - (1000 * 60 * 60 * 24 * 365)  # Start of Test Data, -1 year
     TO_TS = 1715000000000  # End of Test Data
 
-    print("Loading preprocessed data:", preprocessed_csv)
-    split_and_save(str(preprocessed_csv), FROM_TS, TO_TS)
+    print("Loading preprocessed data:", PREPROCESSED_CSV_PATH)
+    split_and_save(str(PREPROCESSED_CSV_PATH), FROM_TS, TO_TS)

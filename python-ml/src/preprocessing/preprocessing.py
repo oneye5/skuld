@@ -114,11 +114,7 @@ def preprocess(wide_csv_path: str, output_csv_path: str):
 
 
 if __name__ == "__main__":
-    root = get_skuld_root()
-    input_csv = root / "python-ml" / "data" / "data_wide_imputed.csv"
-    output_csv = root / "python-ml" / "data" / "data_preprocessed.csv"
+    print("Loading:", WIDE_CSV_PATH)
+    print("Saving:", PREPROCESSED_CSV_PATH)
 
-    print("Loading:", input_csv)
-    print("Saving:", output_csv)
-
-    preprocess(str(input_csv), str(output_csv))
+    preprocess(str(WIDE_CSV_PATH), str(PREPROCESSED_CSV_PATH))

@@ -5,10 +5,8 @@ import joblib
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier, VotingClassifier
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
-
 from src.utils.csv_utils import load_csv, save_csv
-from src.utils.path_utils import get_skuld_root
-from src.config.config import LABEL_COL
+from src.config.config import *
 
 
 # =======================================================
@@ -83,21 +81,12 @@ def predict(model_path: str, input_csv_path: str, output_csv_path: str):
 
 
 # =======================================================
-# === ENTRYPOINT (Optional CLI Usage) ===================
+# === ENTRYPOINT ========================================
 # =======================================================
 
 if __name__ == "__main__":
-    root = get_skuld_root()
-
-    # Default train/predict paths
-    train_csv = root / "python-ml" / "data" / "train.csv"
-    test_csv = root / "python-ml" / "data" / "test.csv"
-    model_file = root / "python-ml" / "data" / "model.pkl"
-    prediction_file = root / "python-ml" / "data" / "predictions.csv"
-
-    # Train and predict automatically
     print("Training model...")
-    train_model(str(train_csv), str(model_file))
+    train_model(str(TRAIN_CSV_PATH), str(MODEL_PKL_PATH))
 
     print("Generating predictions...")
-    predict(str(model_file), str(test_csv), str(prediction_file))
+    predict(str(MODEL_PKL_PATH), str(TEST_CSV_PATH), str(PREDICTION_CSV_PATH))

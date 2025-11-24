@@ -2,6 +2,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.config.config import *
+from src.preprocessing.preprocessing import restore_ticker_column
 from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
 
@@ -30,6 +31,47 @@ def time_based_split(df: pd.DataFrame, from_ts: int, to_ts: int):
 
     return train_df, test_df
 
+
+def split_last_occurring_tickers(preprocessed_csv_path: str, train_csv_path: str, last_rows_csv_path: str):
+    """
+    Expects invalid labels
+    Selects the last occurring rows that contain unique tickers and saves them to last_rows_csv_path with the label column stripped
+    Remaining data first has invalid labels dropped and then saved to train_csv_path
+    Invalid labels have values of -1
+    """
+    df = load_csv(preprocessed_csv_path)
+
+    # Restore the ticker column from one-hot encoding (as helper column)
+    df = restore_ticker_column(df)
+
+    # Sort by timestamp to ensure we get the truly last occurring rows
+    df = df.sort_values([TICKER_COL, TIMESTAMP_COL]).reset_index(drop=True)
+
+    # Get the last row for each ticker
+    last_rows = df.groupby(TICKER_COL).tail(1).copy()
+
+    # Strip the label column from last rows
+    last_rows = last_rows.drop(columns=[LABEL_COL])
+
+    # Drop the ticker column (non-numeric helper column)
+    last_rows = last_rows.drop(columns=[TICKER_COL])
+
+    # Get remaining data (everything except the last rows)
+    last_row_indices = last_rows.index
+    remaining_df = df.drop(index=last_row_indices).copy()
+
+    # Drop invalid labels (-1) from remaining data
+    train_df = remaining_df[remaining_df[LABEL_COL] != -1].copy()
+
+    # Drop the ticker column from train data as well
+    train_df = train_df.drop(columns=[TICKER_COL])
+
+    # Save both dataframes
+    save_csv(last_rows, last_rows_csv_path)
+    save_csv(train_df, train_csv_path)
+
+    print(f"Last rows saved to: {last_rows_csv_path} ({len(last_rows)} rows)")
+    print(f"Train data saved to: {train_csv_path} ({len(train_df)} rows)")
 
 def split_and_save(preprocessed_csv_path: str, from_ts: int, to_ts: int):
     """

@@ -32,7 +32,8 @@ LONG_CSV_PATH = _root / "data" / "data_long.csv"
 WIDE_CSV_PATH = _root / "python-ml" / "data" / "data_wide_imputed.csv"
 PY_DATA_DIR_PATH = _root / "python-ml" / "data"
 AGGREGATE_PREDICTIONS_CSV_PATH = _root / "python-ml" / "data" / "aggregate_predictions.csv"
-TRADE_SIMULATION_CSV_PATH = _root / "python-ml" / "data" / "trade_simulation.csv"
-EVALUATION_RESULTS_CSV_PATH = _root / "python-ml" / "data" / "evaluation_metrics.csv"
+TRADE_SIMULATION_CSV_PATH = _root / "data" / "trade_simulation.csv"
+EVALUATION_RESULTS_CSV_PATH = _root / "data" / "evaluation_metrics.csv"
+FINAL_PREDICTIONS_CSV_PATH = _root / "data" / "predictions.csv"
 
 print("This file is not intended to be runnable")

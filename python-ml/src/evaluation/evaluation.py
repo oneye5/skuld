@@ -9,6 +9,7 @@ from sklearn.metrics import (
 )
 
 from src.config.config import *
+from src.preprocessing.preprocessing import restore_ticker_column
 from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
 
@@ -227,17 +228,6 @@ def calculate_metrics(y_true, y_pred, y_prob):
         "True Negatives": int(tn),
         "False Negatives": int(fn),
     }
-
-
-def restore_ticker_column(df: pd.DataFrame) -> pd.DataFrame:
-    ticker_cols = [c for c in df.columns if c.startswith(f"{TICKER_PREFIX}_")]
-    if not ticker_cols or TICKER_COL in df.columns:
-        return df
-    df[TICKER_COL] = df[ticker_cols].idxmax(axis=1)
-    prefix_len = len(TICKER_PREFIX) + 1
-    df[TICKER_COL] = df[TICKER_COL].str[prefix_len:]
-    return df
-
 
 if __name__ == "__main__":
     threshold = 0.55

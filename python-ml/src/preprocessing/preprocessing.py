@@ -66,6 +66,28 @@ def one_hot_encode(df: pd.DataFrame) -> pd.DataFrame:
 # === RESTORE TICKER FOR EVALUATION ====================
 # =======================================================
 
+def restore_ticker_delete_one_hot_and_save(input_csv_path: str, output_csv_path: str):
+    """
+    Restore the original ticker column and remove one-hot encoded ticker columns.
+
+    Args:
+        input_csv_path: Path to CSV with one-hot encoded tickers
+        output_csv_path: Path to save CSV with restored ticker column
+    """
+    df = load_csv(input_csv_path)
+
+    # Restore the ticker column from one-hot encoding
+    df = restore_ticker_column(df)
+
+    # Find and drop all one-hot encoded ticker columns
+    ticker_cols = [c for c in df.columns if c.startswith(f"{TICKER_PREFIX}_")]
+    df = df.drop(columns=ticker_cols)
+
+    save_csv(df, output_csv_path)
+
+    print(f"Decoded tickers saved to: {output_csv_path}")
+    print(f"Restored ticker column, removed {len(ticker_cols)} one-hot columns")
+
 def restore_ticker_column(df: pd.DataFrame, prefix: str = TICKER_PREFIX) -> pd.DataFrame:
     """
     Reconstruct the original ticker column from one-hot encoded columns.

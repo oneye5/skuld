@@ -26,7 +26,8 @@ def run_iteration(i, anchor_ts):
     from_ts = to_ts - TEST_SPLIT_DURATION_MILLIS
     split_and_save(str(PREPROCESSED_CSV_PATH), from_ts, to_ts)
     train_model(str(TRAIN_CSV_PATH), str(MODEL_PKL_PATH))
-    predict(str(MODEL_PKL_PATH), str(TEST_CSV_PATH), str(PREDICTION_CSV_PATH) + str(i) + ".csv")
+    out_path = str(PREDICTION_CSV_PATH).replace(".csv","") + str(i) + ".csv"
+    predict(str(MODEL_PKL_PATH), str(TEST_CSV_PATH), out_path)
 
 if __name__ == "__main__":
     run()

@@ -22,6 +22,7 @@ def run():
         run_iteration(i, data_end_ts)
 
 def run_iteration(i, anchor_ts):
+    print(f"Running sliding window iteration {i} / {EVAL_TEST_ITERATIONS}")
     to_ts = anchor_ts - TEST_SPLIT_DURATION_MILLIS * i
     from_ts = to_ts - TEST_SPLIT_DURATION_MILLIS
     split_and_save(str(PREPROCESSED_CSV_PATH), from_ts, to_ts)

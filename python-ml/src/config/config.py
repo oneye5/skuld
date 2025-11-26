@@ -2,12 +2,13 @@ from src.utils.path_utils import get_skuld_root
 _day = 1000 * 60 * 60 * 24
 _year = _day * 365
 
-THRESHOLD_PCT = 0.10 # the % price change threshold for 1 label
+THRESHOLD_PCT = 0.03 # the % price change threshold for 1 label
 # Example: 0.02 = +2% price increase
 
 LABEL_LOOKAHEAD_MILLIS = _year # milliseconds into the future for price movement
 TEST_SPLIT_DURATION_MILLIS = _year # test split size by time
 EVAL_TEST_ITERATIONS = 10 # how many iterations to run sliding window over
+EVAL_CLASSIFICATION_BOUNDARY = 0.7
 
 # Column names
 TIMESTAMP_COL = "timestamp"

@@ -7,8 +7,9 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, confusion_matrix,
     matthews_corrcoef, log_loss, balanced_accuracy_score,
-    precision_recall_curve, average_precision_score
+    precision_recall_curve, average_precision_score, auc
 )
+from scipy.stats import skew, kurtosis
 
 from src.config.config import *
 from src.preprocessing.preprocessing import restore_ticker_column
@@ -19,28 +20,54 @@ from src.utils.path_utils import get_skuld_root
 @dataclass
 class TradingMetrics:
     """Container for trading performance metrics."""
+    # --- Volume ---
     total_trades: int
     winning_trades: int
     losing_trades: int
     win_rate: float
+
+    # --- Returns ---
     total_return: float
     avg_return: float
     median_return: float
     std_return: float
     best_trade: float
     worst_trade: float
+
+    # --- Distribution ---
+    return_25th: float
+    return_75th: float
+    return_iqr: float
+    skewness: float
+    kurtosis: float
+
+    # --- Profitability ---
     profit_factor: float
     avg_win: float
     avg_loss: float
     win_loss_ratio: float
+    expectancy: float
+
+    # --- System Quality ---
+    sqn: float  # System Quality Number
+    kelly_criterion: float
+
+    # --- Streaks ---
+    max_consecutive_wins: int
+    max_consecutive_losses: int
+
+    # --- Risk Adjusted ---
     sharpe_ratio: float
     sortino_ratio: float
     calmar_ratio: float
+
+    # --- Drawdown & Tail Risk ---
     max_drawdown: float
     max_drawdown_duration: int
     recovery_factor: float
-    expectancy: float
     ulcer_index: float
+    var_95: float  # Value at Risk (95%)
+    cvar_95: float  # Conditional VaR / Expected Shortfall (95%)
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for DataFrame creation."""
@@ -57,13 +84,6 @@ def load_combined_predictions(
 ) -> pd.DataFrame:
     """
     Load and combine multiple prediction CSV files.
-
-    Args:
-        directory: Directory containing prediction files
-        pattern: Glob pattern to match files
-
-    Returns:
-        Combined DataFrame with duplicates removed
     """
     import re
 
@@ -72,7 +92,6 @@ def load_combined_predictions(
         print(f"Warning: No files found matching '{pattern}' in {directory}")
         return pd.DataFrame()
 
-    # Filter to numbered files only (predictions0.csv, predictions1.csv, etc.)
     numbered_pattern = re.compile(r'predictions\d+\.csv$')
     numbered_files = [f for f in files if numbered_pattern.search(f.name)]
 
@@ -98,7 +117,6 @@ def load_combined_predictions(
     combined_df = pd.concat(dfs, ignore_index=True)
     combined_df = restore_ticker_column(combined_df)
 
-    # Remove duplicates based on timestamp and ticker
     if TIMESTAMP_COL in combined_df.columns and TICKER_COL in combined_df.columns:
         initial_len = len(combined_df)
         combined_df = combined_df.drop_duplicates(
@@ -136,17 +154,15 @@ def run_evaluation(
 
     print("Loading preprocessed data...")
     preprocessed_data = load_csv(labeled_csv_path)
-
-    # Restore ticker column from one-hot encoding
     preprocessed_data = restore_ticker_column(preprocessed_data)
 
     print("Using preprocessed data for simulation...")
 
-    # Use the same preprocessed data for both
     trade_results = simulate_trades(preds_df, preprocessed_data, probability_threshold)
     ml_metrics = calculate_ml_metrics(preds_df, probability_threshold)
 
     return trade_results, ml_metrics
+
 
 # =======================================================
 # === TRADING SIMULATION ================================
@@ -159,23 +175,13 @@ def simulate_trades(
 ) -> pd.DataFrame:
     """
     Simulate trades based on model predictions.
-
-    Args:
-        predictions_df: DataFrame with predictions
-        price_df: DataFrame with historical prices
-        probability_threshold: Minimum probability to trigger trade
-
-    Returns:
-        DataFrame containing all executed trades
     """
     preds = restore_ticker_column(predictions_df.copy())
     prices = restore_ticker_column(price_df.copy())
 
-    # Sort data chronologically
     preds = preds.sort_values([TICKER_COL, TIMESTAMP_COL]).reset_index(drop=True)
     prices = prices.sort_values([TICKER_COL, TIMESTAMP_COL]).reset_index(drop=True)
 
-    # Filter for buy signals
     buy_signals = preds[preds[PREDICTION_COL] > probability_threshold]
 
     trades = _execute_trades(buy_signals, prices)
@@ -186,7 +192,6 @@ def simulate_trades(
         print("No trades executed (no signals above threshold).")
         return trades_df
 
-    # Calculate and display metrics
     metrics = _calculate_trading_metrics(trades_df)
     _display_trading_metrics(metrics, probability_threshold)
 
@@ -204,11 +209,9 @@ def _execute_trades(buy_signals: pd.DataFrame, prices: pd.DataFrame) -> List[Dic
             buy_time = signal[TIMESTAMP_COL]
             buy_price = signal[CLOSE_COL]
 
-            # Validate buy price
             if not buy_price or np.isnan(buy_price) or buy_price <= 0:
                 continue
 
-            # Find sell point
             sell_time = buy_time + LABEL_LOOKAHEAD_MILLIS
             future_prices = ticker_prices[ticker_prices[TIMESTAMP_COL] >= sell_time]
 
@@ -241,48 +244,77 @@ def _calculate_trading_metrics(trades_df: pd.DataFrame) -> TradingMetrics:
     trades_df = trades_df.sort_values("sell_time")
     returns = trades_df["return_pct"]
 
-    # Basic statistics
+    # --- Basic Stats ---
     wins = returns[returns > 0]
     losses = returns[returns <= 0]
     n_trades = len(returns)
     n_wins = len(wins)
     n_losses = len(losses)
 
-    # Return metrics
+    # --- Return Metrics ---
     total_return = returns.sum()
     avg_return = returns.mean()
     median_return = returns.median()
     std_return = returns.std()
 
-    # Win/Loss analysis
+    # --- Distribution Metrics ---
+    q1 = returns.quantile(0.25)
+    q3 = returns.quantile(0.75)
+    iqr = q3 - q1
+    skew_val = skew(returns)
+    kurt_val = kurtosis(returns)
+
+    # --- Win/Loss Analysis ---
     win_rate = n_wins / n_trades if n_trades > 0 else 0
     avg_win = wins.mean() if n_wins > 0 else 0
     avg_loss = abs(losses.mean()) if n_losses > 0 else 0
     win_loss_ratio = avg_win / avg_loss if avg_loss > 0 else np.inf
 
-    # Profit metrics
+    # --- Profit Metrics ---
     gross_profit = wins.sum()
     gross_loss = abs(losses.sum())
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.inf
 
-    # Expectancy (average $ per trade)
+    # Expectancy
     expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
 
-    # Risk-adjusted metrics
+    # --- System Quality ---
+    # SQN = SquareRoot(N) * (AvgProfit / StdDevProfit)
+    sqn = (np.sqrt(n_trades) * (avg_return / std_return)) if std_return > 0 else 0
+
+    # Kelly = W - (1-W)/R
+    kelly = win_rate - ((1 - win_rate) / win_loss_ratio) if win_loss_ratio > 0 else 0
+
+    # --- Streak Analysis ---
+    # Convert wins to boolean series
+    win_series = returns > 0
+    # Group by consecutive values
+    streak_groups = (win_series != win_series.shift()).cumsum()
+    streaks = win_series.groupby(streak_groups).agg(['count', 'first'])
+
+    max_con_wins = streaks[streaks['first'] == True]['count'].max() if not streaks.empty else 0
+    max_con_losses = streaks[streaks['first'] == False]['count'].max() if not streaks.empty else 0
+    # Handle NaN cases if no wins or no losses ever occurred
+    max_con_wins = int(max_con_wins) if not np.isnan(max_con_wins) else 0
+    max_con_losses = int(max_con_losses) if not np.isnan(max_con_losses) else 0
+
+    # --- Risk-Adjusted Metrics ---
     sharpe_ratio = avg_return / std_return if std_return > 0 else 0
 
     downside_returns = returns[returns < 0]
     downside_std = downside_returns.std() if len(downside_returns) > 0 else 1e-10
     sortino_ratio = avg_return / downside_std if downside_std > 0 else 0
 
-    # Drawdown analysis
+    # --- Drawdown & Tail Risk ---
     max_dd = _calculate_max_drawdown(returns)
     max_dd_duration = _calculate_max_drawdown_duration(returns)
     calmar_ratio = avg_return / abs(max_dd) if max_dd != 0 else 0
     recovery_factor = total_return / abs(max_dd) if max_dd != 0 else 0
-
-    # Ulcer Index (measure of downside volatility)
     ulcer_index = _calculate_ulcer_index(returns)
+
+    # VaR & CVaR (95% Confidence)
+    var_95 = np.percentile(returns, 5)  # 5th percentile
+    cvar_95 = returns[returns <= var_95].mean() if len(returns[returns <= var_95]) > 0 else var_95
 
     return TradingMetrics(
         total_trades=n_trades,
@@ -295,18 +327,29 @@ def _calculate_trading_metrics(trades_df: pd.DataFrame) -> TradingMetrics:
         std_return=std_return,
         best_trade=returns.max(),
         worst_trade=returns.min(),
+        return_25th=q1,
+        return_75th=q3,
+        return_iqr=iqr,
+        skewness=skew_val,
+        kurtosis=kurt_val,
         profit_factor=profit_factor,
         avg_win=avg_win,
         avg_loss=avg_loss,
         win_loss_ratio=win_loss_ratio,
+        expectancy=expectancy,
+        sqn=sqn,
+        kelly_criterion=kelly,
+        max_consecutive_wins=max_con_wins,
+        max_consecutive_losses=max_con_losses,
         sharpe_ratio=sharpe_ratio,
         sortino_ratio=sortino_ratio,
         calmar_ratio=calmar_ratio,
         max_drawdown=max_dd,
         max_drawdown_duration=max_dd_duration,
         recovery_factor=recovery_factor,
-        expectancy=expectancy,
-        ulcer_index=ulcer_index
+        ulcer_index=ulcer_index,
+        var_95=var_95,
+        cvar_95=cvar_95
     )
 
 
@@ -323,13 +366,10 @@ def _calculate_max_drawdown_duration(returns: pd.Series) -> int:
     cumulative = (1 + returns).cumprod()
     running_max = cumulative.cummax()
 
-    # Find periods where we're in drawdown
     in_drawdown = cumulative < running_max
-
     if not in_drawdown.any():
         return 0
 
-    # Calculate consecutive drawdown periods
     drawdown_periods = (in_drawdown != in_drawdown.shift()).cumsum()
     drawdown_lengths = in_drawdown.groupby(drawdown_periods).sum()
 
@@ -337,17 +377,12 @@ def _calculate_max_drawdown_duration(returns: pd.Series) -> int:
 
 
 def _calculate_ulcer_index(returns: pd.Series) -> float:
-    """
-    Calculate Ulcer Index - measures depth and duration of drawdowns.
-    Lower is better.
-    """
+    """Calculate Ulcer Index - measures depth and duration of drawdowns."""
     cumulative = (1 + returns).cumprod()
     running_max = cumulative.cummax()
     drawdown_pct = ((cumulative - running_max) / running_max) * 100
-
     squared_drawdowns = drawdown_pct ** 2
     mean_squared_dd = squared_drawdowns.mean()
-
     return np.sqrt(mean_squared_dd)
 
 
@@ -360,39 +395,46 @@ def _display_trading_metrics(metrics: TradingMetrics, threshold: float):
     print("TRADE STATISTICS")
     print("-" * 60)
     print(f"{'Total Trades':<30} {metrics.total_trades:>15,}")
-    print(f"{'Winning Trades':<30} {metrics.winning_trades:>15,}")
-    print(f"{'Losing Trades':<30} {metrics.losing_trades:>15,}")
     print(f"{'Win Rate':<30} {metrics.win_rate:>14.2%}")
+    print(f"{'Max Consecutive Wins':<30} {metrics.max_consecutive_wins:>15}")
+    print(f"{'Max Consecutive Losses':<30} {metrics.max_consecutive_losses:>15}")
 
-    print(f"\nRETURN METRICS")
+    print(f"\nRETURN STATISTICS")
     print("-" * 60)
-    print(f"{'Total Return':<30} {metrics.total_return:>14.2%}")
     print(f"{'Average Return':<30} {metrics.avg_return:>14.2%}")
     print(f"{'Median Return':<30} {metrics.median_return:>14.2%}")
     print(f"{'Std Dev Returns':<30} {metrics.std_return:>14.2%}")
+    print(f"{'Skewness':<30} {metrics.skewness:>15.4f}")
+    print(f"{'Kurtosis':<30} {metrics.kurtosis:>15.4f}")
+
+    print(f"\nRETURN DISTRIBUTION")
+    print("-" * 60)
+    print(f"{'25th Percentile':<30} {metrics.return_25th:>14.2%}")
+    print(f"{'75th Percentile':<30} {metrics.return_75th:>14.2%}")
+    print(f"{'IQR':<30} {metrics.return_iqr:>14.2%}")
     print(f"{'Best Trade':<30} {metrics.best_trade:>14.2%}")
     print(f"{'Worst Trade':<30} {metrics.worst_trade:>14.2%}")
 
-    print(f"\nPROFITABILITY METRICS")
+    print(f"\nSYSTEM EFFICIENCY")
     print("-" * 60)
     print(f"{'Profit Factor':<30} {metrics.profit_factor:>15.2f}")
+    print(f"{'SQN (System Quality)':<30} {metrics.sqn:>15.2f}")
+    print(f"{'Kelly Criterion':<30} {metrics.kelly_criterion:>14.2%}")
     print(f"{'Expectancy':<30} {metrics.expectancy:>14.4f}")
     print(f"{'Avg Win':<30} {metrics.avg_win:>14.2%}")
     print(f"{'Avg Loss':<30} {metrics.avg_loss:>14.2%}")
     print(f"{'Win/Loss Ratio':<30} {metrics.win_loss_ratio:>15.2f}")
 
-    print(f"\nRISK-ADJUSTED METRICS")
+    print(f"\nRISK & DRAWDOWN")
     print("-" * 60)
     print(f"{'Sharpe Ratio':<30} {metrics.sharpe_ratio:>15.2f}")
     print(f"{'Sortino Ratio':<30} {metrics.sortino_ratio:>15.2f}")
     print(f"{'Calmar Ratio':<30} {metrics.calmar_ratio:>15.2f}")
-
-    print(f"\nDRAWDOWN ANALYSIS")
-    print("-" * 60)
     print(f"{'Max Drawdown':<30} {metrics.max_drawdown:>14.2%}")
-    print(f"{'Max DD Duration (trades)':<30} {metrics.max_drawdown_duration:>15,}")
     print(f"{'Recovery Factor':<30} {metrics.recovery_factor:>15.2f}")
     print(f"{'Ulcer Index':<30} {metrics.ulcer_index:>15.2f}")
+    print(f"{'VaR 95%':<30} {metrics.var_95:>14.2%}")
+    print(f"{'CVaR 95% (Exp Shortfall)':<30} {metrics.cvar_95:>14.2%}")
 
     print(f"\n{'=' * 60}\n")
 
@@ -405,16 +447,7 @@ def calculate_ml_metrics(
         predictions_df: pd.DataFrame,
         probability_threshold: float
 ) -> pd.DataFrame:
-    """
-    Calculate comprehensive ML classification metrics.
-
-    Args:
-        predictions_df: DataFrame with predictions and labels
-        probability_threshold: Threshold for binary classification
-
-    Returns:
-        DataFrame with calculated metrics
-    """
+    """Calculate comprehensive ML classification metrics."""
     df = predictions_df.copy()
     df["prediction"] = (df[PREDICTION_COL] > probability_threshold).astype(int)
 
@@ -423,7 +456,6 @@ def calculate_ml_metrics(
     y_prob = df[PREDICTION_COL]
 
     metrics = _calculate_classification_metrics(y_true, y_pred, y_prob)
-
     _display_ml_metrics(metrics, probability_threshold)
 
     return pd.DataFrame([metrics])
@@ -452,16 +484,24 @@ def _calculate_classification_metrics(
     f1 = f1_score(y_true, y_pred, zero_division=0)
     mcc = matthews_corrcoef(y_true, y_pred)
 
-    # Specificity (True Negative Rate)
     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
 
     # Probability-based metrics
     has_both_classes = len(np.unique(y_true)) > 1
-    roc_auc = roc_auc_score(y_true, y_prob) if has_both_classes else np.nan
-    avg_precision = average_precision_score(y_true, y_prob) if has_both_classes else np.nan
-    logloss = log_loss(y_true, y_prob)
 
-    # Brier Score (mean squared error of probabilities)
+    roc_auc = np.nan
+    avg_precision = np.nan
+    pr_auc = np.nan
+
+    if has_both_classes:
+        roc_auc = roc_auc_score(y_true, y_prob)
+        avg_precision = average_precision_score(y_true, y_prob)
+
+        # Calculate PR AUC manually
+        precision_curve, recall_curve, _ = precision_recall_curve(y_true, y_prob)
+        pr_auc = auc(recall_curve, precision_curve)
+
+    logloss = log_loss(y_true, y_prob)
     brier_score = np.mean((y_prob - y_true) ** 2)
 
     # Cohen's Kappa
@@ -483,6 +523,7 @@ def _calculate_classification_metrics(
         "mcc": mcc,
         "cohens_kappa": cohens_kappa,
         "roc_auc": roc_auc,
+        "pr_auc": pr_auc,  # Added
         "avg_precision": avg_precision,
         "log_loss": logloss,
         "brier_score": brier_score,
@@ -529,6 +570,7 @@ def _display_ml_metrics(metrics: Dict, threshold: float):
 
     if not np.isnan(metrics['roc_auc']):
         print(f"{'ROC AUC':<30} {metrics['roc_auc']:>14.4f}")
+        print(f"{'PR AUC':<30} {metrics['pr_auc']:>14.4f}")
         print(f"{'Avg Precision Score':<30} {metrics['avg_precision']:>14.4f}")
 
     print(f"{'Log Loss':<30} {metrics['log_loss']:>14.4f}")
@@ -542,8 +584,6 @@ def _display_ml_metrics(metrics: Dict, threshold: float):
 # =======================================================
 
 if __name__ == "__main__":
-    THRESHOLD = 0.55
-
     print("=" * 60)
     print("TRADING MODEL EVALUATION")
     print("=" * 60)
@@ -568,7 +608,7 @@ if __name__ == "__main__":
             combined_preds,
             str(PREPROCESSED_CSV_PATH),
             str(PREPROCESSED_CSV_PATH),
-            THRESHOLD
+            EVAL_CLASSIFICATION_BOUNDARY
         )
 
         # Save results

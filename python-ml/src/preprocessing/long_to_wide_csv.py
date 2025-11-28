@@ -1,6 +1,7 @@
 from pathlib import Path
 import pandas as pd
 from src.config.config import *
+from src.tests.utils import print_sample_data
 from src.utils.csv_utils import load_csv, save_csv
 
 
@@ -90,6 +91,7 @@ def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str):
     # Remove column index name
     df_final.columns.name = None
 
+    print_sample_data(df_final)
     save_csv(df_final, imputed_csv_path)
     print(f"Imputed wide CSV saved to {imputed_csv_path}")
 

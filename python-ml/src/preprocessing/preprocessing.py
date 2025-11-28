@@ -2,6 +2,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.config.config import *
+from src.preprocessing.feature_engineering import min_max_scale_time, to_feature_engineered
 from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
 
@@ -129,6 +130,8 @@ def preprocess(wide_csv_path: str, output_csv_path: str):
 
     # One-hot encode tickers
     df = one_hot_encode(df)
+
+    df = to_feature_engineered(df)
 
     save_csv(df, output_csv_path)
     print(f"Preprocessed CSV saved to {output_csv_path}")

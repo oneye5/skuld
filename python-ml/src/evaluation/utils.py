@@ -1,16 +1,35 @@
+"""Utility functions for loading and combining prediction files."""
 import re
+from pathlib import Path
+from typing import Optional, List
 
 import pandas as pd
 
 from src.config.config import *
-from src.preprocessing.preprocessing import *
-from src.utils.csv_utils import *
+from src.preprocessing.pre_split_preprocessing import restore_ticker_column
+from src.utils.csv_utils import load_csv, save_csv
 
 
-def load_combined_predictions( directory: Path, pattern: str = "predictions*.csv") -> pd.DataFrame:
+def load_combined_predictions(directory: Path, pattern: str = "predictions*.csv") -> pd.DataFrame:
+    """Load and combine multiple prediction CSV files.
+    
+    Handles:
+    - Filtering numbered prediction files
+    - Removing duplicate rows (by timestamp and ticker)
+    - Restoring ticker column from one-hot encoding
+    
+    Args:
+        directory: Path to directory containing prediction files.
+        pattern: Glob pattern for matching files (default: predictions*.csv).
+    
+    Returns:
+        pd.DataFrame: Combined predictions with duplicates removed, or empty DataFrame.
+    
+    Raises:
+        FileNotFoundError: If directory doesn't exist.
     """
-    Load and combine multiple prediction CSV files.
-    """
+    if not Path(directory).exists():
+        raise FileNotFoundError(f"Directory not found: {directory}")
 
     files = sorted(directory.glob(pattern))
     if not files:

@@ -55,3 +55,6 @@ python-ml/src/learner/__pycache__/learner.cpython-311.pyc
 python-ml/.continue/rules/new-rule.md
 /python-ml/src/__pycache__
 /python-ml/src/tests/__pycache__
+python-ml/.coverage
+*.pyc
+*.pkl

@@ -1,23 +1,31 @@
+"""Utility to clean the data directory of stale files."""
+from pathlib import Path
 from src.utils.path_utils import get_skuld_root
 
 
-def clean_data_directory():
+def clean_data_directory() -> None:
+    """
+    Remove all files in the python-ml/data directory.
+    
+    Useful for clearing previous pipeline outputs before running new iterations.
+    Preserves .gitkeep files to maintain directory structure in git.
+    """
     _root = get_skuld_root()
     _dir = _root / "python-ml" / "data"
 
-    # 1. Safety check: Ensure directory exists
+    # Safety check: Ensure directory exists
     if not _dir.exists():
         print(f"Directory not found: {_dir}")
         return
 
     print(f"Cleaning directory: {_dir}")
 
-    # 2. Iterate and delete files
+    # Iterate and delete files
     deleted_count = 0
     for item in _dir.iterdir():
         try:
             if item.is_file():
-                # specific check to avoid deleting gitkeep if you use it
+                # Specific check to avoid deleting gitkeep if you use it
                 if item.name == ".gitkeep":
                     continue
 

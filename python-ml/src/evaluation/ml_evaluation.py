@@ -1,6 +1,15 @@
+"""Machine learning evaluation metrics for classification tasks.
+
+Provides comprehensive classification metrics including:
+- Basic metrics (accuracy, precision, recall, F1)
+- Threshold-based metrics (ROC AUC, PR AUC)
+- Probabilistic metrics (log loss, Brier score)
+- Advanced metrics (MCC, Cohen's Kappa)
+"""
+
 import pandas as pd
 import numpy as np
-from typing import Union, Tuple, Dict, List
+from typing import Union, Tuple, Dict, List, Optional
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, confusion_matrix,
@@ -19,7 +28,26 @@ def calculate_ml_metrics(
         predictions_df: pd.DataFrame,
         probability_threshold: float
 ) -> pd.DataFrame:
-    """Calculate comprehensive ML classification metrics."""
+    """Calculate comprehensive ML classification metrics.
+    
+    Args:
+        predictions_df: DataFrame with LABEL_COL and PREDICTION_COL columns.
+        probability_threshold: Decision threshold for binary classification (0-1).
+    
+    Returns:
+        DataFrame with single row containing all computed metrics.
+    
+    Raises:
+        KeyError: If required columns are missing.
+        ValueError: If probability_threshold is not in [0, 1].
+    """
+    if not (0 <= probability_threshold <= 1):
+        raise ValueError(f"probability_threshold must be in [0, 1], got {probability_threshold}")
+    
+    if LABEL_COL not in predictions_df.columns or PREDICTION_COL not in predictions_df.columns:
+        missing = [c for c in [LABEL_COL, PREDICTION_COL] if c not in predictions_df.columns]
+        raise KeyError(f"Missing required columns: {missing}")
+    
     df = predictions_df.copy()
     df["prediction"] = (df[PREDICTION_COL] > probability_threshold).astype(int)
 
@@ -37,7 +65,7 @@ def _calculate_classification_metrics(
         y_true: pd.Series,
         y_pred: pd.Series,
         y_prob: pd.Series
-) -> Dict:
+) -> Dict[str, Union[int, float]]:
     """Calculate comprehensive classification metrics."""
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
@@ -106,46 +134,13 @@ def _calculate_classification_metrics(
     }
 
 
-def _display_ml_metrics(metrics: Dict, threshold: float):
-    """Display ML metrics in formatted table."""
-    print(f"\n{'=' * 60}")
-    print(f"CLASSIFICATION METRICS (Threshold: {threshold})")
-    print(f"{'=' * 60}\n")
-
-    print("DATASET COMPOSITION")
-    print("-" * 60)
-    print(f"{'Total Samples':<30} {metrics['n_samples']:>15,}")
-    print(f"{'Positive Class':<30} {metrics['n_positive']:>15,}")
-    print(f"{'Negative Class':<30} {metrics['n_negative']:>15,}")
-    print(f"{'Class Imbalance Ratio':<30} {metrics['class_imbalance']:>14.2%}")
-
-    print(f"\nCONFUSION MATRIX")
-    print("-" * 60)
-    print(f"{'True Positives':<30} {metrics['true_positives']:>15,}")
-    print(f"{'False Positives':<30} {metrics['false_positives']:>15,}")
-    print(f"{'True Negatives':<30} {metrics['true_negatives']:>15,}")
-    print(f"{'False Negatives':<30} {metrics['false_negatives']:>15,}")
-
-    print(f"\nCLASSIFICATION PERFORMANCE")
-    print("-" * 60)
-    print(f"{'Accuracy':<30} {metrics['accuracy']:>14.4f}")
-    print(f"{'Balanced Accuracy':<30} {metrics['balanced_accuracy']:>14.4f}")
-    print(f"{'Precision':<30} {metrics['precision']:>14.4f}")
-    print(f"{'Recall (Sensitivity)':<30} {metrics['recall']:>14.4f}")
-    print(f"{'Specificity':<30} {metrics['specificity']:>14.4f}")
-    print(f"{'F1 Score':<30} {metrics['f1_score']:>14.4f}")
-
-    print(f"\nADVANCED METRICS")
-    print("-" * 60)
-    print(f"{'Matthews Corr Coef (MCC)':<30} {metrics['mcc']:>14.4f}")
-    print(f"{'Cohens Kappa':<30} {metrics['cohens_kappa']:>14.4f}")
-
-    if not np.isnan(metrics['roc_auc']):
-        print(f"{'ROC AUC':<30} {metrics['roc_auc']:>14.4f}")
-        print(f"{'PR AUC':<30} {metrics['pr_auc']:>14.4f}")
-        print(f"{'Avg Precision Score':<30} {metrics['avg_precision']:>14.4f}")
-
-    print(f"{'Log Loss':<30} {metrics['log_loss']:>14.4f}")
-    print(f"{'Brier Score':<30} {metrics['brier_score']:>14.4f}")
-
-    print(f"\n{'=' * 60}\n")
+def _display_ml_metrics(metrics: Dict[str, Union[int, float]], threshold: float) -> None:
+    """Display ML metrics in formatted table.
+    
+    Args:
+        metrics: Dictionary of computed metrics.
+        threshold: Probability threshold used for classification.
+    """
+    print(f"\nCLASSIFICATION METRICS (Threshold: {threshold})")
+    print(f"Accuracy: {metrics['accuracy']:.4f} | F1: {metrics['f1_score']:.4f} | ROC AUC: {metrics['roc_auc']:.4f}")
+    print(f"Precision: {metrics['precision']:.4f} | Recall: {metrics['recall']:.4f}")

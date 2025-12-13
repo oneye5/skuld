@@ -4,7 +4,7 @@ import pandas as pd
 
 from src.config.config import *
 from src.preprocessing.pre_split_preprocessing import restore_ticker_column
-from src.utils.csv_utils import load_csv, save_csv
+from src.utils.io_utils import load_data, save_data
 from src.utils.data_validation import validate_time_series_integrity, print_data_quality_report
 from src.utils.path_utils import get_skuld_root
 
@@ -70,7 +70,7 @@ def split_last_occurring_tickers(
         train_csv_path: Path to save training data.
         last_rows_csv_path: Path to save last rows (label column removed).
     """
-    df = load_csv(preprocessed_csv_path)
+    df = load_data(preprocessed_csv_path)
 
     # Restore the ticker column from one-hot encoding (as helper column)
     df = restore_ticker_column(df)
@@ -95,8 +95,8 @@ def split_last_occurring_tickers(
         raise ValueError("Test set (last rows) is empty")
 
     # Save both dataframes
-    save_csv(last_rows, last_rows_csv_path)
-    save_csv(train_df, train_csv_path)
+    save_data(last_rows, last_rows_csv_path)
+    save_data(train_df, train_csv_path)
 
     print(f"Last rows saved to: {last_rows_csv_path} ({len(last_rows)} rows)")
     print(f"Train data saved to: {train_csv_path} ({len(train_df)} rows)")
@@ -115,13 +115,13 @@ def split_and_save(preprocessed_csv_path: str, from_ts: int, to_ts: int) -> None
         from_ts: Timestamp marking train/test boundary.
         to_ts: Timestamp marking test end.
     """
-    df = load_csv(preprocessed_csv_path)
+    df = load_data(preprocessed_csv_path)
 
     # Perform the split with validation
     train_df, test_df = time_based_split(df, from_ts, to_ts)
 
-    save_csv(train_df, str(TRAIN_CSV_PATH))
-    save_csv(test_df, str(TEST_CSV_PATH))
+    save_data(train_df, str(TRAIN_CSV_PATH))
+    save_data(test_df, str(TEST_CSV_PATH))
 
     print(f"--- Split Complete (No Temporal Leakage) ---")
     print(f"Train Window:  Start -> {from_ts}")

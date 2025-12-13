@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Dict, Union
 from scipy.stats import skew, kurtosis
 
-from src.utils.csv_utils import load_csv, save_csv
+from src.utils.io_utils import load_data, save_csv
 from src.evaluation.trading_evaluation import simulate_trades
 from src.evaluation.ml_evaluation import calculate_ml_metrics
 from src.config.config import (
@@ -61,9 +61,11 @@ def run_threshold_optimization(
     if predictions_df is None:
         if not AGGREGATE_PREDICTIONS_CSV_PATH.exists():
             raise FileNotFoundError(f"Predictions file not found: {AGGREGATE_PREDICTIONS_CSV_PATH}")
-        predictions = load_csv(str(AGGREGATE_PREDICTIONS_CSV_PATH))
+        # Aggregate predictions are external CSV files
+        predictions = load_data(str(AGGREGATE_PREDICTIONS_CSV_PATH))
     elif isinstance(predictions_df, (str, Path)):
-        predictions = load_csv(str(predictions_df))
+        # Auto-detect format from extension
+        predictions = load_data(str(predictions_df))
     elif isinstance(predictions_df, pd.DataFrame):
         predictions = predictions_df.copy()
     else:
@@ -75,12 +77,13 @@ def run_threshold_optimization(
     # Load price data for trading simulation
     print("Loading price data...")
     if PREPROCESSED_CSV_PATH.exists():
-        price_data = load_csv(str(PREPROCESSED_CSV_PATH))
+        # Preprocessed is now Parquet, auto-detect
+        price_data = load_data(str(PREPROCESSED_CSV_PATH))
         price_data = restore_ticker_column(price_data)
     else:
-        # Fallback: combine train and test
-        train_df = load_csv(str(TRAIN_CSV_PATH))
-        test_df = load_csv(str(TEST_CSV_PATH))
+        # Fallback: combine train and test (also Parquet now)
+        train_df = load_data(str(TRAIN_CSV_PATH))
+        test_df = load_data(str(TEST_CSV_PATH))
         price_data = pd.concat([train_df, test_df], ignore_index=True)
         price_data = restore_ticker_column(price_data)
     

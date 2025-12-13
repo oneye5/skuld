@@ -78,24 +78,15 @@ def split_last_occurring_tickers(
     # Sort by timestamp to ensure we get the truly last occurring rows
     df = df.sort_values([TICKER_COL, TIMESTAMP_COL]).reset_index(drop=True)
 
-    # Get the last row for each ticker
-    last_rows = df.groupby(TICKER_COL).tail(1).copy()
-
-    # Strip the label column from last rows
-    last_rows = last_rows.drop(columns=[LABEL_COL])
-
-    # Drop the ticker column (non-numeric helper column)
-    last_rows = last_rows.drop(columns=[TICKER_COL])
+    # Get the last row for each ticker (already sorted, use sort=False to avoid re-sort)
+    last_rows = df.groupby(TICKER_COL, sort=False).tail(1).drop(columns=[LABEL_COL, TICKER_COL])
 
     # Get remaining data (everything except the last rows)
     last_row_indices = last_rows.index
-    remaining_df = df.drop(index=last_row_indices).copy()
+    remaining_df = df.drop(index=last_row_indices)
 
-    # Drop invalid labels (-1) from remaining data
-    train_df = remaining_df[remaining_df[LABEL_COL] != -1].copy()
-
-    # Drop the ticker column from train data as well
-    train_df = train_df.drop(columns=[TICKER_COL])
+    # Drop invalid labels (-1) and ticker column from remaining data
+    train_df = remaining_df[remaining_df[LABEL_COL] != -1].drop(columns=[TICKER_COL])
 
     # Validate split
     if train_df.empty:

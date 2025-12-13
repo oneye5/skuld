@@ -27,8 +27,6 @@ def run() -> None:
     3. Apply pre-split preprocessing (labeling, encoding, feature selection)
     4. Remove rows with invalid labels
     5. Run multiple iterations of sliding window evaluation
-    
-    IMPORTANT: Scaling is done AFTER train/test split to prevent data leakage.
     """
     clean_data_directory()
     long_to_wide_and_impute(str(LONG_CSV_PATH), str(WIDE_CSV_PATH))

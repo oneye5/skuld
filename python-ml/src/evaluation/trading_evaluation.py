@@ -45,8 +45,9 @@ def simulate_trades(
     if PREDICTION_COL not in predictions_df.columns:
         raise KeyError(f"Missing {PREDICTION_COL} in predictions DataFrame")
     
-    preds = restore_ticker_column(predictions_df.copy())
-    prices = restore_ticker_column(price_df.copy())
+    # Only copy if ticker restoration is needed
+    preds = predictions_df if TICKER_COL in predictions_df.columns else restore_ticker_column(predictions_df.copy())
+    prices = price_df if TICKER_COL in price_df.columns else restore_ticker_column(price_df.copy())
 
     preds = preds.sort_values([TICKER_COL, TIMESTAMP_COL]).reset_index(drop=True)
     prices = prices.sort_values([TICKER_COL, TIMESTAMP_COL]).reset_index(drop=True)
@@ -80,9 +81,9 @@ def _execute_trades(buy_signals: pd.DataFrame, prices: pd.DataFrame) -> List[Dic
     for ticker, group in buy_signals.groupby(TICKER_COL):
         ticker_prices = prices[prices[TICKER_COL] == ticker].sort_values(TIMESTAMP_COL)
 
-        for _, signal in group.iterrows():
-            buy_time = signal[TIMESTAMP_COL]
-            buy_price = signal[CLOSE_COL]
+        for signal in group.itertuples(index=False):
+            buy_time = getattr(signal, TIMESTAMP_COL)
+            buy_price = getattr(signal, CLOSE_COL)
 
             if not buy_price or np.isnan(buy_price) or buy_price <= 0:
                 continue
@@ -94,7 +95,7 @@ def _execute_trades(buy_signals: pd.DataFrame, prices: pd.DataFrame) -> List[Dic
                 continue
 
             sell_row = future_prices.iloc[0]
-            sell_price = sell_row[CLOSE_COL]
+            sell_price = getattr(sell_row, CLOSE_COL)
 
             if not sell_price or np.isnan(sell_price) or sell_price <= 0:
                 continue

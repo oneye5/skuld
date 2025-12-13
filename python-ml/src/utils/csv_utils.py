@@ -30,7 +30,7 @@ def load_csv(path: str, index_col: Optional[str] = None) -> pd.DataFrame:
     path_str = str(Path(path).resolve())
 
     if path_str in _cache:
-        return _cache[path_str].copy()
+        return _cache[path_str]  # Return cached reference - pandas CoW handles safety
 
     path_obj = Path(path)
     if not path_obj.exists():
@@ -67,8 +67,9 @@ def save_csv(df: pd.DataFrame, path: str, index: bool = False) -> None:
     path_obj.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        # Cache before saving
-        _cache[str(path_obj.resolve())] = df
+        # Cache copy to avoid modifying original
+        path_str = str(path_obj.resolve())
+        _cache[path_str] = df.copy()
 
         # Convert to Polars and save (faster)
         pl.DataFrame(df).write_csv(path_obj)

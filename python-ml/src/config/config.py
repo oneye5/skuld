@@ -4,18 +4,47 @@ Defines all configuration parameters, column names, file paths, and feature engi
 """
 from src.utils.path_utils import get_skuld_root
 
+
 _day = 1000 * 60 * 60 * 24
 _year = _day * 365
 
 # === LABELING & LOOKAHEAD PARAMETERS ===
-THRESHOLD_PCT = 0.01  # the % price change threshold for 1 label
+THRESHOLD_PCT = 0.13  # the % price change threshold for 1 label
 # Example: 0.02 = +2% price increase
 
-LABEL_LOOKAHEAD_MILLIS = _year  # milliseconds into the future for price movement
-TEST_SPLIT_DURATION_MILLIS = _day * 1.1  # test split size by time
+LABEL_LOOKAHEAD_MILLIS = _year * 1.001  # milliseconds into the future for price movement
+TEST_SPLIT_DURATION_MILLIS = _day * 30  # test split size by time
 EVAL_TEST_ITERATIONS = 5  # how many iterations to run sliding window over
 EVAL_TIME_PROGRESSION = _year * 1.314159  # amount of time to advance evaluation per iteration
-EVAL_CLASSIFICATION_BOUNDARY = 0.75
+EVAL_CLASSIFICATION_BOUNDARY = 0.5
+
+# === FINANCIAL FEATURE COLUMNS ===
+OPEN_COL = "Open"
+HIGH_COL = "High"
+LOW_COL = "Low"
+VOLUME_COL = "Volume"
+ANNUAL_BASIC_EPS_COL = "annualBasicEPS"
+ANNUAL_DILUTED_EPS_COL = "annualDilutedEPS"
+TRAILING_BASIC_EPS_COL = "trailingBasicEPS"
+TRAILING_DILUTED_EPS_COL = "trailingDilutedEPS"
+ANNUAL_NET_INCOME_COL = "annualNetIncome"
+TRAILING_NET_INCOME_COL = "trailingNetIncome"
+ANNUAL_TOTAL_REVENUE_COL = "annualTotalRevenue"
+TRAILING_TOTAL_REVENUE_COL = "trailingTotalRevenue"
+ANNUAL_TOTAL_UNUSUAL_ITEMS_COL = "annualTotalUnusualItems"
+TRAILING_TOTAL_UNUSUAL_ITEMS_COL = "trailingTotalUnusualItems"
+ANNUAL_GA_EXPENSE_COL = "annualGeneralAndAdministrativeExpense"
+TRAILING_GA_EXPENSE_COL = "trailingGeneralAndAdministrativeExpense"
+ANNUAL_DILUTED_AVG_SHARES_COL = "annualDilutedAverageShares"
+ANNUAL_EBITDA_COL = "annualEBITDA"
+TRAILING_EBITDA_COL = "trailingEBITDA"
+NZL_EMP_Y15T64_T_COL = "NZL_LaborStats_EMP_Y15T64__T"
+NZL_POP_Y15T64_T_COL = "NZL_LaborStats_POP_Y15T64__T"
+NZL_LF_Y15T64_T_COL = "NZL_LaborStats_LF_Y15T64__T"
+ANNUAL_EBIT_COL = "annualEBIT"
+ANNUAL_INTEREST_EXPENSE_COL = "annualInterestExpense"
+LONG_TERM_RATE_COL = "Long-term interest rates"
+SHORT_TERM_RATE_COL = "Short-term interest rates"
 
 # === COLUMN NAMES ===
 TIMESTAMP_COL = "timestamp"

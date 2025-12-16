@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from src.config.config import *
-from src.preprocessing.feature_engineering import scale_data_with_scaler
+from src.preprocessing.feature_engineering import scale_data_with_scaler, to_feature_engineered
 from src.utils.io_utils import load_data, save_data
 
 
@@ -24,12 +24,10 @@ def post_split_preprocessing_train(csv_in_path: str, csv_out_path: str, scaler_p
         scaler_path: Path to save the fitted RobustScaler.
     """
     df = load_data(csv_in_path)
-    
-    # CRITICAL: Clean NaN and infinity values BEFORE scaling
-    # These can cause issues with RobustScaler and model training
+
+    df = to_feature_engineered(df)
+    # Clean NaN and infinity values
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    # Replace infinity with NaN first (in-place where possible)
     for col in numeric_cols:
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
     
@@ -67,15 +65,6 @@ def post_split_preprocessing_train(csv_in_path: str, csv_out_path: str, scaler_p
 
 def post_split_preprocessing_test(csv_in_path: str, csv_out_path: str, scaler_path: str) -> None:
     """
-    Apply post-split preprocessing to test data using training scaler.
-    
-    Applies the scaler that was fitted on training data to prevent leakage.
-    Aligns columns with training data to prevent feature mismatch errors.
-    
-    Missing columns in test are added with 0s. Extra columns are dropped.
-    This handles cases where different tickers appear in different time periods
-    and where sparse column filtering differs between time periods.
-    
     Args:
         csv_in_path: Path to input test CSV.
         csv_out_path: Path to save scaled test CSV.
@@ -95,11 +84,9 @@ def post_split_preprocessing_test(csv_in_path: str, csv_out_path: str, scaler_pa
     
     # Fill NaN values per ticker if available, otherwise globally
     if 'ticker' in df.columns:
-        # Use groupby().transform() for vectorized per-ticker filling (much faster than explicit loop)
         for col in numeric_cols:
             df[col] = df.groupby('ticker')[col].transform(lambda x: x.ffill().bfill())
     else:
-        # Ticker column not available, use global forward/backward fill
         for col in numeric_cols:
             df[col] = df[col].ffill().bfill()
     
@@ -121,13 +108,14 @@ def post_split_preprocessing_test(csv_in_path: str, csv_out_path: str, scaler_pa
     extra_cols = test_columns - train_columns_set
     
     if missing_cols or extra_cols:
-        # Add missing columns with 0s - this is valid for features not present in this time period
-        for col in missing_cols:
-            df[col] = 0.0
-        
         # Drop extra columns - these appeared in test but not train
         if extra_cols:
             df = df.drop(columns=list(extra_cols))
+
+        # Add missing columns with 0s - this is valid for features not present in this time period
+        if missing_cols:
+            missing_df = pd.DataFrame(0.0, index=df.index, columns=list(missing_cols))
+            df = pd.concat([df, missing_df], axis=1)
     
     # CRITICAL: Reorder columns to EXACTLY match train order
     # This must happen before scaling to ensure scaler gets columns in right order
@@ -146,23 +134,3 @@ def post_split_preprocessing_test(csv_in_path: str, csv_out_path: str, scaler_pa
     df, _, _ = scale_data_with_scaler(df, scaler=scaler, fit_scaler=False, continuous_cols=continuous_cols)
     
     save_data(df, csv_out_path)
-
-
-def post_split_preprocessing(csv_in_path: str, csv_out_path: str) -> None:
-    """
-    Legacy post-split preprocessing (no scaling to maintain backward compatibility).
-    
-    NOTE: This function does not perform scaling. Use post_split_preprocessing_train
-    and post_split_preprocessing_test for proper handling with scaler persistence.
-    
-    Args:
-        csv_in_path: Path to input CSV.
-        csv_out_path: Path to save output CSV.
-    """
-    df = load_data(csv_in_path)
-    # No scaling applied here to prevent leakage
-    save_data(df, csv_out_path)
-
-
-if __name__ == "__main__":
-    post_split_preprocessing(str(WIDE_CSV_PATH), str(PREPROCESSED_CSV_PATH))

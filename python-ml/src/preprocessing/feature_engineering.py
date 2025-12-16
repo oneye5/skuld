@@ -109,14 +109,93 @@ def scale_continuous_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def to_feature_engineered(df: pd.DataFrame) -> pd.DataFrame:
     """Apply pre-split feature engineering transformations.
-    
-    WARNING: Scaling is NOT applied here to prevent data leakage.
+    Adds financial ratios, growth rates, per-share metrics, labor/population ratios, interest coverage, macro spreads, and rolling/statistical features.
+    Scaling is NOT applied here to prevent data leakage.
     Scaling happens separately in post_split_preprocessing.
-    
     Args:
         df: Input DataFrame.
-    
     Returns:
         pd.DataFrame: Feature engineered DataFrame (no scaling).
     """
+    df = df.copy()
+
+    # --- Financial Ratios ---
+    if ANNUAL_BASIC_EPS_COL in df.columns and ANNUAL_DILUTED_EPS_COL in df.columns:
+        df['eps_ratio'] = df[ANNUAL_BASIC_EPS_COL] / df[ANNUAL_DILUTED_EPS_COL].replace(0, np.nan)
+    if TRAILING_BASIC_EPS_COL in df.columns and TRAILING_DILUTED_EPS_COL in df.columns:
+        df['trailing_eps_ratio'] = df[TRAILING_BASIC_EPS_COL] / df[TRAILING_DILUTED_EPS_COL].replace(0, np.nan)
+    if ANNUAL_NET_INCOME_COL in df.columns and ANNUAL_TOTAL_REVENUE_COL in df.columns:
+        df['profit_margin'] = df[ANNUAL_NET_INCOME_COL] / df[ANNUAL_TOTAL_REVENUE_COL].replace(0, np.nan)
+    if TRAILING_NET_INCOME_COL in df.columns and TRAILING_TOTAL_REVENUE_COL in df.columns:
+        df['trailing_profit_margin'] = df[TRAILING_NET_INCOME_COL] / df[TRAILING_TOTAL_REVENUE_COL].replace(0, np.nan)
+    if ANNUAL_TOTAL_UNUSUAL_ITEMS_COL in df.columns and ANNUAL_TOTAL_REVENUE_COL in df.columns:
+        df['unusual_items_ratio'] = df[ANNUAL_TOTAL_UNUSUAL_ITEMS_COL] / df[ANNUAL_TOTAL_REVENUE_COL].replace(0, np.nan)
+    if TRAILING_TOTAL_UNUSUAL_ITEMS_COL in df.columns and TRAILING_TOTAL_REVENUE_COL in df.columns:
+        df['trailing_unusual_items_ratio'] = df[TRAILING_TOTAL_UNUSUAL_ITEMS_COL] / df[TRAILING_TOTAL_REVENUE_COL].replace(0, np.nan)
+    if ANNUAL_GA_EXPENSE_COL in df.columns and ANNUAL_TOTAL_REVENUE_COL in df.columns:
+        df['ga_expense_ratio'] = df[ANNUAL_GA_EXPENSE_COL] / df[ANNUAL_TOTAL_REVENUE_COL].replace(0, np.nan)
+    if TRAILING_GA_EXPENSE_COL in df.columns and TRAILING_TOTAL_REVENUE_COL in df.columns:
+        df['trailing_ga_expense_ratio'] = df[TRAILING_GA_EXPENSE_COL] / df[TRAILING_TOTAL_REVENUE_COL].replace(0, np.nan)
+
+    # --- Growth Rates ---
+    if ANNUAL_NET_INCOME_COL in df.columns and TRAILING_NET_INCOME_COL in df.columns:
+        df['net_income_growth'] = (df[ANNUAL_NET_INCOME_COL] - df[TRAILING_NET_INCOME_COL]) / df[TRAILING_NET_INCOME_COL].replace(0, np.nan)
+    if ANNUAL_TOTAL_REVENUE_COL in df.columns and TRAILING_TOTAL_REVENUE_COL in df.columns:
+        df['revenue_growth'] = (df[ANNUAL_TOTAL_REVENUE_COL] - df[TRAILING_TOTAL_REVENUE_COL]) / df[TRAILING_TOTAL_REVENUE_COL].replace(0, np.nan)
+    if ANNUAL_EBITDA_COL in df.columns and TRAILING_EBITDA_COL in df.columns:
+        df['ebitda_growth'] = (df[ANNUAL_EBITDA_COL] - df[TRAILING_EBITDA_COL]) / df[TRAILING_EBITDA_COL].replace(0, np.nan)
+
+    # --- Per-Share Metrics ---
+    if ANNUAL_NET_INCOME_COL in df.columns and ANNUAL_DILUTED_AVG_SHARES_COL in df.columns:
+        df['net_income_per_share'] = df[ANNUAL_NET_INCOME_COL] / df[ANNUAL_DILUTED_AVG_SHARES_COL].replace(0, np.nan)
+    if ANNUAL_EBITDA_COL in df.columns and ANNUAL_DILUTED_AVG_SHARES_COL in df.columns:
+        df['ebitda_per_share'] = df[ANNUAL_EBITDA_COL] / df[ANNUAL_DILUTED_AVG_SHARES_COL].replace(0, np.nan)
+
+    # --- Labor/Population Ratios ---
+    if NZL_EMP_Y15T64_T_COL in df.columns and NZL_POP_Y15T64_T_COL in df.columns:
+        df['employment_rate'] = df[NZL_EMP_Y15T64_T_COL] / df[NZL_POP_Y15T64_T_COL].replace(0, np.nan)
+    if NZL_LF_Y15T64_T_COL in df.columns and NZL_POP_Y15T64_T_COL in df.columns:
+        df['labor_force_participation'] = df[NZL_LF_Y15T64_T_COL] / df[NZL_POP_Y15T64_T_COL].replace(0, np.nan)
+
+    # --- Interest Coverage ---
+    if ANNUAL_EBIT_COL in df.columns and ANNUAL_INTEREST_EXPENSE_COL in df.columns:
+        df['interest_coverage'] = df[ANNUAL_EBIT_COL] / df[ANNUAL_INTEREST_EXPENSE_COL].replace(0, np.nan)
+
+    # --- Macro/Market Features ---
+    if LONG_TERM_RATE_COL in df.columns and SHORT_TERM_RATE_COL in df.columns:
+        df['interest_rate_spread'] = df[LONG_TERM_RATE_COL] - df[SHORT_TERM_RATE_COL]
+
+    # --- Rolling/statistical features (only for ticker rows) ---
+    if TICKER_COL in df.columns and CLOSE_COL in df.columns:
+        # Sort for rolling operations
+        df = df.sort_values([TICKER_COL, TIMESTAMP_COL])
+        group = df.groupby(TICKER_COL, group_keys=False)
+
+        # Rolling window size (e.g., 5, 10, 20 periods)
+        windows = [5, 10, 20]
+        for w in windows:
+            # Rolling mean, std, min, max of Close
+            df[f'close_mean_{w}'] = group[CLOSE_COL].transform(lambda x: x.rolling(w, min_periods=1).mean())
+            df[f'close_std_{w}'] = group[CLOSE_COL].transform(lambda x: x.rolling(w, min_periods=1).std())
+            df[f'close_min_{w}'] = group[CLOSE_COL].transform(lambda x: x.rolling(w, min_periods=1).min())
+            df[f'close_max_{w}'] = group[CLOSE_COL].transform(lambda x: x.rolling(w, min_periods=1).max())
+
+            # Rolling returns (percentage change)
+            df[f'return_{w}'] = group[CLOSE_COL].transform(lambda x: x.pct_change(w).fillna(0))
+
+            # Rolling volatility (std of returns)
+            df[f'volatility_{w}'] = group[CLOSE_COL].transform(lambda x: x.pct_change().rolling(w, min_periods=1).std().fillna(0))
+
+        # Momentum (rate of change over 10 periods)
+        df['momentum_10'] = group[CLOSE_COL].transform(lambda x: x.pct_change(periods=10).fillna(0))
+
+        # Lag features (previous 1, 2, 3 closes)
+        for lag in [1, 2, 3]:
+            df[f'close_lag_{lag}'] = group[CLOSE_COL].transform(lambda x: x.shift(lag))
+
+        # Optional: rolling skew/kurtosis
+        for w in [10, 20]:
+            df[f'close_skew_{w}'] = group[CLOSE_COL].transform(lambda x: x.rolling(w, min_periods=1).skew())
+            df[f'close_kurt_{w}'] = group[CLOSE_COL].transform(lambda x: x.rolling(w, min_periods=1).kurt())
+
     return df

@@ -1,4 +1,3 @@
-"""Convert long-format data to wide-format with imputation and feature engineering."""
 from pathlib import Path
 import pandas as pd
 from src.config.config import *
@@ -6,20 +5,13 @@ from src.tests.utils import print_sample_data
 from src.utils.csv_utils import load_csv, save_csv
 
 
-def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str) -> None:
+def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str):
     """
-    Convert long-format CSV to wide-format with missing value imputation.
-    
-    Process:
-    1. Split data into macro (no ticker) and ticker-specific data
-    2. Pivot each to wide format
-    3. Create presence flags for each feature (indicating if data was present before imputation)
-    4. Forward-fill missing values per ticker
-    5. Use as-of merge to align macro data with ticker data
-    
-    Args:
-        long_csv_path: Path to input long-format CSV.
-        imputed_csv_path: Path to save wide-format imputed CSV.
+    Convert long-format CSV to wide-format, forward-fill missing values,
+    fill remaining missing values with 0, and add _present columns for each feature.
+    - Macro data (no ticker) forward-filled globally
+    - Ticker-specific data forward-filled per ticker
+    - Macro features merged onto ticker rows using as-of alignment
     """
     df = load_csv(long_csv_path)
 
@@ -39,8 +31,8 @@ def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str) -> None:
     # Create present flags before fill (more efficient)
     df_macro_present = df_macro_wide.notna().astype('int8').add_suffix('_present')
 
-    # Forward fill missing values
-    df_macro_wide = df_macro_wide.ffill().fillna(0)
+    # Use fillna with method parameter (slightly faster than chaining)
+    df_macro_wide = df_macro_wide.fillna(method='ffill').fillna(0)
 
     # Reset for as-of merge
     df_macro_wide.reset_index(inplace=True)
@@ -57,9 +49,9 @@ def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str) -> None:
     # Create present flags before ffill
     df_ticker_present = df_ticker_wide.notna().astype('int8').add_suffix('_present')
 
-    # Forward fill per ticker using transform
+    # Forward fill per ticker using transform (faster than groupby + ffill)
     df_ticker_wide = df_ticker_wide.groupby(level=TICKER_COL, group_keys=False).apply(
-        lambda x: x.ffill()
+        lambda x: x.fillna(method='ffill')
     ).fillna(0)
 
     # Reset multi-index for merging

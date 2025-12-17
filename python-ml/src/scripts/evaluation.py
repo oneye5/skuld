@@ -1,20 +1,8 @@
-"""Trading model evaluation script.
-
-Loads predictions, runs trading simulation, and computes comprehensive metrics.
-"""
-from typing import Union, Tuple
-from pathlib import Path
-
-import pandas as pd
-
+from typing import Union, Tuple, Dict, List
 from src.evaluation.ml_evaluation import calculate_ml_metrics
 from src.evaluation.trading_evaluation import simulate_trades
-from src.evaluation.utils import load_combined_predictions
-from src.preprocessing.pre_split_preprocessing import restore_ticker_column
-from src.config.config import (
-    PY_DATA_DIR_PATH, PREPROCESSED_CSV_PATH, AGGREGATE_PREDICTIONS_CSV_PATH,
-    EVAL_CLASSIFICATION_BOUNDARY, TRADE_SIMULATION_CSV_PATH, EVALUATION_RESULTS_CSV_PATH
-)
+from src.evaluation.utils import *
+from src.preprocessing.preprocessing import restore_ticker_column
 from src.utils.csv_utils import load_csv, save_csv
 
 # =======================================================
@@ -22,28 +10,11 @@ from src.utils.csv_utils import load_csv, save_csv
 # =======================================================
 
 def run_evaluation(
-        predictions: Union[str, Path, pd.DataFrame],
+        predictions: Union[str, pd.DataFrame],
         labeled_csv_path: str,
         raw_price_csv_path: str,
         probability_threshold: float
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Run complete evaluation pipeline: ML metrics and trading simulation.
-    
-    Args:
-        predictions: Path to predictions file or DataFrame.
-        labeled_csv_path: Path to labeled training data.
-        raw_price_csv_path: Path to raw price data for simulation.
-        probability_threshold: Decision threshold for buy signals.
-    
-    Returns:
-        Tuple of (trade_results DataFrame, ml_metrics DataFrame).
-    
-    Raises:
-        ValueError: If predictions are invalid or empty.
-        KeyError: If required columns are missing.
-    """
-    if not (0 <= probability_threshold <= 1):
-        raise ValueError(f"probability_threshold must be in [0, 1], got {probability_threshold}")
+):
     # Load predictions
     if isinstance(predictions, (str, Path)):
         preds_df = load_csv(str(predictions))

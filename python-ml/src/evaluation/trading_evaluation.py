@@ -1,21 +1,10 @@
-"""Trading simulation and performance evaluation.
-
-Simulates trades based on model predictions and computes trading metrics including:
-- Trade execution and returns
-- Win/loss analysis
-- Risk metrics (Sharpe, Sortino, Calmar ratios)
-- Drawdown analysis
-- Tail risk measures (VaR, CVaR)
-"""
-
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple
+from typing import Union, Tuple, Dict, List
 from scipy.stats import skew, kurtosis
 
 from src.evaluation.trading_metrics import TradingMetrics
-from src.config.config import TICKER_COL, TIMESTAMP_COL, PREDICTION_COL, CLOSE_COL, LABEL_LOOKAHEAD_MILLIS
-from src.preprocessing.pre_split_preprocessing import restore_ticker_column
+from src.evaluation.utils import *
+from src.preprocessing.preprocessing import restore_ticker_column
 
 # =======================================================
 # === TRADING SIMULATION ================================
@@ -26,25 +15,9 @@ def simulate_trades(
         price_df: pd.DataFrame,
         probability_threshold: float
 ) -> pd.DataFrame:
-    """Simulate trades based on model predictions.
-    
-    Args:
-        predictions_df: DataFrame with prediction signals (PREDICTION_COL).
-        price_df: DataFrame with price data (CLOSE_COL).
-        probability_threshold: Minimum probability to generate buy signal.
-    
-    Returns:
-        DataFrame with executed trades (empty if no trades executed).
-    
-    Raises:
-        ValueError: If threshold is not in [0, 1] or required columns missing.
     """
-    if not (0 <= probability_threshold <= 1):
-        raise ValueError(f"probability_threshold must be in [0, 1], got {probability_threshold}")
-    
-    if PREDICTION_COL not in predictions_df.columns:
-        raise KeyError(f"Missing {PREDICTION_COL} in predictions DataFrame")
-    
+    Simulate trades based on model predictions.
+    """
     preds = restore_ticker_column(predictions_df.copy())
     prices = restore_ticker_column(price_df.copy())
 
@@ -57,6 +30,8 @@ def simulate_trades(
     trades_df = pd.DataFrame(trades)
 
     if trades_df.empty:
+        print("\n=== Trading Simulation Results ===")
+        print("No trades executed (no signals above threshold).")
         return trades_df
 
     metrics = _calculate_trading_metrics(trades_df)
@@ -65,16 +40,8 @@ def simulate_trades(
     return trades_df
 
 
-def _execute_trades(buy_signals: pd.DataFrame, prices: pd.DataFrame) -> List[Dict[str, any]]:
-    """Execute simulated trades based on buy signals.
-    
-    Args:
-        buy_signals: DataFrame with buy signals (rows above threshold).
-        prices: DataFrame with historical price data.
-    
-    Returns:
-        List of trade dictionaries with entry/exit prices and returns.
-    """
+def _execute_trades(buy_signals: pd.DataFrame, prices: pd.DataFrame) -> List[Dict]:
+    """Execute simulated trades based on buy signals."""
     trades = []
 
     for ticker, group in buy_signals.groupby(TICKER_COL):
@@ -115,22 +82,7 @@ def _execute_trades(buy_signals: pd.DataFrame, prices: pd.DataFrame) -> List[Dic
 
 
 def _calculate_trading_metrics(trades_df: pd.DataFrame) -> TradingMetrics:
-    """Calculate comprehensive trading performance metrics.
-    
-    Args:
-        trades_df: DataFrame with executed trades (sorted by sell_time).
-    
-    Returns:
-        TradingMetrics object with all computed metrics.
-    
-    Raises:
-        ValueError: If trades_df is empty or missing required columns.
-    """
-    if trades_df.empty:
-        raise ValueError("Cannot calculate metrics on empty trades DataFrame")
-    
-    if "return_pct" not in trades_df.columns:
-        raise KeyError("Missing 'return_pct' column in trades DataFrame")
+    """Calculate comprehensive trading performance metrics."""
     trades_df = trades_df.sort_values("sell_time")
     returns = trades_df["return_pct"]
 
@@ -244,14 +196,7 @@ def _calculate_trading_metrics(trades_df: pd.DataFrame) -> TradingMetrics:
 
 
 def _calculate_max_drawdown(returns: pd.Series) -> float:
-    """Calculate maximum drawdown from peak equity.
-    
-    Args:
-        returns: Series of returns.
-    
-    Returns:
-        Maximum drawdown as decimal (negative value).
-    """
+    """Calculate maximum drawdown from peak equity."""
     cumulative = (1 + returns).cumprod()
     running_max = cumulative.cummax()
     drawdown = (cumulative - running_max) / running_max
@@ -259,14 +204,7 @@ def _calculate_max_drawdown(returns: pd.Series) -> float:
 
 
 def _calculate_max_drawdown_duration(returns: pd.Series) -> int:
-    """Calculate longest drawdown duration in number of trades.
-    
-    Args:
-        returns: Series of returns.
-    
-    Returns:
-        Maximum consecutive periods in drawdown state (0 if no drawdown).
-    """
+    """Calculate longest drawdown duration in number of trades."""
     cumulative = (1 + returns).cumprod()
     running_max = cumulative.cummax()
 
@@ -281,17 +219,7 @@ def _calculate_max_drawdown_duration(returns: pd.Series) -> int:
 
 
 def _calculate_ulcer_index(returns: pd.Series) -> float:
-    """Calculate Ulcer Index - measures depth and duration of drawdowns.
-    
-    Captures both magnitude and persistence of equity losses, providing
-    a risk measure that accounts for the severity of drawdowns.
-    
-    Args:
-        returns: Series of returns.
-    
-    Returns:
-        Ulcer Index value (higher = more severe drawdowns).
-    """
+    """Calculate Ulcer Index - measures depth and duration of drawdowns."""
     cumulative = (1 + returns).cumprod()
     running_max = cumulative.cummax()
     drawdown_pct = ((cumulative - running_max) / running_max) * 100
@@ -300,13 +228,54 @@ def _calculate_ulcer_index(returns: pd.Series) -> float:
     return np.sqrt(mean_squared_dd)
 
 
-def _display_trading_metrics(metrics: TradingMetrics, threshold: float) -> None:
-    """Display trading metrics in formatted table.
-    
-    Args:
-        metrics: TradingMetrics object with computed metrics.
-        threshold: Probability threshold used for trade entry signals.
-    """
-    print(f"\nTRADING RESULTS (Threshold: {threshold})")
-    print(f"Trades: {metrics.total_trades} | Win Rate: {metrics.win_rate:.2%} | Avg Return: {metrics.avg_return:.4f}")
-    print(f"Sharpe: {metrics.sharpe_ratio:.2f} | Sortino: {metrics.sortino_ratio:.2f} | Max DD: {metrics.max_drawdown:.2%}")
+def _display_trading_metrics(metrics: TradingMetrics, threshold: float):
+    """Display trading metrics in formatted table."""
+    print(f"\n{'=' * 60}")
+    print(f"TRADING SIMULATION RESULTS (Threshold: {threshold})")
+    print(f"{'=' * 60}\n")
+
+    print("TRADE STATISTICS")
+    print("-" * 60)
+    print(f"{'Total Trades':<30} {metrics.total_trades:>15,}")
+    print(f"{'Win Rate':<30} {metrics.win_rate:>14.2%}")
+    print(f"{'Max Consecutive Wins':<30} {metrics.max_consecutive_wins:>15}")
+    print(f"{'Max Consecutive Losses':<30} {metrics.max_consecutive_losses:>15}")
+
+    print(f"\nRETURN STATISTICS")
+    print("-" * 60)
+    print(f"{'Average Return':<30} {metrics.avg_return:>14.2%}")
+    print(f"{'Median Return':<30} {metrics.median_return:>14.2%}")
+    print(f"{'Std Dev Returns':<30} {metrics.std_return:>14.2%}")
+    print(f"{'Skewness':<30} {metrics.skewness:>15.4f}")
+    print(f"{'Kurtosis':<30} {metrics.kurtosis:>15.4f}")
+
+    print(f"\nRETURN DISTRIBUTION")
+    print("-" * 60)
+    print(f"{'25th Percentile':<30} {metrics.return_25th:>14.2%}")
+    print(f"{'75th Percentile':<30} {metrics.return_75th:>14.2%}")
+    print(f"{'IQR':<30} {metrics.return_iqr:>14.2%}")
+    print(f"{'Best Trade':<30} {metrics.best_trade:>14.2%}")
+    print(f"{'Worst Trade':<30} {metrics.worst_trade:>14.2%}")
+
+    print(f"\nSYSTEM EFFICIENCY")
+    print("-" * 60)
+    print(f"{'Profit Factor':<30} {metrics.profit_factor:>15.2f}")
+    print(f"{'SQN (System Quality)':<30} {metrics.sqn:>15.2f}")
+    print(f"{'Kelly Criterion':<30} {metrics.kelly_criterion:>14.2%}")
+    print(f"{'Expectancy':<30} {metrics.expectancy:>14.4f}")
+    print(f"{'Avg Win':<30} {metrics.avg_win:>14.2%}")
+    print(f"{'Avg Loss':<30} {metrics.avg_loss:>14.2%}")
+    print(f"{'Win/Loss Ratio':<30} {metrics.win_loss_ratio:>15.2f}")
+
+    print(f"\nRISK & DRAWDOWN")
+    print("-" * 60)
+    print(f"{'Sharpe Ratio':<30} {metrics.sharpe_ratio:>15.2f}")
+    print(f"{'Sortino Ratio':<30} {metrics.sortino_ratio:>15.2f}")
+    print(f"{'Calmar Ratio':<30} {metrics.calmar_ratio:>15.2f}")
+    print(f"{'Max Drawdown':<30} {metrics.max_drawdown:>14.2%}")
+    print(f"{'Recovery Factor':<30} {metrics.recovery_factor:>15.2f}")
+    print(f"{'Ulcer Index':<30} {metrics.ulcer_index:>15.2f}")
+    print(f"{'VaR 95%':<30} {metrics.var_95:>14.2%}")
+    print(f"{'CVaR 95% (Exp Shortfall)':<30} {metrics.cvar_95:>14.2%}")
+
+    print(f"\n{'=' * 60}\n")

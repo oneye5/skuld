@@ -12,7 +12,7 @@ import pandas as pd
 from src.config.config import *
 from src.preprocessing.feature_engineering import to_feature_engineered
 from src.preprocessing.technical_features import add_technical_features
-from src.utils.io_utils import load_data, save_data
+from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
 
 
@@ -117,23 +117,19 @@ def create_future_labels(df: pd.DataFrame) -> pd.DataFrame:
         # Find index of the first row at or after the future timestamp
         future_idx = g[TIMESTAMP_COL].searchsorted(g["future_ts"], side="left")
 
-        # Compute future prices vectorized (much faster than list comp)
-        future_prices = pd.Series([None] * len(g), index=g.index)
-        valid_mask = future_idx < len(g)
-        if valid_mask.any():
-            valid_indices = future_idx[valid_mask]
-            future_prices[valid_mask] = g.iloc[valid_indices][CLOSE_COL].values
+        # Compute future prices
+        future_prices = [
+            g.iloc[idx][CLOSE_COL] if idx < len(g) else None
+            for idx in future_idx
+        ]
         g["future_close"] = future_prices
 
-        # Vectorized label computation (100x faster than apply)
-        # Calculate price change ratio
-        price_change_ratio = (g["future_close"] - g[CLOSE_COL]) / (g[CLOSE_COL] + 1e-10)
-        
-        # Create label: -1 for NaN, 1 if >= threshold, 0 otherwise
-        g[LABEL_COL] = 0  # default
-        g.loc[g["future_close"].isna(), LABEL_COL] = -1
-        g.loc[price_change_ratio >= THRESHOLD_PCT, LABEL_COL] = 1
-        g[LABEL_COL] = g[LABEL_COL].astype("int8")
+        # Compute label: 1 if increase >= threshold, 0 if not, -1 if no valid future data
+        g[LABEL_COL] = g.apply(
+            lambda row: -1 if pd.isna(row["future_close"])
+            else int(((row["future_close"] - row[CLOSE_COL]) / (row[CLOSE_COL] + 0.0000000001)) >= THRESHOLD_PCT),
+            axis=1
+        ).astype("int8")
 
         labeled_frames.append(g)
 
@@ -182,7 +178,7 @@ def restore_ticker_delete_one_hot_and_save(input_csv_path: str, output_csv_path:
         input_csv_path: Path to CSV with one-hot encoded tickers.
         output_csv_path: Path to save CSV with restored ticker column.
     """
-    df = load_data(input_csv_path)
+    df = load_csv(input_csv_path)
 
     # Restore the ticker column from one-hot encoding
     df = restore_ticker_column(df)
@@ -191,7 +187,7 @@ def restore_ticker_delete_one_hot_and_save(input_csv_path: str, output_csv_path:
     ticker_cols = [c for c in df.columns if c.startswith(f"{TICKER_PREFIX}_")]
     df = df.drop(columns=ticker_cols)
 
-    save_data(df, output_csv_path)
+    save_csv(df, output_csv_path)
 
     print(f"Decoded tickers saved to: {output_csv_path}")
     print(f"Restored ticker column, removed {len(ticker_cols)} one-hot columns")
@@ -242,13 +238,13 @@ def remove_unlabeled(in_csv_path: str, out_csv_path: str) -> None:
         KeyError: If LABEL_COL is missing from input.
         IOError: If file operations fail.
     """
-    df = load_data(in_csv_path)
+    df = load_csv(in_csv_path)
     
     if LABEL_COL not in df.columns:
         raise KeyError(f"Missing {LABEL_COL} column in {in_csv_path}")
     
     df_valid = df[df[LABEL_COL] != -1].copy()
-    save_data(df_valid, out_csv_path)
+    save_csv(df_valid, out_csv_path)
 
 
 def pre_split_preprocess(in_csv_path: str, out_csv_path: str) -> None:
@@ -271,7 +267,7 @@ def pre_split_preprocess(in_csv_path: str, out_csv_path: str) -> None:
     """
     if not Path(in_csv_path).exists():
         raise FileNotFoundError(f"Input CSV not found: {in_csv_path}")
-    df = load_data(in_csv_path)
+    df = load_csv(in_csv_path)
     
     # Add technical features to capture momentum, trend, and volatility
     df = add_technical_features(df)
@@ -279,7 +275,7 @@ def pre_split_preprocess(in_csv_path: str, out_csv_path: str) -> None:
     df = create_future_labels(df)
     df = one_hot_encode(df)
     df = drop_sparse_columns(df)
-    save_data(df, out_csv_path)
+    save_csv(df, out_csv_path)
 
 
 # =======================================================

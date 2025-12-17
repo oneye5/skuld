@@ -29,21 +29,18 @@ TIMESTAMP_SCALED_COL = "scaled_timestamp"  # Added columns
 
 # === FILE PATHS ===
 _root = get_skuld_root()
-# Intermediate files use Parquet for speed (10-100x faster than CSV)
-TRAIN_CSV_PATH = _root / "python-ml" / "data" / "train.parquet"
-TEST_CSV_PATH = _root / "python-ml" / "data" / "test.parquet"
-PREPROCESSED_CSV_PATH = _root / "python-ml" / "data" / "data_preprocessed.parquet"
-WIDE_CSV_PATH = _root / "python-ml" / "data" / "data_wide_imputed.parquet"
-
-# External-facing files stay as CSV for easy inspection
+TRAIN_CSV_PATH = _root / "python-ml" / "data" / "train.csv"
+TEST_CSV_PATH = _root / "python-ml" / "data" / "test.csv"
+PREPROCESSED_CSV_PATH = _root / "python-ml" / "data" / "data_preprocessed.csv"
 MODEL_PKL_PATH = _root / "python-ml" / "data" / "model.pkl"
-PREDICTION_CSV_PATH = _root / "python-ml" / "data" / "predictions.csv"  # External CSV
-LONG_CSV_PATH = _root / "data" / "data_long.csv"  # Input CSV
+PREDICTION_CSV_PATH = _root / "python-ml" / "data" / "predictions.csv"
+LONG_CSV_PATH = _root / "data" / "data_long.csv"
+WIDE_CSV_PATH = _root / "python-ml" / "data" / "data_wide_imputed.csv"
 PY_DATA_DIR_PATH = _root / "python-ml" / "data"
-AGGREGATE_PREDICTIONS_CSV_PATH = _root / "python-ml" / "data" / "aggregate_predictions.csv"  # External CSV
-TRADE_SIMULATION_CSV_PATH = _root / "data" / "trade_simulation.csv"  # External CSV
-EVALUATION_RESULTS_CSV_PATH = _root / "data" / "evaluation_metrics.csv"  # External CSV
-FINAL_PREDICTIONS_CSV_PATH = _root / "data" / "predictions.csv"  # External CSV
+AGGREGATE_PREDICTIONS_CSV_PATH = _root / "python-ml" / "data" / "aggregate_predictions.csv"
+TRADE_SIMULATION_CSV_PATH = _root / "data" / "trade_simulation.csv"
+EVALUATION_RESULTS_CSV_PATH = _root / "data" / "evaluation_metrics.csv"
+FINAL_PREDICTIONS_CSV_PATH = _root / "data" / "predictions.csv"
 
 # === FEATURE ENGINEERING FLAGS ===
 FE_ENABLE_DROP_SPARSE_COLUMNS: bool = True

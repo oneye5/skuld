@@ -6,7 +6,7 @@ from src.preprocessing.pre_split_preprocessing import pre_split_preprocess, remo
 from src.preprocessing.train_test_split import split_and_save
 from src.preprocessing.post_split_preprocessing import post_split_preprocessing_train, post_split_preprocessing_test
 from src.utils.clean_data_directory import clean_data_directory
-from src.utils.io_utils import load_data, save_csv
+from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
 from src.config.config import *
 from src.learner.learner import train_model, predict
@@ -27,9 +27,6 @@ def run() -> None:
     3. Apply pre-split preprocessing (labeling, encoding, feature selection)
     4. Remove rows with invalid labels
     5. Run multiple iterations of sliding window evaluation
-    
-    OPTIMIZATION: Preprocessed data is loaded once and cached in memory,
-    significantly reducing I/O overhead across iterations.
     """
     clean_data_directory()
     long_to_wide_and_impute(str(LONG_CSV_PATH), str(WIDE_CSV_PATH))
@@ -37,9 +34,7 @@ def run() -> None:
     remove_unlabeled(str(PREPROCESSED_CSV_PATH), str(PREPROCESSED_CSV_PATH))
 
     try:
-        # Load preprocessed data ONCE - will be cached for all iterations
-        # This is a major optimization: no repeated disk I/O
-        full_df = load_data(str(PREPROCESSED_CSV_PATH))
+        full_df = load_csv(str(PREPROCESSED_CSV_PATH))
     except Exception as e:
         print(f"Error loading preprocessed data: {e}")
         return
@@ -50,7 +45,6 @@ def run() -> None:
 
     data_end_ts = full_df[TIMESTAMP_COL].max()
     print(f"\nStarting {EVAL_TEST_ITERATIONS} sliding window iterations...")
-    print(f"Preprocessed data cached in memory ({len(full_df)} rows, {len(full_df.columns)} columns)")
 
     for i in range(0, EVAL_TEST_ITERATIONS):
         try:
@@ -79,14 +73,12 @@ def run_iteration(iteration: int, anchor_ts: int) -> None:
     
     try:
         # Split data BEFORE scaling to prevent leakage
-        # NOTE: split_and_save loads from cache, very fast
         split_and_save(str(PREPROCESSED_CSV_PATH), from_ts, to_ts)
         
         # Scale training and test data separately
         scaler_path = get_scaler_path_for_iteration(iteration)
-        # Use parquet extension for intermediate scaled files
-        train_scaled_path = str(TRAIN_CSV_PATH).replace('.parquet', '_scaled.parquet')
-        test_scaled_path = str(TEST_CSV_PATH).replace('.parquet', '_scaled.parquet')
+        train_scaled_path = str(TRAIN_CSV_PATH).replace('.csv', '_scaled.csv')
+        test_scaled_path = str(TEST_CSV_PATH).replace('.csv', '_scaled.csv')
         
         # Fit scaler on training data and scale it
         post_split_preprocessing_train(str(TRAIN_CSV_PATH), train_scaled_path, scaler_path)

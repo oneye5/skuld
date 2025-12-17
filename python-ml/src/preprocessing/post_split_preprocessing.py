@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 
 from src.config.config import *
 from src.preprocessing.feature_engineering import scale_data_with_scaler
-from src.utils.io_utils import load_data, save_data
+from src.utils.csv_utils import load_csv, save_csv
 
 
 def post_split_preprocessing_train(csv_in_path: str, csv_out_path: str, scaler_path: str) -> None:
@@ -23,29 +23,27 @@ def post_split_preprocessing_train(csv_in_path: str, csv_out_path: str, scaler_p
         csv_out_path: Path to save scaled training CSV.
         scaler_path: Path to save the fitted RobustScaler.
     """
-    df = load_data(csv_in_path)
+    df = load_csv(csv_in_path)
     
     # CRITICAL: Clean NaN and infinity values BEFORE scaling
     # These can cause issues with RobustScaler and model training
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
     
-    # Replace infinity with NaN first (in-place where possible)
-    for col in numeric_cols:
-        df[col] = df[col].replace([np.inf, -np.inf], np.nan)
+    # Replace infinity with NaN first
+    df[numeric_cols] = df[numeric_cols].replace([np.inf, -np.inf], np.nan)
     
     # Fill NaN values per ticker if available, otherwise globally
     if 'ticker' in df.columns:
         # Use groupby().transform() for vectorized per-ticker filling (much faster than explicit loop)
-        for col in numeric_cols:
-            df[col] = df.groupby('ticker')[col].transform(lambda x: x.ffill().bfill())
+        df[numeric_cols] = df.groupby('ticker')[numeric_cols].transform(
+            lambda x: x.ffill().bfill()
+        )
     else:
         # Ticker column not available, use global forward/backward fill
-        for col in numeric_cols:
-            df[col] = df[col].ffill().bfill()
+        df[numeric_cols] = df[numeric_cols].ffill().bfill()
     
     # As last resort, fill remaining NaNs with 0 (should be very few after ticker grouping)
-    for col in numeric_cols:
-        df[col] = df[col].fillna(0)
+    df[numeric_cols] = df[numeric_cols].fillna(0)
     
     # Save column info for alignment with test data
     # This ensures train and test have identical columns
@@ -62,7 +60,7 @@ def post_split_preprocessing_train(csv_in_path: str, csv_out_path: str, scaler_p
     Path(scaler_path).parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(scaler, scaler_path)
     
-    save_data(df, csv_out_path)
+    save_csv(df, csv_out_path)
 
 
 def post_split_preprocessing_test(csv_in_path: str, csv_out_path: str, scaler_path: str) -> None:
@@ -84,28 +82,26 @@ def post_split_preprocessing_test(csv_in_path: str, csv_out_path: str, scaler_pa
     if not Path(scaler_path).exists():
         raise FileNotFoundError(f"Scaler not found at {scaler_path}")
     
-    df = load_data(csv_in_path)
+    df = load_csv(csv_in_path)
     
     # CRITICAL: Clean NaN and infinity values BEFORE scaling (same as training)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
     
-    # Replace infinity with NaN first (in-place where possible)
-    for col in numeric_cols:
-        df[col] = df[col].replace([np.inf, -np.inf], np.nan)
+    # Replace infinity with NaN first
+    df[numeric_cols] = df[numeric_cols].replace([np.inf, -np.inf], np.nan)
     
     # Fill NaN values per ticker if available, otherwise globally
     if 'ticker' in df.columns:
         # Use groupby().transform() for vectorized per-ticker filling (much faster than explicit loop)
-        for col in numeric_cols:
-            df[col] = df.groupby('ticker')[col].transform(lambda x: x.ffill().bfill())
+        df[numeric_cols] = df.groupby('ticker')[numeric_cols].transform(
+            lambda x: x.ffill().bfill()
+        )
     else:
         # Ticker column not available, use global forward/backward fill
-        for col in numeric_cols:
-            df[col] = df[col].ffill().bfill()
+        df[numeric_cols] = df[numeric_cols].ffill().bfill()
     
     # As last resort, fill remaining NaNs with 0 (should be very few after ticker grouping)
-    for col in numeric_cols:
-        df[col] = df[col].fillna(0)
+    df[numeric_cols] = df[numeric_cols].fillna(0)
     
     # Load training column info and align test columns EXACTLY
     columns_path = scaler_path.replace('.pkl', '_columns.pkl')
@@ -145,7 +141,7 @@ def post_split_preprocessing_test(csv_in_path: str, csv_out_path: str, scaler_pa
 
     df, _, _ = scale_data_with_scaler(df, scaler=scaler, fit_scaler=False, continuous_cols=continuous_cols)
     
-    save_data(df, csv_out_path)
+    save_csv(df, csv_out_path)
 
 
 def post_split_preprocessing(csv_in_path: str, csv_out_path: str) -> None:
@@ -159,9 +155,9 @@ def post_split_preprocessing(csv_in_path: str, csv_out_path: str) -> None:
         csv_in_path: Path to input CSV.
         csv_out_path: Path to save output CSV.
     """
-    df = load_data(csv_in_path)
+    df = load_csv(csv_in_path)
     # No scaling applied here to prevent leakage
-    save_data(df, csv_out_path)
+    save_csv(df, csv_out_path)
 
 
 if __name__ == "__main__":

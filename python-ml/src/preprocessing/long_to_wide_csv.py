@@ -2,7 +2,7 @@
 from pathlib import Path
 import pandas as pd
 from src.config.config import *
-from src.utils.io_utils import load_data, save_data
+from src.utils.csv_utils import load_csv, save_csv
 
 
 def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str) -> None:
@@ -20,7 +20,7 @@ def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str) -> None:
         long_csv_path: Path to input long-format CSV.
         imputed_csv_path: Path to save wide-format imputed CSV.
     """
-    df = load_data(long_csv_path)
+    df = load_csv(long_csv_path)
 
     # Split macro and ticker data - use boolean indexing with .loc for clarity
     is_macro = df['ticker'].isna()
@@ -97,7 +97,7 @@ def long_to_wide_and_impute(long_csv_path: str, imputed_csv_path: str) -> None:
 
     # Remove column index name
     df_final.columns.name = None
-    save_data(df_final, imputed_csv_path)
+    save_csv(df_final, imputed_csv_path)
     print(f"Imputed wide CSV saved to {imputed_csv_path}")
 
 

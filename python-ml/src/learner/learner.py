@@ -13,7 +13,7 @@ from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistG
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.utils.class_weight import compute_class_weight
-from src.utils.io_utils import load_data, save_data, save_csv
+from src.utils.csv_utils import load_csv, save_csv
 from src.config.config import *
 
 
@@ -51,6 +51,17 @@ def build_default_model(class_weights: Optional[Dict[int, float]] = None) -> Vot
     sw = class_weights.get(1, 1.0)  # sample weight for positive class
     
     estimators = [
+        ('rf', RandomForestClassifier(
+            n_estimators=200,
+            max_depth=20,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            max_features='sqrt',
+            class_weight='balanced',
+            random_state=42,
+            n_jobs=-1,
+            bootstrap=True
+        )),
         ('et', ExtraTreesClassifier(
             n_estimators=200,
             max_depth=20,
@@ -61,6 +72,14 @@ def build_default_model(class_weights: Optional[Dict[int, float]] = None) -> Vot
             random_state=42,
             n_jobs=-1,
             bootstrap=True
+        )),
+        ('hgb', HistGradientBoostingClassifier(
+            max_iter=300,
+            max_depth=10,
+            learning_rate=0.05,
+            random_state=42,
+            early_stopping=False,
+            class_weight='balanced'
         )),
         ('xgb', XGBClassifier(
             n_estimators=300,
@@ -77,6 +96,20 @@ def build_default_model(class_weights: Optional[Dict[int, float]] = None) -> Vot
             tree_method='hist',
             eval_metric='logloss',
             verbosity=0
+        )),
+        ('lgbm', LGBMClassifier(
+            n_estimators=300,
+            max_depth=8,
+            learning_rate=0.05,
+            num_leaves=31,
+            min_child_samples=20,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            random_state=42,
+            class_weight='balanced',
+            verbose=-1
         )),
     ]
     model = VotingClassifier(estimators=estimators, voting='soft', n_jobs=-1)
@@ -175,7 +208,7 @@ def train_model(train_csv_path: Union[str, Path], model_save_path: Union[str, Pa
         raise FileNotFoundError(f"Training CSV not found: {train_csv_path}")
     
     try:
-        df = load_data(train_csv_path)
+        df = load_csv(train_csv_path)
     except Exception as e:
         raise ValueError(f"Failed to load training data: {str(e)}")
 
@@ -256,7 +289,7 @@ def predict(model_path: Union[str, Path], input_csv_path: Union[str, Path], outp
         model = joblib.load(model_path)
 
         # Load data
-        df = load_data(input_csv_path)
+        df = load_csv(input_csv_path)
     except Exception as e:
         raise ValueError(f"Failed to load model or data: {str(e)}")
 
@@ -280,7 +313,6 @@ def predict(model_path: Union[str, Path], input_csv_path: Union[str, Path], outp
         raise RuntimeError(f"Prediction failed: {str(e)}")
 
     Path(output_csv_path).parent.mkdir(parents=True, exist_ok=True)
-    # Keep predictions as CSV for easy inspection (external-facing file)
     save_csv(df, output_csv_path)
 
 

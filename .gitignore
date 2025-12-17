@@ -58,4 +58,3 @@ python-ml/.continue/rules/new-rule.md
 python-ml/.coverage
 *.pyc
 *.pkl
-*.parquet

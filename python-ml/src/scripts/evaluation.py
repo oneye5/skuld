@@ -15,7 +15,7 @@ from src.config.config import (
     PY_DATA_DIR_PATH, PREPROCESSED_CSV_PATH, AGGREGATE_PREDICTIONS_CSV_PATH,
     EVAL_CLASSIFICATION_BOUNDARY, TRADE_SIMULATION_CSV_PATH, EVALUATION_RESULTS_CSV_PATH
 )
-from src.utils.io_utils import load_data, save_csv
+from src.utils.csv_utils import load_csv, save_csv
 
 # =======================================================
 # === MAIN EVALUATION FUNCTION ==========================
@@ -44,9 +44,9 @@ def run_evaluation(
     """
     if not (0 <= probability_threshold <= 1):
         raise ValueError(f"probability_threshold must be in [0, 1], got {probability_threshold}")
-    # Load predictions (auto-detects CSV or Parquet from extension)
+    # Load predictions
     if isinstance(predictions, (str, Path)):
-        preds_df = load_data(str(predictions))
+        preds_df = load_csv(str(predictions))
     elif isinstance(predictions, pd.DataFrame):
         preds_df = predictions
     else:
@@ -57,8 +57,7 @@ def run_evaluation(
         return pd.DataFrame(), pd.DataFrame()
 
     print("Loading preprocessed data...")
-    # Auto-detect format (now Parquet for intermediate files)
-    preprocessed_data = load_data(labeled_csv_path)
+    preprocessed_data = load_csv(labeled_csv_path)
     preprocessed_data = restore_ticker_column(preprocessed_data)
 
     print("Using preprocessed data for simulation...")

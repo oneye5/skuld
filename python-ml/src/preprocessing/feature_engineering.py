@@ -1,5 +1,3 @@
-from operator import contains
-
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
 
@@ -7,7 +5,6 @@ from src.config.config import *
 
 
 def min_max_scale_time(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
     global_min = df[TIMESTAMP_COL].min()
     global_max = df[TIMESTAMP_COL].max()
     df[TIMESTAMP_SCALED_COL] = (df[TIMESTAMP_COL] - global_min) / (global_max - global_min)
@@ -19,7 +16,7 @@ def drop_sparse_columns(df: pd.DataFrame, min_non_zero_ratio: float = 0.01, min_
 
     for col in df.columns:
         # Always keep timestamp and label columns
-        if col in [TIMESTAMP_COL, LABEL_COL, TIMESTAMP_SCALED_COL] or col.__contains__(TICKER_PREFIX):
+        if col in [TIMESTAMP_COL, LABEL_COL, TIMESTAMP_SCALED_COL]:
             cols_to_keep.append(col)
             continue
 
@@ -63,7 +60,6 @@ def scale_data(df: pd.DataFrame) -> pd.DataFrame:
         if col not in true_binary_cols
            and col != TIMESTAMP_COL
            and col != LABEL_COL
-           and col != CLOSE_COL
     ]
 
     # 1. Ensure columns are floating point to prevent truncation (as discussed previously)

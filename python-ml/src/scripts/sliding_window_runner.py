@@ -24,7 +24,7 @@ def run():
         run_iteration(i, data_end_ts)
 
 def run_iteration(i, anchor_ts):
-    print(f"Running sliding window iteration {i + 1} / {EVAL_TEST_ITERATIONS}")
+    print(f"Running sliding window iteration {i} / {EVAL_TEST_ITERATIONS}")
     shift_ts = EVAL_TIME_PROGRESSION * -i
     to_ts = anchor_ts - TEST_SPLIT_DURATION_MILLIS * i + shift_ts
     from_ts = to_ts - TEST_SPLIT_DURATION_MILLIS + shift_ts

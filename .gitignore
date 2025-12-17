@@ -59,4 +59,3 @@ python-ml/.coverage
 *.pyc
 *.pkl
 *.parquet
-python-ml/.github/copilot-instructions.md

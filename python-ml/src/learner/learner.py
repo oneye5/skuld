@@ -21,17 +21,63 @@ from src.config.config import *
 # === MODEL FACTORY ====================================
 # =======================================================
 
-def build_default_model() -> VotingClassifier:
+def build_default_model(class_weights: Optional[Dict[int, float]] = None) -> VotingClassifier:
+    """Build default ensemble model using soft voting.
+    
+    Combines multiple classifier types for robust predictions:
+    - Random Forest
+    - Extra Trees
+    - Histogram-based Gradient Boosting
+    - XGBoost
+    - LightGBM
+    
+    Hyperparameters are tuned for better performance:
+    - More estimators for stability
+    - Deeper trees for complex patterns
+    - Class weighting for imbalanced data
+    - Better regularization
+    
+    Args:
+        class_weights: Dictionary of class weights for imbalanced data.
+                      If None, will use balanced class weight.
+    
+    Returns:
+        VotingClassifier: Configured ensemble model.
     """
-    Assemble the default ensemble model (soft voting).
-    Easily extensible by changing the estimators list or adding logic here.
-    """
+    if class_weights is None:
+        class_weights = {0: 1, 1: 1}
+    
+    # Extract weights for individual estimators
+    sw = class_weights.get(1, 1.0)  # sample weight for positive class
+    
     estimators = [
-        ('rf', RandomForestClassifier(random_state=42)),
-        ('et', ExtraTreesClassifier(random_state=42)),
-        ('hgb', HistGradientBoostingClassifier(random_state=42)),
-        ('xgb', XGBClassifier(random_state=42)),
-        ('lgbm', LGBMClassifier(random_state=42, verbose=-1)),
+        ('et', ExtraTreesClassifier(
+            n_estimators=200,
+            max_depth=20,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            max_features='sqrt',
+            class_weight='balanced',
+            random_state=42,
+            n_jobs=-1,
+            bootstrap=True
+        )),
+        ('xgb', XGBClassifier(
+            n_estimators=300,
+            max_depth=8,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_weight=1,
+            gamma=0,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            random_state=42,
+            scale_pos_weight=sw,
+            tree_method='hist',
+            eval_metric='logloss',
+            verbosity=0
+        )),
     ]
     model = VotingClassifier(estimators=estimators, voting='soft', n_jobs=-1)
     return model
@@ -154,7 +200,7 @@ def train_model(train_csv_path: Union[str, Path], model_save_path: Union[str, Pa
     class_weights = compute_class_weights_for_data(y)
 
     # Build model
-    model = build_default_model()
+    model = build_default_model(class_weights=class_weights)
 
     # Fit model
     try:

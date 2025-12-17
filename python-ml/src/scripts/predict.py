@@ -30,18 +30,22 @@ def run():
     long_to_wide_and_impute(LONG_CSV_PATH, WIDE_CSV_PATH)
     pre_split_preprocess(WIDE_CSV_PATH, PREPROCESSED_CSV_PATH)
     split_last_occurring_tickers(PREPROCESSED_CSV_PATH, TRAIN_CSV_PATH, TEST_CSV_PATH)
+    
     # Scale data separately to prevent leakage
     scaler_path = str(Path(PY_DATA_DIR_PATH) / "scaler_final.pkl")
     train_scaled_path = str(TRAIN_CSV_PATH).replace('.csv', '_scaled.csv')
     test_scaled_path = str(TEST_CSV_PATH).replace('.csv', '_scaled.csv')
+    
     # Fit scaler on training data and scale it
     post_split_preprocessing_train(str(TRAIN_CSV_PATH), train_scaled_path, scaler_path)
+    
     # Apply training scaler to test data
     post_split_preprocessing_test(str(TEST_CSV_PATH), test_scaled_path, scaler_path)
+    
     # Train and predict using scaled data
     train_model(train_scaled_path, str(MODEL_PKL_PATH))
     predict(str(MODEL_PKL_PATH), test_scaled_path, str(PREDICTION_CSV_PATH))
-    restore_ticker_delete_one_hot_and_save(str(PREDICTION_CSV_PATH), str(FINAL_PREDICTIONS_CSV_PATH))
+    restore_ticker_delete_one_hot_and_save(str(PREDICTION_CSV_PATH), str(PREDICTION_CSV_PATH))
     strip_data(str(FINAL_PREDICTIONS_CSV_PATH), str(FINAL_PREDICTIONS_CSV_PATH))
 
 

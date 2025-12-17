@@ -22,8 +22,6 @@ public class Main {
 		new YfPrices();
 		new NzLaborStats();
 
-		// TODO : add NZX PDF scraper
-
 		IngestManager.INSTANCE.fetchDataFromSources();
 		IngestManager.INSTANCE.printSubset(100);
 

@@ -11,7 +11,6 @@ import pandas as pd
 
 from src.config.config import *
 from src.preprocessing.feature_engineering import to_feature_engineered
-from src.preprocessing.technical_features import add_technical_features
 from src.tests.utils import print_sample_data
 from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
@@ -239,11 +238,10 @@ def pre_split_preprocess(in_csv_path: str, out_csv_path: str) -> None:
     """Execute complete pre-split preprocessing pipeline.
     
     Steps:
-    1. Add technical indicators (momentum, trend, volatility)
-    2. Create future labels based on price movements
-    3. One-hot encode ticker column
-    4. Drop sparse columns with insufficient data variation
-    5. Save preprocessed data
+    1. Create future labels based on price movements
+    2. One-hot encode ticker column
+    3. Drop sparse columns with insufficient data variation
+    4. Save preprocessed data
     
     Args:
         in_csv_path: Path to input wide-format CSV.
@@ -256,10 +254,6 @@ def pre_split_preprocess(in_csv_path: str, out_csv_path: str) -> None:
     if not Path(in_csv_path).exists():
         raise FileNotFoundError(f"Input CSV not found: {in_csv_path}")
     df = load_csv(in_csv_path)
-    
-    # Add technical features to capture momentum, trend, and volatility
-    df = add_technical_features(df)
-    
     df = create_future_labels(df)
     df = one_hot_encode(df)
     df = drop_sparse_columns(df)

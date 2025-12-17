@@ -74,9 +74,11 @@ def check_data_quality(df: pd.DataFrame, name: str = "DataFrame") -> Dict[str, a
     inf_mask = np.isinf(numeric_df.values)
     results['total_infinites'] = inf_mask.sum()
     
-    # Check for constant columns (no variance) - use vectorized nunique for speed
-    nunique_counts = df.nunique()
-    constant_cols = nunique_counts[nunique_counts <= 1].index.tolist()
+    # Check for constant columns (no variance)
+    constant_cols = []
+    for col in df.columns:
+        if df[col].nunique() <= 1:
+            constant_cols.append(col)
     results['constant_columns'] = constant_cols
     
     # Check for label balance (if label column exists)
@@ -169,31 +171,32 @@ def print_data_quality_report(df: pd.DataFrame, name: str = "DataFrame"):
     """
     quality = check_data_quality(df, name)
     
-    print(f"\n{'='*50}")
-    print(f"DATA QUALITY: {quality['name']}")
-    print(f"{'='*50}")
+    print(f"\n{'='*60}")
+    print(f"DATA QUALITY REPORT: {quality['name']}")
+    print(f"{'='*60}")
     
     print(f"Shape: {quality['shape']}")
-    print(f"Empty: {quality['empty']} | Duplicates: {quality['duplicates']} | Total NaN: {quality['total_nans']} | Infinites: {quality['total_infinites']}")
+    print(f"Empty: {quality['empty']}")
+    print(f"Duplicates: {quality['duplicates']}")
+    print(f"Total NaN values: {quality['total_nans']}")
     
     if quality['columns_with_nans']:
-        print("Columns with NaN:", end="")
+        print("Columns with NaN:")
         for col, count in quality['columns_with_nans'].items():
             pct = count / quality['shape'][0] * 100
-            print(f" {col}({pct:.0f}%)", end="")
-        print()
+            print(f"  {col}: {count} ({pct:.1f}%)")
     
-    # Show constant columns count but not full list (too verbose)
-    const_count = len(quality['constant_columns'])
-    if const_count > 0:
-        print(f"Constant columns: {const_count}")
+    print(f"Total infinite values: {quality['total_infinites']}")
+    
+    if quality['constant_columns']:
+        print(f"Constant columns (no variance): {quality['constant_columns']}")
     
     if 'label_distribution' in quality:
-        dist = quality['label_distribution']
-        print(f"Label dist: {dict(sorted(dist.items()))} | Imbalance ratio: {quality['label_balance_ratio']:.2f}")
+        print(f"Label distribution: {quality['label_distribution']}")
+        print(f"Class imbalance ratio: {quality['label_balance_ratio']:.2f}")
     
-    print(f"Quality Score: {quality['quality_score']:.0%}")
-    print(f"{'='*50}\n")
+    print(f"Overall Quality Score: {quality['quality_score']:.2%}")
+    print(f"{'='*60}\n")
     
     return quality
 

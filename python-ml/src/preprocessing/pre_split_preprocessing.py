@@ -12,6 +12,7 @@ import pandas as pd
 from src.config.config import *
 from src.preprocessing.feature_engineering import to_feature_engineered
 from src.preprocessing.technical_features import add_technical_features
+from src.tests.utils import print_sample_data
 from src.utils.csv_utils import load_csv, save_csv
 from src.utils.path_utils import get_skuld_root
 
@@ -41,43 +42,30 @@ def drop_sparse_columns(
     
     if min_unique_values < 1:
         raise ValueError(f"min_unique_values must be >= 1, got {min_unique_values}")
-    
-    # Vectorized approach: compute nunique once, then filter in bulk
-    nunique = df.nunique()
-    # Only include special columns that actually exist in the dataframe
-    special_cols = [col for col in [TIMESTAMP_COL, LABEL_COL, TIMESTAMP_SCALED_COL] if col in df.columns]
-    
-    # Boolean mask: keep special columns or columns with enough unique values
-    is_special = df.columns.isin(special_cols) | df.columns.str.startswith(TICKER_PREFIX)
-    has_variance = nunique >= min_unique_values
-    keep_mask = is_special | has_variance
-    
-    cols_to_keep = df.columns[keep_mask].tolist()
-    
-    # Additional checks for binary and continuous columns with non-zero ratio threshold
-    cols_to_check = [col for col in cols_to_keep if col not in special_cols]
-    final_keep = [col for col in special_cols if col in cols_to_keep] + [col for col in cols_to_check if col in df.columns]
-    
-    for col in cols_to_check:
-        if col not in df.columns:
+    cols_to_keep = []
+
+    for col in df.columns:
+        # Always keep timestamp and label columns
+        if col in [TIMESTAMP_COL, LABEL_COL, TIMESTAMP_SCALED_COL] or col.__contains__(TICKER_PREFIX):
+            cols_to_keep.append(col)
             continue
-        
+
+        # Check if column has minimum unique values (remove constants)
+        if df[col].nunique() < min_unique_values:
+            continue
+
         # For binary columns (0/1), check if they have enough positive cases
         unique_vals = set(df[col].unique())
         if unique_vals.issubset({0, 1, 0.0, 1.0}):
             # Count non-zero values for binary columns
             non_zero_ratio = (df[col] != 0).sum() / len(df)
-            if non_zero_ratio < min_non_zero_ratio:
-                if col in final_keep:
-                    final_keep.remove(col)
+            if non_zero_ratio >= min_non_zero_ratio:
+                cols_to_keep.append(col)
         else:
             # For continuous columns, check for non-null ratio
             non_null_ratio = df[col].notna().sum() / len(df)
-            if non_null_ratio < min_non_zero_ratio:
-                if col in final_keep:
-                    final_keep.remove(col)
-    
-    cols_to_keep = final_keep
+            if non_null_ratio >= min_non_zero_ratio:
+                cols_to_keep.append(col)
 
     dropped_cols = set(df.columns) - set(cols_to_keep)
 

@@ -140,11 +140,7 @@ class TechnicalFeatures:
         Returns:
             Series of positions (0-1).
         """
-        # Avoid division by zero when upper == lower (zero volatility)
-        band_width = upper - lower
-        band_width = band_width.replace(0, np.nan)  # Replace 0 width with NaN
-        position = (close - lower) / band_width
-        position = position.fillna(0.5)  # When zero volatility, default to middle
+        position = (close - lower) / (upper - lower)
         return position.clip(0, 1)
     
     @staticmethod
@@ -188,10 +184,7 @@ class TechnicalFeatures:
         Returns:
             Series of ATR ratios (volatility %).
         """
-        # Avoid division by zero when price is 0 or NaN
-        ratio = atr / close.replace(0, np.nan)
-        ratio = ratio.fillna(0)  # Zero price -> zero ratio
-        return ratio.clip(0, 0.5)  # Cap at 50% to avoid extremes
+        return (atr / close).clip(0, 0.5)  # Cap at 50% to avoid extremes
     
     @staticmethod
     def ema(close: pd.Series, period: int = 50) -> pd.Series:
@@ -267,46 +260,6 @@ class TechnicalFeatures:
             Series of price change rates (0.05 = +5%).
         """
         return close.pct_change(periods=period).clip(-0.5, 0.5)
-    
-    @staticmethod
-    def price_momentum(close: pd.Series, period: int = 20) -> pd.Series:
-        """Price momentum: % change over lookback period.
-        
-        Captures trend strength and direction.
-        - Positive = uptrend (good)
-        - Negative = downtrend (avoid)
-        
-        Args:
-            close: Series of closing prices.
-            period: Lookback period (default 20).
-        
-        Returns:
-            Series of momentum values as percentage change.
-        """
-        return (close / close.shift(period) - 1).clip(-1, 1)
-    
-    @staticmethod
-    def volatility_adjusted_return(close: pd.Series, atr: pd.Series, period: int = 20) -> pd.Series:
-        """Risk-adjusted return: price change normalized by volatility.
-        
-        High ratio = strong trend relative to noise.
-        Low ratio = weak signal in noise.
-        
-        Good for entry signals: prefer high volatility-adjusted returns.
-        
-        Args:
-            close: Series of closing prices.
-            atr: Series of ATR values.
-            period: Lookback period for returns.
-        
-        Returns:
-            Series of volatility-adjusted returns.
-        """
-        returns = close.pct_change(periods=period)
-        # Avoid division by zero: use close.replace(0, NaN) then fillna(1)
-        vol_normalized = (atr / close.replace(0, np.nan)).fillna(1)
-        adj_return = returns / vol_normalized.replace(0, 1)
-        return adj_return.clip(-10, 10)
 
 
 def add_technical_features(df: pd.DataFrame, 
@@ -333,8 +286,6 @@ def add_technical_features(df: pd.DataFrame,
     - price_ema_ratio: Price to EMA ratio
     - volatility_zscore: Volatility Z-score
     - price_change_5d: 5-day price change rate
-    - price_momentum_20: 20-day price momentum
-    - volatility_adjusted_return: Risk-adjusted return signal
     
     Args:
         df: Input DataFrame with OHLCV data.
@@ -356,7 +307,7 @@ def add_technical_features(df: pd.DataFrame,
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
     
-    # Sort data for ticker group processing (no unnecessary copy)
+    df = df.copy()
     df = df.sort_values([ticker_col, timestamp_col]).reset_index(drop=True)
     
     # Initialize feature columns
@@ -364,26 +315,24 @@ def add_technical_features(df: pd.DataFrame,
         'rsi_14', 'macd', 'macd_signal', 'macd_hist',
         'momentum_10', 'bb_upper', 'bb_middle', 'bb_lower', 'bb_position',
         'atr_14', 'atr_ratio', 'ema_50', 'price_ema_ratio',
-        'volatility_zscore', 'price_change_5d', 'price_momentum_20',
-        'volatility_adjusted_return'
+        'volatility_zscore', 'price_change_5d'
     ]
     for col in feature_cols:
         df[col] = np.nan
     
     # Compute features per ticker to prevent data leakage
-    # Use dictionary to collect all results, then bulk assign (much faster than 20+ .loc operations)
-    feature_results = {col: np.full(len(df), np.nan) for col in feature_cols}
-    
     for ticker, group in df.groupby(ticker_col, sort=False):
         idx = group.index
-        idx_positions = np.where(df.index.isin(idx))[0]  # Get integer positions for bulk assignment
-        close_series = pd.Series(group[close_col].values, index=idx)
-        high_series = pd.Series(group[high_col].values, index=idx)
-        low_series = pd.Series(group[low_col].values, index=idx)
+        close = group[close_col].values
+        high = group[high_col].values
+        low = group[low_col].values
+        close_series = pd.Series(close, index=idx)
+        high_series = pd.Series(high, index=idx)
+        low_series = pd.Series(low, index=idx)
         
         # === MOMENTUM ===
         rsi = TechnicalFeatures.rsi(close_series, period=TechnicalFeatures.LOOKBACK_RSI)
-        feature_results['rsi_14'][idx_positions] = rsi.values
+        df.loc[idx, 'rsi_14'] = rsi.values
         
         # === MACD ===
         macd, signal, hist = TechnicalFeatures.macd(
@@ -392,59 +341,48 @@ def add_technical_features(df: pd.DataFrame,
             slow=TechnicalFeatures.LOOKBACK_MACD_SLOW,
             signal=TechnicalFeatures.LOOKBACK_MACD_SIGNAL
         )
-        feature_results['macd'][idx_positions] = macd.values
-        feature_results['macd_signal'][idx_positions] = signal.values
-        feature_results['macd_hist'][idx_positions] = hist.values
+        df.loc[idx, 'macd'] = macd.values
+        df.loc[idx, 'macd_signal'] = signal.values
+        df.loc[idx, 'macd_hist'] = hist.values
         
         # === MOMENTUM ===
         momentum = TechnicalFeatures.momentum(close_series, period=TechnicalFeatures.LOOKBACK_MOMENTUM)
-        feature_results['momentum_10'][idx_positions] = momentum.values
+        df.loc[idx, 'momentum_10'] = momentum.values
         
         # === BOLLINGER BANDS ===
         bb_upper, bb_middle, bb_lower = TechnicalFeatures.bollinger_bands(
             close_series, 
             period=TechnicalFeatures.LOOKBACK_BB
         )
-        feature_results['bb_upper'][idx_positions] = bb_upper.values
-        feature_results['bb_middle'][idx_positions] = bb_middle.values
-        feature_results['bb_lower'][idx_positions] = bb_lower.values
+        df.loc[idx, 'bb_upper'] = bb_upper.values
+        df.loc[idx, 'bb_middle'] = bb_middle.values
+        df.loc[idx, 'bb_lower'] = bb_lower.values
         
         bb_pos = TechnicalFeatures.bb_position(close_series, bb_upper, bb_lower)
-        feature_results['bb_position'][idx_positions] = bb_pos.values
+        df.loc[idx, 'bb_position'] = bb_pos.values
         
         # === ATR ===
         atr = TechnicalFeatures.atr(high_series, low_series, close_series, 
                                    period=TechnicalFeatures.LOOKBACK_ATR)
-        feature_results['atr_14'][idx_positions] = atr.values
+        df.loc[idx, 'atr_14'] = atr.values
         
         atr_ratio = TechnicalFeatures.atr_ratio(close_series, atr)
-        feature_results['atr_ratio'][idx_positions] = atr_ratio.values
+        df.loc[idx, 'atr_ratio'] = atr_ratio.values
         
         # === EMA TREND ===
         ema = TechnicalFeatures.ema(close_series, period=TechnicalFeatures.LOOKBACK_EMA)
-        feature_results['ema_50'][idx_positions] = ema.values
+        df.loc[idx, 'ema_50'] = ema.values
         
         price_ema_ratio = TechnicalFeatures.price_position_ema(close_series, ema)
-        feature_results['price_ema_ratio'][idx_positions] = price_ema_ratio.values
+        df.loc[idx, 'price_ema_ratio'] = price_ema_ratio.values
         
         # === VOLATILITY ===
         vol_zscore = TechnicalFeatures.volatility_zscore(close_series, period=20)
-        feature_results['volatility_zscore'][idx_positions] = vol_zscore.values
+        df.loc[idx, 'volatility_zscore'] = vol_zscore.values
         
-        # === PRICE CHANGE & MOMENTUM ===
+        # === PRICE CHANGE ===
         price_change = TechnicalFeatures.price_change_rate(close_series, period=5)
-        feature_results['price_change_5d'][idx_positions] = price_change.values
-        
-        momentum = TechnicalFeatures.price_momentum(close_series, period=20)
-        feature_results['price_momentum_20'][idx_positions] = momentum.values
-        
-        # === VOLATILITY-ADJUSTED RETURN ===
-        vol_adj_return = TechnicalFeatures.volatility_adjusted_return(close_series, atr, period=20)
-        feature_results['volatility_adjusted_return'][idx_positions] = vol_adj_return.values
-    
-    # Bulk assign all features at once (much faster than 20+ individual .loc calls)
-    for col in feature_cols:
-        df[col] = feature_results[col]
+        df.loc[idx, 'price_change_5d'] = price_change.values
     
     # Fill remaining NaN values from rolling calculations using forward fill per ticker
     for ticker in df[ticker_col].unique():

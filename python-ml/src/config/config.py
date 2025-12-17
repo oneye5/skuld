@@ -15,7 +15,7 @@ LABEL_LOOKAHEAD_MILLIS = _year  # milliseconds into the future for price movemen
 TEST_SPLIT_DURATION_MILLIS = _day * 1.1  # test split size by time
 EVAL_TEST_ITERATIONS = 5  # how many iterations to run sliding window over
 EVAL_TIME_PROGRESSION = _year * 1.314159  # amount of time to advance evaluation per iteration
-EVAL_CLASSIFICATION_BOUNDARY = 0.75
+EVAL_CLASSIFICATION_BOUNDARY = 0.825
 
 # === COLUMN NAMES ===
 TIMESTAMP_COL = "timestamp"

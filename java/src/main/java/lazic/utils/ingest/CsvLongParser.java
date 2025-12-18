@@ -31,7 +31,7 @@ public class CsvLongParser {
 								.toEpochMilli()
 								: -1;
 
-				String ticker = dp.getTicker() != null ? dp.getTicker() : "";
+				String ticker = dp.getTicker() != null ? dp.getTicker() : "null";
 				String feature = dp.getFeatureName() != null ? dp.getFeatureName() : "";
 				String value = dp.getValue() != null ? dp.getValue().toString() : "";
 

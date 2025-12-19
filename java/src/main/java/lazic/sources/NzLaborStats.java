@@ -1,27 +1,20 @@
 package lazic.sources;
 
+import java.io.FileWriter;
 import java.time.LocalDateTime;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.Map;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.io.StringReader;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 
 public class NzLaborStats extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.CFE.EDS,DSD_REG_LABOUR@DF_LAB,2.0/A..NZL..POP+LF+EMP+UNE+LF_RATE+UNE_RATE+LF_RATE_SEXDIF+EMP_RATIO_SEXDIF+UNE_LT+UNE_LT_RATE+UNE_RATE_SEXDIF+EMP_RATIO.Y15T24+Y_GT15+Y15T64.M+F+_T.?startPeriod=1996&dimensionAtObservation=AllDimensions";
@@ -32,176 +25,124 @@ public class NzLaborStats extends DataSourceBase {
 	 */
 	@Override
 	public Set<DataPoint> getDataPoints() {
-
-		// fetch raw XML from remote
+		Set<DataPoint> dataPoints = new HashSet<>();
+		Gson gson = new Gson();
 		String rawData = WebHtmlGetter.get(URL);
 
-		if (rawData == null || rawData.isBlank()) {
-			System.err.println("NzLaborStats: no data retrieved from source.");
-			return java.util.Collections.emptySet();
-		}
-
-		// Optional: save raw response for debugging/analysis when system property set
 		try {
-			if ("true".equalsIgnoreCase(System.getProperty("skuld.saveRaw", "false"))) {
-				Path out = Paths.get("target", "data", "NzLaborStats_raw.txt");
-				Files.createDirectories(out.getParent());
-				Files.writeString(out, rawData, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
-						StandardOpenOption.TRUNCATE_EXISTING);
-			}
-		} catch (IOException e) {
-			System.err.println("NzLaborStats: failed to write raw data: " + e.getMessage());
-		}
+			JsonObject root = gson.fromJson(rawData, JsonObject.class);
+			JsonArray dataSets = root.getAsJsonArray("dataSets");
 
-		Set<DataPoint> parsed = parseXmlData(rawData);
-
-		// Optional: write parsed CSV for debugging when system property set
-		try {
-			if ("true".equalsIgnoreCase(System.getProperty("skuld.saveParsed", "false"))) {
-				Path parsedOut = Paths.get("target", "data", "NzLaborStats_parsed.csv");
-				Files.createDirectories(parsedOut.getParent());
-				try (java.io.BufferedWriter bw = Files.newBufferedWriter(parsedOut, StandardCharsets.UTF_8,
-						StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-					bw.write("timestamp,ticker,feature,value");
-					bw.newLine();
-					for (DataPoint dp : parsed) {
-						String ts = dp.getTimestamp() == null ? "" : dp.getTimestamp().toString();
-						String tic = dp.getTicker() == null ? "" : dp.getTicker();
-						String feat = dp.getFeatureName() == null ? "" : dp.getFeatureName();
-						String val = dp.getValue() == null ? "" : dp.getValue().toString();
-						bw.write(ts + "," + tic + "," + feat + "," + val);
-						bw.newLine();
-					}
-				}
-			}
-		} catch (IOException e) {
-			System.err.println("NzLaborStats: failed to write parsed CSV: " + e.getMessage());
-		}
-
-		return parsed;
-	}
-
-	/**
-	 * Parses SDMX-ML generic XML and extracts basic observations.
-	 * For each <generic:Obs> block we extract TIME_PERIOD, MEASURE (if present), AGE, SEX and ObsValue.
-	 */
-	private Set<DataPoint> parseXmlData(String rawData) {
-		var dataPoints = new java.util.HashSet<DataPoint>();
-
-		if (rawData == null || rawData.isBlank()) return dataPoints;
-
-		try {
-			DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-			dbf.setNamespaceAware(false);
-			DocumentBuilder db = dbf.newDocumentBuilder();
-			InputSource is = new InputSource(new StringReader(rawData));
-			Document doc = db.parse(is);
-
-			NodeList obsNodes = doc.getElementsByTagName("generic:Obs");
-			if (obsNodes == null || obsNodes.getLength() == 0) {
-				obsNodes = doc.getElementsByTagName("Obs");
+			if (dataSets == null || dataSets.size() == 0) {
+				return dataPoints;
 			}
 
-			for (int i = 0; i < obsNodes.getLength(); i++) {
-				Node obsNode = obsNodes.item(i);
-				if (obsNode == null || obsNode.getNodeType() != Node.ELEMENT_NODE) continue;
+			JsonObject dataSet = dataSets.get(0).getAsJsonObject();
+			JsonObject observations = dataSet.getAsJsonObject("observations");
 
-				String time = null;
-				String measure = null;
-				String age = null;
-				String sex = null;
-				String obsVal = null;
-				int unitMult = 0;
+			// Get the prepared date from header
+			JsonObject header = root.getAsJsonObject("header");
+			String preparedDate = header.get("prepared").getAsString();
+			LocalDateTime timestamp = LocalDateTime.parse(preparedDate.substring(0, 19));
 
-				// iterate children of <generic:Obs>
-				NodeList obsChildren = obsNode.getChildNodes();
-				for (int j = 0; j < obsChildren.getLength(); j++) {
-					Node c = obsChildren.item(j);
-					if (c.getNodeType() != Node.ELEMENT_NODE) continue;
-					String nodeName = c.getNodeName();
+			// Parse each observation
+			for (Map.Entry<String, JsonElement> entry : observations.entrySet()) {
+				String key = entry.getKey();
+				JsonArray values = entry.getValue().getAsJsonArray();
 
-					if (nodeName.endsWith("ObsKey") || nodeName.equals("generic:ObsKey") || nodeName.equals("ObsKey")) {
-						NodeList keyVals = c.getChildNodes();
-						for (int k = 0; k < keyVals.getLength(); k++) {
-							Node kv = keyVals.item(k);
-							if (kv.getNodeType() != Node.ELEMENT_NODE) continue;
-							if (!kv.getNodeName().endsWith("Value")) continue;
-							Element e = (Element) kv;
-							String id = e.getAttribute("id");
-							String val = e.getAttribute("value");
-							if (id == null) continue;
-							switch (id) {
-								case "TIME_PERIOD": time = val; break;
-								case "MEASURE": measure = val; break;
-								case "AGE": age = val; break;
-								case "SEX": sex = val; break;
-								default: break;
-							}
-						}
+				// The first element in the array is the observation value
+				if (values.size() > 0 && !values.get(0).isJsonNull()) {
+					double value = values.get(0).getAsDouble();
 
-					} else if (nodeName.endsWith("ObsValue") || nodeName.equals("generic:ObsValue") || nodeName.equals("ObsValue")) {
-						Element e = (Element) c;
-						obsVal = e.getAttribute("value");
+					// Parse the dimension key (format: "dim1:dim2:dim3:...")
+					String[] dimensions = key.split(":");
 
-					} else if (nodeName.endsWith("Attributes") || nodeName.equals("generic:Attributes") || nodeName.equals("Attributes")) {
-						NodeList attrs = c.getChildNodes();
-						for (int k = 0; k < attrs.getLength(); k++) {
-							Node av = attrs.item(k);
-							if (av.getNodeType() != Node.ELEMENT_NODE) continue;
-							if (!av.getNodeName().endsWith("Value")) continue;
-							Element ae = (Element) av;
-							String id = ae.getAttribute("id");
-							String val = ae.getAttribute("value");
-							if ("UNIT_MULT".equals(id) && val != null && !val.isEmpty()) {
-								try { unitMult = Integer.parseInt(val); } catch (NumberFormatException _ex) { unitMult = 0; }
-							}
-						}
-					}
+					// Build a feature name from the dimensions
+					// Based on SDMX structure: FREQ:MEASURE:REF_AREA:SECTOR:MEASURE_TYPE:AGE:SEX:UNIT_MEASURE:TIME_PERIOD
+					String featureName = buildFeatureName(dimensions);
+
+					// Ticker is null for macroeconomic data
+					DataPoint dp = new DataPoint(timestamp, null, featureName, value);
+					dataPoints.add(dp);
 				}
+			}
 
-				if (time == null) continue;
-
-				try {
-					LocalDateTime timestamp;
-					if (time.contains("-Q")) {
-						String[] parts = time.split("-Q");
-						int year = Integer.parseInt(parts[0]);
-						int q = Integer.parseInt(parts[1]);
-						int month = switch (q) { case 1 -> 1; case 2 -> 4; case 3 -> 7; case 4 -> 10; default -> 1; };
-						timestamp = LocalDateTime.of(year, month, 1, 0, 0);
-					} else if (time.matches("\\\\d{4}-\\\\d{2}-\\\\d{2}T.*")) {
-						timestamp = LocalDateTime.parse(time);
-					} else if (time.matches("\\\\d{4}-\\\\d{2}")) {
-						timestamp = LocalDateTime.parse(time + "-01T00:00:00");
-					} else {
-						int year = Integer.parseInt(time);
-						timestamp = LocalDateTime.of(year, 1, 1, 0, 0);
-					}
-
-					String featureName = "NZL_LaborStats";
-					if (measure != null && !measure.isEmpty()) featureName += "_" + measure;
-					if (age != null && !age.isEmpty()) featureName += "_" + age;
-					if (sex != null && !sex.isEmpty()) featureName += "_" + sex;
-
-					double value = Double.NaN;
-					if (obsVal != null && !obsVal.isEmpty()) {
-						try { value = Double.parseDouble(obsVal); } catch (NumberFormatException nfe) { value = Double.NaN; }
-						if (!Double.isNaN(value) && unitMult != 0) {
-							value = value * Math.pow(10, unitMult);
-						}
-					}
-
-					dataPoints.add(new DataPoint(timestamp, null, featureName, value));
-
-				} catch (Exception ex) {
-					// skip malformed
-				}
+			// Optional: save for debugging
+			try (FileWriter writer = new FileWriter("sample_data.txt")) {
+				writer.write(rawData);
+			} catch (IOException e) {
+				System.err.println("Warning: Could not write debug file: " + e.getMessage());
 			}
 
 		} catch (Exception e) {
+			System.err.println("Error parsing SDMX-JSON data: " + e.getMessage());
 			e.printStackTrace();
 		}
 
 		return dataPoints;
+	}
+
+	private String buildFeatureName(String[] dimensions) {
+		// Map dimension codes to readable names
+		// Common SDMX dimensions for labor statistics
+		StringBuilder name = new StringBuilder("NZ_Labor_");
+
+		// Add indicator type (dimension 4 typically contains measure type)
+		if (dimensions.length > 4) {
+			name.append(getMeasureLabel(dimensions[4])).append("_");
+		}
+
+		// Add age group (dimension 5)
+		if (dimensions.length > 5) {
+			name.append(getAgeLabel(dimensions[5])).append("_");
+		}
+
+		// Add sex (dimension 6)
+		if (dimensions.length > 6) {
+			name.append(getSexLabel(dimensions[6]));
+		}
+
+		// Add time period (dimension 8)
+		if (dimensions.length > 8) {
+			name.append("_").append(dimensions[8]);
+		}
+
+		return name.toString().replaceAll("_+$", ""); // Remove trailing underscores
+	}
+
+	private String getMeasureLabel(String code) {
+		switch (code) {
+			case "0": return "Population";
+			case "1": return "LaborForce";
+			case "2": return "Employment";
+			case "3": return "Unemployment";
+			case "4": return "UnemploymentNotWorked";
+			case "5": return "LFParticipationRate";
+			case "6": return "EmploymentPopRatio";
+			case "7": return "UnemploymentRate";
+			case "8": return "UnemploymentRateNotWorked";
+			case "9": return "YouthUnemploymentRatio";
+			case "10": return "LFParticipationGap";
+			case "11": return "EmploymentPopRatioGap";
+			default: return "Measure" + code;
+		}
+	}
+
+	private String getAgeLabel(String code) {
+		switch (code) {
+			case "0": return "Age15to64";
+			case "1": return "Age15to24";
+			case "2": return "Age15Plus";
+			default: return "Age" + code;
+		}
+	}
+
+	private String getSexLabel(String code) {
+		switch (code) {
+			case "0": return "Total";
+			case "1": return "Male";
+			case "2": return "Female";
+			default: return "Sex" + code;
+		}
 	}
 }

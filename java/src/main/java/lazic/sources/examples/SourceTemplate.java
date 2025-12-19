@@ -5,6 +5,8 @@ import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
 
+import java.io.FileWriter;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Set;
 
@@ -17,13 +19,18 @@ public class SourceTemplate extends DataSourceBase {
 	 */
 	@Override
 	public Set<DataPoint> getDataPoints() {
-
 		DataPoint example = new DataPoint(LocalDateTime.now(), "Ticker", "Feature name", Double.valueOf(1));
 
 		String[] tickers = lazic.sources.config.Tickers.TICKERS; //"ANZ.NZ", "AFCA.NZ", etc
 		Gson gson = new Gson();
 		String rawData = WebHtmlGetter.get(URL);
 		System.out.println(rawData);
+
+		try (FileWriter writer = new FileWriter("sample_data.txt")) {
+			writer.write(rawData);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 		return Set.of(example);
 	}
 }

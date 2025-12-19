@@ -42,6 +42,7 @@ class PipelineResult:
     predictions: pd.DataFrame
     test_data_with_labels: pd.DataFrame
     feature_cols: list[str]
+    price_data: pd.DataFrame  # Full wide data for price lookup in trading simulation
 
 
 def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
@@ -86,8 +87,13 @@ def run_single_window(
         return None
     
     # Create labels (before imputation to avoid leakage)
+    # For training, use train data itself for price lookup
     train_labeled = create_labels(split.train, lookahead_days, gain_threshold_pct)
-    test_labeled = create_labels(split.test, lookahead_days, gain_threshold_pct)
+    
+    # For test, use full wide_df for price lookup to access future prices beyond test_end
+    test_labeled = create_labels(
+        split.test, lookahead_days, gain_threshold_pct, price_lookup_df=wide_df
+    )
     
     if train_labeled.empty or test_labeled.empty:
         return None
@@ -129,4 +135,5 @@ def run_single_window(
         predictions=predictions,
         test_data_with_labels=test_labeled,
         feature_cols=feature_cols,
+        price_data=wide_df,
     )

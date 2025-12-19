@@ -13,7 +13,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from config.column_names import TARGET, PREDICTION, PREDICTION_PROB
+from config.column_names import TARGET, PREDICTION, PREDICTION_PROB, TIMESTAMP, TICKER
 
 
 @dataclass
@@ -28,6 +28,9 @@ class ClassificationMetrics:
     classification_report: str
 
 
+from config.column_names import TARGET, PREDICTION, PREDICTION_PROB, TIMESTAMP, TICKER
+
+
 def evaluate_predictions(
     predictions_df: pd.DataFrame,
     actuals_df: pd.DataFrame,
@@ -36,15 +39,25 @@ def evaluate_predictions(
     Evaluate model predictions against actual targets.
     
     Args:
-        predictions_df: DataFrame with PREDICTION and PREDICTION_PROB columns.
-        actuals_df: DataFrame with TARGET column (aligned with predictions).
+        predictions_df: DataFrame with TIMESTAMP, TICKER, PREDICTION, PREDICTION_PROB.
+        actuals_df: DataFrame with TIMESTAMP, TICKER, TARGET column.
     
     Returns:
         ClassificationMetrics containing all evaluation metrics.
     """
-    y_true = actuals_df[TARGET].values
-    y_pred = predictions_df[PREDICTION].values
-    y_prob = predictions_df[PREDICTION_PROB].values
+    # Merge predictions with actuals to ensure proper alignment
+    merged = predictions_df.merge(
+        actuals_df[[TIMESTAMP, TICKER, TARGET]],
+        on=[TIMESTAMP, TICKER],
+        how='inner'
+    )
+    
+    if merged.empty:
+        raise ValueError("No matching rows between predictions and actuals")
+    
+    y_true = merged[TARGET].values
+    y_pred = merged[PREDICTION].values
+    y_prob = merged[PREDICTION_PROB].values
     
     # Basic metrics
     accuracy = accuracy_score(y_true, y_pred)

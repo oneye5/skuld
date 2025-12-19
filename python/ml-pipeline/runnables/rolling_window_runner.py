@@ -22,31 +22,29 @@ from config.model_config import (
     LOOKAHEAD_DAYS,
     MS_PER_DAY,
 )
-from config.file_paths import OUTPUT_DIR, EVALUATION_DIR, ensure_output_dirs
+from config.file_paths import OUTPUT_DIR, EVALUATION_DIR, PREDICTIONS_DIR, ensure_output_dirs
 
 from runnables.pipeline import prepare_wide_data, run_single_window, PipelineResult
 from metrics import (
     evaluate_predictions,
     ClassificationMetrics,
     metrics_to_dict as classification_metrics_to_dict,
-    aggregate_metrics as aggregate_classification_metrics,
 )
 from simulator import (
     run_trading_simulation,
     run_baseline_simulation,
     TradingMetrics,
     metrics_to_dict as trading_metrics_to_dict,
-    aggregate_trading_metrics,
 )
+from visualization import generate_all_visualizations
 
 
 @dataclass
-class WindowResult:
-    """Results for a single rolling window."""
+class WindowData:
+    """Data collected from a single window for combined evaluation."""
     window_id: int
-    classification_metrics: ClassificationMetrics
-    trading_metrics: TradingMetrics
-    baseline_metrics: TradingMetrics
+    predictions: pd.DataFrame
+    actuals: pd.DataFrame
     train_start_ts: int
     train_end_ts: int
     test_start_ts: int
@@ -54,12 +52,15 @@ class WindowResult:
 
 
 @dataclass
-class RollingWindowResults:
-    """Aggregated results across all rolling windows."""
-    window_results: list[WindowResult]
-    aggregated_classification: dict
-    aggregated_trading: dict
-    aggregated_baseline: dict
+class CombinedResults:
+    """Results from combined evaluation across all windows."""
+    classification_metrics: ClassificationMetrics
+    trading_metrics: TradingMetrics
+    baseline_metrics: TradingMetrics
+    trades: list[dict]
+    window_summaries: list[dict]
+    num_predictions: int
+    num_windows: int
 
 
 def calculate_window_timestamps(
@@ -111,9 +112,11 @@ def run_rolling_windows(
     long_df: pd.DataFrame,
     num_windows: int = NUM_ROLLING_WINDOWS,
     window_movement_years: float = ROLLING_WINDOW_MOVEMENT_YEARS,
-) -> RollingWindowResults:
+) -> CombinedResults:
     """
     Run the pipeline across multiple rolling windows.
+    
+    Collects all predictions first, then evaluates them combined.
     
     Args:
         long_df: Long format input data.
@@ -121,7 +124,7 @@ def run_rolling_windows(
         window_movement_years: How far to move window back in time.
     
     Returns:
-        RollingWindowResults with metrics for all windows.
+        CombinedResults with metrics from combined evaluation.
     """
     ensure_output_dirs()
     
@@ -139,13 +142,17 @@ def run_rolling_windows(
         data_max_ts, num_windows, window_movement_years
     )
     
-    window_results = []
-    all_classification_metrics = []
-    all_trading_metrics = []
-    all_baseline_metrics = []
+    # Phase 1: Collect all predictions and actuals
+    print("\n" + "=" * 60)
+    print("PHASE 1: Collecting Predictions")
+    print("=" * 60)
+    
+    all_window_data: list[WindowData] = []
+    all_predictions: list[pd.DataFrame] = []
+    all_actuals: list[pd.DataFrame] = []
     
     for window_id, (train_end_ts, test_end_ts) in enumerate(window_timestamps):
-        print(f"Processing window {window_id + 1}/{num_windows}...")
+        print(f"\nProcessing window {window_id + 1}/{num_windows}...")
         
         # Run pipeline for this window
         result = run_single_window(
@@ -156,57 +163,112 @@ def run_rolling_windows(
             print(f"  Skipping window {window_id}: insufficient data")
             continue
         
-        # Evaluate classification metrics
-        classification_metrics = evaluate_predictions(
-            result.predictions, result.test_data_with_labels
-        )
+        # Add window_id to predictions for tracking
+        predictions = result.predictions.copy()
+        predictions['window_id'] = window_id
         
-        # Run trading simulation
-        trading_metrics, _ = run_trading_simulation(
-            result.predictions, result.test_data_with_labels
-        )
+        actuals = result.test_data_with_labels.copy()
+        actuals['window_id'] = window_id
         
-        # Run baseline simulation
-        baseline_metrics, _ = run_baseline_simulation(
-            result.test_data_with_labels,
-            result.train_split.test_start_ts,
-            result.train_split.test_end_ts,
-        )
-        
-        window_result = WindowResult(
+        window_data = WindowData(
             window_id=window_id,
-            classification_metrics=classification_metrics,
-            trading_metrics=trading_metrics,
-            baseline_metrics=baseline_metrics,
+            predictions=predictions,
+            actuals=actuals,
             train_start_ts=result.train_split.train_start_ts,
             train_end_ts=result.train_split.train_end_ts,
             test_start_ts=result.train_split.test_start_ts,
             test_end_ts=result.train_split.test_end_ts,
         )
         
-        window_results.append(window_result)
-        all_classification_metrics.append(classification_metrics)
-        all_trading_metrics.append(trading_metrics)
-        all_baseline_metrics.append(baseline_metrics)
+        all_window_data.append(window_data)
+        all_predictions.append(predictions)
+        all_actuals.append(actuals)
         
-        # Print window summary
-        print(f"  Classification Accuracy: {classification_metrics.accuracy:.4f}")
-        print(f"  Trading Return: {trading_metrics.total_return_pct:.2f}%")
-        print(f"  Baseline Return: {baseline_metrics.total_return_pct:.2f}%")
+        # Save predictions for this window
+        _save_predictions(result.predictions, window_id)
+        print(f"  Collected {len(predictions):,} predictions")
     
-    if not window_results:
+    if not all_window_data:
         raise ValueError("No windows completed successfully")
     
-    # Aggregate metrics
-    aggregated_classification = aggregate_classification_metrics(all_classification_metrics)
-    aggregated_trading = aggregate_trading_metrics(all_trading_metrics)
-    aggregated_baseline = aggregate_trading_metrics(all_baseline_metrics)
+    # Phase 2: Combine and Evaluate
+    print("\n" + "=" * 60)
+    print("PHASE 2: Combined Evaluation")
+    print("=" * 60)
     
-    results = RollingWindowResults(
-        window_results=window_results,
-        aggregated_classification=aggregated_classification,
-        aggregated_trading=aggregated_trading,
-        aggregated_baseline=aggregated_baseline,
+    combined_predictions = pd.concat(all_predictions, ignore_index=True)
+    combined_actuals = pd.concat(all_actuals, ignore_index=True)
+    
+    print(f"\nTotal predictions: {len(combined_predictions):,}")
+    print(f"Total actuals: {len(combined_actuals):,}")
+    
+    # Evaluate combined classification metrics
+    print("\nEvaluating classification metrics...")
+    classification_metrics = evaluate_predictions(combined_predictions, combined_actuals)
+    
+    # Run combined trading simulation
+    print("Running trading simulation...")
+    trading_metrics, trades = run_trading_simulation(combined_predictions, wide_df)
+    
+    # Run baseline simulation (over entire test period)
+    print("Running baseline simulation...")
+    min_test_start = min(w.test_start_ts for w in all_window_data)
+    max_test_end = max(w.test_end_ts for w in all_window_data)
+    baseline_metrics, _ = run_baseline_simulation(wide_df, min_test_start, max_test_end)
+    
+    # Create per-window summaries for visualization
+    window_summaries = []
+    for wd in all_window_data:
+        # Evaluate per-window for comparison
+        window_class_metrics = evaluate_predictions(wd.predictions, wd.actuals)
+        window_trade_metrics, _ = run_trading_simulation(wd.predictions, wide_df)
+        
+        window_summaries.append({
+            'window_id': wd.window_id,
+            'accuracy': window_class_metrics.accuracy,
+            'precision': window_class_metrics.precision,
+            'recall': window_class_metrics.recall,
+            'f1': window_class_metrics.f1,
+            'trading_return': window_trade_metrics.total_return_pct,
+            'num_predictions': len(wd.predictions),
+            'test_start': pd.to_datetime(wd.test_start_ts, unit='ms').strftime('%Y-%m-%d'),
+            'test_end': pd.to_datetime(wd.test_end_ts, unit='ms').strftime('%Y-%m-%d'),
+        })
+    
+    # Convert trades to dicts for serialization
+    trades_dicts = [
+        {
+            'ticker': t.ticker,
+            'buy_timestamp': t.buy_timestamp,
+            'sell_timestamp': t.sell_timestamp,
+            'buy_price': t.buy_price,
+            'sell_price': t.sell_price,
+            'shares': t.shares,
+            'return_pct': t.return_pct,
+        }
+        for t in trades
+    ]
+    
+    results = CombinedResults(
+        classification_metrics=classification_metrics,
+        trading_metrics=trading_metrics,
+        baseline_metrics=baseline_metrics,
+        trades=trades_dicts,
+        window_summaries=window_summaries,
+        num_predictions=len(combined_predictions),
+        num_windows=len(all_window_data),
+    )
+    
+    # Phase 3: Generate Visualizations
+    print("\n" + "=" * 60)
+    print("PHASE 3: Generating Visualizations")
+    print("=" * 60)
+    
+    generate_all_visualizations(
+        combined_predictions=combined_predictions,
+        combined_actuals=combined_actuals,
+        trades=trades_dicts,
+        window_metrics=window_summaries,
     )
     
     # Save results
@@ -215,25 +277,23 @@ def run_rolling_windows(
     return results
 
 
-def _save_results(results: RollingWindowResults) -> None:
+def _save_predictions(predictions: pd.DataFrame, window_id: int) -> None:
+    """Save predictions for a window to disk."""
+    output_path = PREDICTIONS_DIR / f"predictions_window{window_id}.csv"
+    predictions.to_csv(output_path, index=False)
+    print(f"  Predictions saved to {output_path}")
+
+
+def _save_results(results: CombinedResults) -> None:
     """Save results to disk."""
     output = {
-        "aggregated_classification": results.aggregated_classification,
-        "aggregated_trading": results.aggregated_trading,
-        "aggregated_baseline": results.aggregated_baseline,
-        "windows": [
-            {
-                "window_id": w.window_id,
-                "train_start_ts": w.train_start_ts,
-                "train_end_ts": w.train_end_ts,
-                "test_start_ts": w.test_start_ts,
-                "test_end_ts": w.test_end_ts,
-                "classification": classification_metrics_to_dict(w.classification_metrics),
-                "trading": trading_metrics_to_dict(w.trading_metrics),
-                "baseline": trading_metrics_to_dict(w.baseline_metrics),
-            }
-            for w in results.window_results
-        ],
+        "combined_classification": classification_metrics_to_dict(results.classification_metrics),
+        "combined_trading": trading_metrics_to_dict(results.trading_metrics),
+        "baseline": trading_metrics_to_dict(results.baseline_metrics),
+        "num_predictions": results.num_predictions,
+        "num_windows": results.num_windows,
+        "window_summaries": results.window_summaries,
+        "num_trades": len(results.trades),
     }
     
     output_path = EVALUATION_DIR / "rolling_window_results.json"
@@ -241,32 +301,53 @@ def _save_results(results: RollingWindowResults) -> None:
         json.dump(output, f, indent=2)
     
     print(f"\nResults saved to {output_path}")
+    
+    # Also save trades to CSV
+    if results.trades:
+        trades_df = pd.DataFrame(results.trades)
+        trades_path = EVALUATION_DIR / "all_trades.csv"
+        trades_df.to_csv(trades_path, index=False)
+        print(f"Trades saved to {trades_path}")
 
 
-def print_summary(results: RollingWindowResults) -> None:
-    """Print a summary of the rolling window results."""
+def print_summary(results: CombinedResults) -> None:
+    """Print a summary of the combined results."""
     print("\n" + "=" * 60)
-    print("ROLLING WINDOW RESULTS SUMMARY")
+    print("COMBINED EVALUATION RESULTS")
     print("=" * 60)
     
-    print("\nClassification Metrics (mean ± std):")
-    agg = results.aggregated_classification
-    print(f"  Accuracy:  {agg['accuracy_mean']:.4f} ± {agg['accuracy_std']:.4f}")
-    print(f"  Precision: {agg['precision_mean']:.4f} ± {agg['precision_std']:.4f}")
-    print(f"  Recall:    {agg['recall_mean']:.4f} ± {agg['recall_std']:.4f}")
-    print(f"  F1 Score:  {agg['f1_mean']:.4f} ± {agg['f1_std']:.4f}")
-    if 'roc_auc_mean' in agg:
-        print(f"  ROC AUC:   {agg['roc_auc_mean']:.4f} ± {agg['roc_auc_std']:.4f}")
+    print(f"\nData Summary:")
+    print(f"  Windows Evaluated: {results.num_windows}")
+    print(f"  Total Predictions: {results.num_predictions:,}")
+    print(f"  Total Trades: {len(results.trades)}")
     
-    print("\nTrading Metrics (mean ± std):")
-    agg = results.aggregated_trading
-    print(f"  Total Return:  {agg['total_return_mean']:.2f}% ± {agg['total_return_std']:.2f}%")
-    print(f"  Sharpe Ratio:  {agg['sharpe_ratio_mean']:.4f} ± {agg['sharpe_ratio_std']:.4f}")
-    print(f"  Total Trades:  {agg['total_trades']}")
+    print("\nClassification Metrics (Combined):")
+    cm = results.classification_metrics
+    print(f"  Accuracy:  {cm.accuracy:.4f}")
+    print(f"  Precision: {cm.precision:.4f}")
+    print(f"  Recall:    {cm.recall:.4f}")
+    print(f"  F1 Score:  {cm.f1:.4f}")
+    if cm.roc_auc is not None:
+        print(f"  ROC AUC:   {cm.roc_auc:.4f}")
     
-    print("\nBaseline Metrics (buy all):")
-    agg = results.aggregated_baseline
-    print(f"  Total Return:  {agg['total_return_mean']:.2f}% ± {agg['total_return_std']:.2f}%")
-    print(f"  Sharpe Ratio:  {agg['sharpe_ratio_mean']:.4f} ± {agg['sharpe_ratio_std']:.4f}")
+    print("\nTrading Metrics (Strategy):")
+    tm = results.trading_metrics
+    print(f"  Total Return:   {tm.total_return_pct:.2f}%")
+    print(f"  Sharpe Ratio:   {tm.sharpe_ratio:.4f}")
+    print(f"  Median Return:  {tm.median_return_pct:.2f}%")
+    print(f"  Return Std:     {tm.std_return_pct:.2f}%")
+    print(f"  Num Trades:     {tm.num_trades}")
+    print(f"  Final Capital:  ${tm.final_capital:,.2f}")
+    
+    print("\nBaseline Metrics (Buy All):")
+    bm = results.baseline_metrics
+    print(f"  Total Return:   {bm.total_return_pct:.2f}%")
+    print(f"  Sharpe Ratio:   {bm.sharpe_ratio:.4f}")
+    print(f"  Final Capital:  ${bm.final_capital:,.2f}")
+    
+    print("\nPer-Window Summary:")
+    for ws in results.window_summaries:
+        print(f"  Window {ws['window_id']}: {ws['test_start']} to {ws['test_end']}")
+        print(f"    Predictions: {ws['num_predictions']:,}, F1: {ws['f1']:.4f}, Return: {ws['trading_return']:.2f}%")
     
     print("=" * 60)

@@ -1,4 +1,4 @@
-"""Module for training XGBoost models."""
+"""Module for training models."""
 
 from pathlib import Path
 import pickle
@@ -8,7 +8,7 @@ import numpy as np
 from xgboost import XGBClassifier
 
 from config.column_names import TIMESTAMP, TICKER, TARGET
-from config.model_config import XGBOOST_PARAMS
+from config.model_config import initialize_model
 
 
 def get_feature_columns(df: pd.DataFrame) -> list[str]:
@@ -24,19 +24,17 @@ def get_feature_columns(df: pd.DataFrame) -> list[str]:
 def train_model(
     train_df: pd.DataFrame,
     params: dict | None = None,
-) -> tuple[XGBClassifier, list[str]]:
+) -> tuple[object, list[str]]:
     """
-    Train an XGBoost classifier.
+    Train an ensemble VotingClassifier.
     
     Args:
         train_df: Training DataFrame with features and target column.
-        params: XGBoost parameters. Uses default XGBOOST_PARAMS if not provided.
+        params: Parameters for individual models in the ensemble.
     
     Returns:
         Tuple of (trained model, list of feature column names).
     """
-    params = params or XGBOOST_PARAMS.copy()
-    
     feature_cols = get_feature_columns(train_df)
     X = train_df[feature_cols].values
     y = train_df[TARGET].values
@@ -44,7 +42,7 @@ def train_model(
     # Handle any remaining NaN (replace with 0)
     X = np.nan_to_num(X, nan=0.0)
     
-    model = XGBClassifier(**params)
+    model = initialize_model(params)
     model.fit(X, y)
     
     return model, feature_cols

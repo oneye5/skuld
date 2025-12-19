@@ -5,8 +5,8 @@ from .rolling_window_runner import (
     run_rolling_windows,
     calculate_window_timestamps,
     print_summary,
-    RollingWindowResults,
-    WindowResult,
+    CombinedResults,
+    WindowData,
 )
 
 __all__ = [
@@ -16,6 +16,6 @@ __all__ = [
     "run_rolling_windows",
     "calculate_window_timestamps",
     "print_summary",
-    "RollingWindowResults",
-    "WindowResult",
+    "CombinedResults",
+    "WindowData",
 ]

@@ -12,6 +12,7 @@ from config.model_config import (
     LOOKAHEAD_DAYS,
     MS_PER_DAY,
     RISK_FREE_RATE,
+    MAX_POSITION_SIZE_PCT,
 )
 
 
@@ -56,6 +57,7 @@ def run_trading_simulation(
     threshold: float = PREDICTION_THRESHOLD,
     lookahead_days: int = LOOKAHEAD_DAYS,
     transaction_cost_pct: float = TRANSACTION_COST_PCT,
+    max_position_pct: float = MAX_POSITION_SIZE_PCT,
 ) -> tuple[TradingMetrics, list[Trade]]:
     """
     Simulate trading based on model predictions.
@@ -63,7 +65,7 @@ def run_trading_simulation(
     Strategy:
     - Buy when prediction probability >= threshold
     - Sell after lookahead_days regardless of performance
-    - Equal-weight positions across buy signals on same day
+    - Position size limited to max_position_pct of initial capital
     
     Args:
         predictions_df: DataFrame with timestamp, ticker, prediction_probability.
@@ -72,22 +74,33 @@ def run_trading_simulation(
         threshold: Minimum probability to trigger buy.
         lookahead_days: Days to hold position before selling.
         transaction_cost_pct: Transaction cost as percentage.
+        max_position_pct: Maximum position size as percentage of initial capital.
     
     Returns:
         Tuple of (TradingMetrics, list of completed Trades).
     """
     lookahead_ms = lookahead_days * MS_PER_DAY
     cost_multiplier = transaction_cost_pct / 100
+    max_position_size = initial_capital * (max_position_pct / 100)
     
     # Sort predictions by timestamp
     predictions_df = predictions_df.sort_values(TIMESTAMP)
     
     # Create price lookup by ticker and timestamp
     price_lookup = {}
+    all_timestamps_by_ticker = {}
     for _, row in price_data.iterrows():
-        key = (row[TICKER], row[TIMESTAMP])
+        ticker = row[TICKER]
+        ts = row[TIMESTAMP]
         if CLOSE in row and pd.notna(row[CLOSE]):
-            price_lookup[key] = row[CLOSE]
+            price_lookup[(ticker, ts)] = row[CLOSE]
+            if ticker not in all_timestamps_by_ticker:
+                all_timestamps_by_ticker[ticker] = []
+            all_timestamps_by_ticker[ticker].append(ts)
+    
+    # Sort timestamps for each ticker
+    for ticker in all_timestamps_by_ticker:
+        all_timestamps_by_ticker[ticker] = sorted(all_timestamps_by_ticker[ticker])
     
     capital = initial_capital
     open_positions: list[Position] = []
@@ -106,8 +119,9 @@ def run_trading_simulation(
         for pos in positions_to_close:
             # Find sell price at or after the target sell date
             sell_ts = pos.buy_timestamp + lookahead_ms
+            ticker_timestamps = all_timestamps_by_ticker.get(pos.ticker, [])
             sell_price = _find_closest_price(
-                price_lookup, pos.ticker, sell_ts, unique_timestamps
+                price_lookup, pos.ticker, sell_ts, ticker_timestamps
             )
             
             if sell_price is not None:
@@ -134,27 +148,57 @@ def run_trading_simulation(
         day_predictions = predictions_df[predictions_df[TIMESTAMP] == current_ts]
         buy_signals = day_predictions[day_predictions[PREDICTION_PROB] >= threshold]
         
-        if len(buy_signals) > 0 and capital > 0:
-            # Equal-weight allocation
-            position_size = capital / len(buy_signals)
+        # Sort by probability (highest first) and limit trades
+        buy_signals = buy_signals.sort_values(PREDICTION_PROB, ascending=False)
+        
+        for _, signal in buy_signals.iterrows():
+            if capital < max_position_size:
+                break  # Not enough capital for another position
             
-            for _, signal in buy_signals.iterrows():
-                ticker = signal[TICKER]
-                buy_price = price_lookup.get((ticker, current_ts))
+            ticker = signal[TICKER]
+            buy_price = price_lookup.get((ticker, current_ts))
+            
+            if buy_price is not None and buy_price > 0:
+                # Use fixed position size (limited by max_position_size)
+                position_size = min(max_position_size, capital)
                 
-                if buy_price is not None and buy_price > 0:
-                    # Apply transaction cost to buy
-                    actual_buy_price = buy_price * (1 + cost_multiplier)
-                    shares = position_size / actual_buy_price
-                    
-                    open_positions.append(Position(
-                        ticker=ticker,
-                        buy_timestamp=current_ts,
-                        buy_price=actual_buy_price,
-                        shares=shares,
-                    ))
-                    
-                    capital -= position_size
+                # Apply transaction cost to buy
+                actual_buy_price = buy_price * (1 + cost_multiplier)
+                shares = position_size / actual_buy_price
+                
+                open_positions.append(Position(
+                    ticker=ticker,
+                    buy_timestamp=current_ts,
+                    buy_price=actual_buy_price,
+                    shares=shares,
+                ))
+                
+                capital -= position_size
+    
+    # Close all remaining open positions at their sell date
+    for pos in open_positions:
+        sell_ts = pos.buy_timestamp + lookahead_ms
+        ticker_timestamps = all_timestamps_by_ticker.get(pos.ticker, [])
+        sell_price = _find_closest_price(
+            price_lookup, pos.ticker, sell_ts, ticker_timestamps
+        )
+        
+        if sell_price is not None:
+            actual_sell_price = sell_price * (1 - cost_multiplier)
+            proceeds = pos.shares * actual_sell_price
+            return_pct = ((actual_sell_price - pos.buy_price) / pos.buy_price) * 100
+            
+            completed_trades.append(Trade(
+                ticker=pos.ticker,
+                buy_timestamp=pos.buy_timestamp,
+                sell_timestamp=sell_ts,
+                buy_price=pos.buy_price,
+                sell_price=actual_sell_price,
+                shares=pos.shares,
+                return_pct=return_pct,
+            ))
+            
+            capital += proceeds
     
     # Calculate metrics
     return _calculate_metrics(completed_trades, initial_capital, capital), completed_trades

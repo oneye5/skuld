@@ -56,3 +56,5 @@ python-ml/.continue/rules/new-rule.md
 /python-ml/src/__pycache__
 *.pyc
 *.pkl
+python/ml-pipeline/output/evaluation/figures/accuracy_by_window.png
+*.png

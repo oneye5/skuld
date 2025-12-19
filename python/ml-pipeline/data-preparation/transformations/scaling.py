@@ -54,11 +54,11 @@ def fit_scalers(train_df: pd.DataFrame) -> ScalerSet:
     # Fit macro scaler globally
     macro_scaler = None
     if macro_cols:
-        macro_scaler = StandardScaler()
         macro_data = train_df[macro_cols].values
         # Handle NaN - fit on non-NaN values only
         valid_mask = ~np.isnan(macro_data).any(axis=1)
         if valid_mask.any():
+            macro_scaler = StandardScaler()
             macro_scaler.fit(macro_data[valid_mask])
     
     # Fit ticker scalers per-ticker

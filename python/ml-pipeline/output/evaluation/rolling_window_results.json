@@ -1,164 +1,99 @@
 {
-  "aggregated_classification": {
-    "accuracy_mean": 0.1818181818181818,
-    "accuracy_std": 0.25712973861329,
-    "precision_mean": 0.3333333333333333,
-    "precision_std": 0.4714045207910317,
-    "recall_mean": 0.14814814814814814,
-    "recall_std": 0.20951312035156963,
-    "f1_mean": 0.20512820512820515,
-    "f1_std": 0.290095089717558,
-    "roc_auc_mean": NaN,
-    "roc_auc_std": NaN
+  "combined_classification": {
+    "accuracy": 0.4898156640791034,
+    "precision": 0.4171211175368959,
+    "recall": 0.4590278677900194,
+    "f1": 0.43707227971441087,
+    "roc_auc": 0.4896141699632218,
+    "confusion_matrix": [
+      [
+        52167,
+        49487
+      ],
+      [
+        41736,
+        35414
+      ]
+    ]
   },
-  "aggregated_trading": {
-    "total_return_mean": 0.0,
-    "total_return_std": 0.0,
-    "median_return_mean": 0.0,
-    "sharpe_ratio_mean": 0.0,
-    "sharpe_ratio_std": 0.0,
-    "total_trades": 0
+  "combined_trading": {
+    "total_return_pct": -16.026402485517146,
+    "median_return_pct": -4.97103760388394,
+    "lqr_return_pct": -8.170831698117555,
+    "uqr_return_pct": 5.444967602562005,
+    "std_return_pct": 17.351582812033858,
+    "sharpe_ratio": -0.19862961242579782,
+    "num_trades": 93,
+    "final_capital": 83973.59751448286
   },
-  "aggregated_baseline": {
-    "total_return_mean": 0.0,
-    "total_return_std": 0.0,
-    "median_return_mean": 0.0,
-    "sharpe_ratio_mean": 0.0,
-    "sharpe_ratio_std": 0.0,
-    "total_trades": 0
+  "baseline": {
+    "total_return_pct": -6.0004750026666445,
+    "median_return_pct": -6.000475002666647,
+    "lqr_return_pct": -6.000475002666647,
+    "uqr_return_pct": -6.000475002666647,
+    "std_return_pct": 0.0,
+    "sharpe_ratio": 0.0,
+    "num_trades": 1,
+    "final_capital": 93999.52499733336
   },
-  "windows": [
+  "num_predictions": 178804,
+  "num_windows": 5,
+  "window_summaries": [
+    {
+      "window_id": 0,
+      "accuracy": 0.4832348714673479,
+      "precision": 0.714078374455733,
+      "recall": 0.049177869958518666,
+      "f1": 0.09201851592088651,
+      "trading_return": -6.625229355991556,
+      "num_predictions": 37578,
+      "test_start": "2023-12-18",
+      "test_end": "2024-12-14"
+    },
     {
       "window_id": 1,
-      "train_start_ts": 43200000,
-      "train_end_ts": 1660665600000,
-      "test_start_ts": 1660676400000,
-      "test_end_ts": 1692212400000,
-      "classification": {
-        "accuracy": 0.0,
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "roc_auc": NaN,
-        "confusion_matrix": [
-          [
-            0,
-            1
-          ],
-          [
-            0,
-            0
-          ]
-        ]
-      },
-      "trading": {
-        "total_return_pct": 0.0,
-        "median_return_pct": 0.0,
-        "lqr_return_pct": 0.0,
-        "uqr_return_pct": 0.0,
-        "std_return_pct": 0.0,
-        "sharpe_ratio": 0.0,
-        "num_trades": 0,
-        "final_capital": 100000.0
-      },
-      "baseline": {
-        "total_return_pct": 0.0,
-        "median_return_pct": 0.0,
-        "lqr_return_pct": 0.0,
-        "uqr_return_pct": 0.0,
-        "std_return_pct": 0.0,
-        "sharpe_ratio": 0.0,
-        "num_trades": 0,
-        "final_capital": 0
-      }
+      "accuracy": 0.4986671063841482,
+      "precision": 0.3014056881333769,
+      "recall": 0.5051132213294376,
+      "f1": 0.37753361086466936,
+      "trading_return": -11.722240427333674,
+      "num_predictions": 36387,
+      "test_start": "2022-08-16",
+      "test_end": "2023-08-16"
+    },
+    {
+      "window_id": 2,
+      "accuracy": 0.4671888172744826,
+      "precision": 0.18640191288075683,
+      "recall": 0.47648153069359556,
+      "f1": 0.26797190255567177,
+      "trading_return": 0.3944781510942412,
+      "num_predictions": 36771,
+      "test_start": "2021-04-16",
+      "test_end": "2022-04-15"
     },
     {
       "window_id": 3,
-      "train_start_ts": 43200000,
-      "train_end_ts": 1576506600000,
-      "test_start_ts": 1576519200000,
-      "test_end_ts": 1608066000000,
-      "classification": {
-        "accuracy": 0.5454545454545454,
-        "precision": 1.0,
-        "recall": 0.4444444444444444,
-        "f1": 0.6153846153846154,
-        "roc_auc": 0.6111111111111112,
-        "confusion_matrix": [
-          [
-            2,
-            0
-          ],
-          [
-            5,
-            4
-          ]
-        ]
-      },
-      "trading": {
-        "total_return_pct": 0.0,
-        "median_return_pct": 0.0,
-        "lqr_return_pct": 0.0,
-        "uqr_return_pct": 0.0,
-        "std_return_pct": 0.0,
-        "sharpe_ratio": 0.0,
-        "num_trades": 0,
-        "final_capital": 0.0
-      },
-      "baseline": {
-        "total_return_pct": 0.0,
-        "median_return_pct": 0.0,
-        "lqr_return_pct": 0.0,
-        "uqr_return_pct": 0.0,
-        "std_return_pct": 0.0,
-        "sharpe_ratio": 0.0,
-        "num_trades": 0,
-        "final_capital": 0
-      }
+      "accuracy": 0.5199749779635474,
+      "precision": 0.7068336234488181,
+      "recall": 0.5191141902758877,
+      "f1": 0.5986019306671739,
+      "trading_return": 2.7839477996395146,
+      "num_predictions": 35169,
+      "test_start": "2019-12-16",
+      "test_end": "2020-12-15"
     },
     {
       "window_id": 4,
-      "train_start_ts": 43200000,
-      "train_end_ts": 1534435200000,
-      "test_start_ts": 1534446000000,
-      "test_end_ts": 1565982000000,
-      "classification": {
-        "accuracy": 0.0,
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "roc_auc": NaN,
-        "confusion_matrix": [
-          [
-            0,
-            1
-          ],
-          [
-            0,
-            0
-          ]
-        ]
-      },
-      "trading": {
-        "total_return_pct": 0.0,
-        "median_return_pct": 0.0,
-        "lqr_return_pct": 0.0,
-        "uqr_return_pct": 0.0,
-        "std_return_pct": 0.0,
-        "sharpe_ratio": 0.0,
-        "num_trades": 0,
-        "final_capital": 0.0
-      },
-      "baseline": {
-        "total_return_pct": 0.0,
-        "median_return_pct": 0.0,
-        "lqr_return_pct": 0.0,
-        "uqr_return_pct": 0.0,
-        "std_return_pct": 0.0,
-        "sharpe_ratio": 0.0,
-        "num_trades": 0,
-        "final_capital": 0
-      }
+      "accuracy": 0.4805921152618621,
+      "precision": 0.45245715098499395,
+      "recall": 0.8827528791452754,
+      "f1": 0.5982697009591875,
+      "trading_return": -5.274808954180451,
+      "num_predictions": 32899,
+      "test_start": "2018-08-16",
+      "test_end": "2019-08-16"
     }
-  ]
+  ],
+  "num_trades": 93
 }

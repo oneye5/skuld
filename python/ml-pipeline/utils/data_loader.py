@@ -9,7 +9,7 @@ from config.file_paths import DATA_LONG_CSV
 
 def load_long_data(file_path: Path | None = None) -> pd.DataFrame:
     """
-    Load the long format CSV data.
+    Load the long format CSV data with memory-efficient dtypes.
     
     Args:
         file_path: Path to CSV file. Uses default DATA_LONG_CSV if not provided.
@@ -25,7 +25,7 @@ def load_long_data(file_path: Path | None = None) -> pd.DataFrame:
             TIMESTAMP: "int64",
             TICKER: "str",
             FEATURE: "str",
-            VALUE: "float64",
+            VALUE: "float32",  # Use float32 instead of float64 to save 50% memory
         },
         na_values=[""],
         keep_default_na=True,
@@ -33,5 +33,9 @@ def load_long_data(file_path: Path | None = None) -> pd.DataFrame:
     
     # Fill empty tickers with empty string for consistent handling
     df[TICKER] = df[TICKER].fillna("")
+    
+    # Optimize TICKER column memory usage (category is safe since it won't be modified)
+    df[TICKER] = df[TICKER].astype('category')
+    # Don't convert FEATURE to category yet - we'll modify it in add_macro_prefix
     
     return df

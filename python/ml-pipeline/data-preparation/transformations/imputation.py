@@ -58,18 +58,16 @@ def impute_data(
     Returns:
         DataFrame with imputed values and optional indicator columns.
     """
-    df = df.copy()
+    # Sort by ticker and timestamp for proper forward fill (inplace)
+    df.sort_values([TICKER, TIMESTAMP], inplace=True)
     feature_cols = [col for col in get_feature_columns(df) if col in stats.feature_means]
-    
-    # Sort by ticker and timestamp for proper forward fill
-    df = df.sort_values([TICKER, TIMESTAMP])
     
     # Compute missing indicators before imputation (batch operation)
     if add_indicators:
-        missing_data = {f"{MISSING_PREFIX}{col}": df[col].isna().astype(int) for col in feature_cols}
+        missing_data = {f"{MISSING_PREFIX}{col}": df[col].isna().astype('int8') for col in feature_cols}
     
     # Forward fill within each ticker (no future data leakage) - batch operation
-    df[feature_cols] = df.groupby(TICKER)[feature_cols].ffill()
+    df[feature_cols] = df.groupby(TICKER, sort=False)[feature_cols].ffill()
     
     # Fill remaining NaN with training means - batch operation
     for col in feature_cols:
@@ -77,11 +75,11 @@ def impute_data(
     
     # Add indicator columns at the end using concat (avoids fragmentation)
     if add_indicators:
-        # Create imputed indicators (same as missing since we filled everything)
+        # Create imputed indicators (same as missing since we filled everything) using int8 dtype
         imputed_data = {f"{IMPUTED_PREFIX}{col}": missing_data[f"{MISSING_PREFIX}{col}"] for col in feature_cols}
         
-        # Combine all indicator columns and concat at once
-        indicator_df = pd.DataFrame({**missing_data, **imputed_data}, index=df.index)
-        df = pd.concat([df, indicator_df], axis=1)
+        # Combine all indicator columns and concat at once with efficient dtype
+        indicator_df = pd.DataFrame({**missing_data, **imputed_data}, index=df.index, dtype='int8')
+        df = pd.concat([df, indicator_df], axis=1, copy=False)
     
     return df

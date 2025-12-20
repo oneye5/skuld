@@ -8,7 +8,7 @@ import numpy as np
 from xgboost import XGBClassifier
 
 from config.column_names import TIMESTAMP, TICKER, TARGET
-from config.model_config import initialize_model
+from config.model_config import initialize_model, calculate_class_weight
 
 
 def get_feature_columns(df: pd.DataFrame) -> list[str]:
@@ -26,25 +26,29 @@ def train_model(
     params: dict | None = None,
 ) -> tuple[object, list[str]]:
     """
-    Train an ensemble VotingClassifier.
-    
+    Train XGBoost model with class weight balancing.
+
     Args:
         train_df: Training DataFrame with features and target column.
-        params: Parameters for individual models in the ensemble.
-    
+        params: Parameters for the model.
+
     Returns:
         Tuple of (trained model, list of feature column names).
     """
     feature_cols = get_feature_columns(train_df)
-    X = train_df[feature_cols].values
-    y = train_df[TARGET].values
-    
+    X = train_df[feature_cols].to_numpy(copy=False)
+    y = train_df[TARGET].to_numpy(copy=False)
+
     # Handle any remaining NaN (replace with 0)
-    X = np.nan_to_num(X, nan=0.0)
+    np.nan_to_num(X, copy=False, nan=0.0)
     
-    model = initialize_model(params)
+    # Calculate class weight for imbalanced data
+    class_weight = calculate_class_weight(y)
+    
+    # Initialize model with class weight
+    model = initialize_model(params, class_weight=class_weight)
     model.fit(X, y)
-    
+
     return model, feature_cols
 
 

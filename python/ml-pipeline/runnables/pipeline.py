@@ -27,7 +27,9 @@ from utils.data_loader import load_long_data
 from macro_prefix import add_macro_prefix
 from imputation import compute_imputation_stats, impute_data
 from feature_engineering import add_cyclical_time_features
+from technical_features import add_technical_features
 from scaling import fit_scalers, transform_data, save_scalers
+from feature_selection import select_features
 from converter import long_to_wide
 from splitter import split_by_timestamp, TrainTestSplit
 from labeler import create_labels
@@ -42,7 +44,6 @@ class PipelineResult:
     predictions: pd.DataFrame
     test_data_with_labels: pd.DataFrame
     feature_cols: list[str]
-    price_data: pd.DataFrame  # Full wide data for price lookup in trading simulation
 
 
 def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
@@ -52,6 +53,13 @@ def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
     
     # Convert to wide format
     wide_df = long_to_wide(df)
+    
+    # Add technical features (before train/test split so all tickers have history)
+    # This is safe because technical features only use past data (rolling windows)
+    wide_df = add_technical_features(wide_df)
+    
+    # Defragment DataFrame after adding many columns
+    wide_df = wide_df.copy()
     
     return wide_df
 
@@ -80,8 +88,20 @@ def run_single_window(
     """
     ensure_output_dirs()
     
+    # CRITICAL OPTIMIZATION: Slice data to only relevant range + lookahead buffer
+    # This reduces memory usage dramatically by not keeping the full dataset
+    lookahead_ms = lookahead_days * MS_PER_DAY
+    # Start from beginning of data (train uses all data before train_end_ts)
+    buffer_start = wide_df[TIMESTAMP].min()
+    buffer_end = test_end_ts + lookahead_ms  # Include lookahead for labeling
+    
+    wide_df_slice = wide_df[
+        (wide_df[TIMESTAMP] >= buffer_start) & 
+        (wide_df[TIMESTAMP] < buffer_end)
+    ].copy()
+    
     # Split data
-    split = split_by_timestamp(wide_df, train_end_ts, test_end_ts=test_end_ts)
+    split = split_by_timestamp(wide_df_slice, train_end_ts, test_end_ts=test_end_ts)
     
     if split.train.empty or split.test.empty:
         return None
@@ -90,9 +110,9 @@ def run_single_window(
     # For training, use train data itself for price lookup
     train_labeled = create_labels(split.train, lookahead_days, gain_threshold_pct)
     
-    # For test, use full wide_df for price lookup to access future prices beyond test_end
+    # For test, use wide_df_slice for price lookup to access future prices beyond test_end
     test_labeled = create_labels(
-        split.test, lookahead_days, gain_threshold_pct, price_lookup_df=wide_df
+        split.test, lookahead_days, gain_threshold_pct, price_lookup_df=wide_df_slice
     )
     
     if train_labeled.empty or test_labeled.empty:
@@ -102,9 +122,9 @@ def run_single_window(
     imputation_stats = compute_imputation_stats(train_labeled)
     
     # Impute both train and test using training stats
-    # add_indicators=True for both to ensure feature alignment
-    train_imputed = impute_data(train_labeled, imputation_stats, add_indicators=True)
-    test_imputed = impute_data(test_labeled, imputation_stats, add_indicators=True)
+    # add_indicators=False to reduce feature count and memory usage
+    train_imputed = impute_data(train_labeled, imputation_stats, add_indicators=False)
+    test_imputed = impute_data(test_labeled, imputation_stats, add_indicators=False)
     
     # Add cyclical time features
     train_features = add_cyclical_time_features(train_imputed)
@@ -117,17 +137,22 @@ def run_single_window(
     train_scaled = transform_data(train_features, scaler_set)
     test_scaled = transform_data(test_features, scaler_set)
     
+    # Feature selection - drop uninformative features
+    train_selected, test_selected, dropped_features = select_features(
+        train_scaled, test_scaled
+    )
+    
     # Save scalers
     save_scalers(scaler_set, SCALERS_DIR, window_id)
     
     # Train model
-    model, feature_cols = train_model(train_scaled)
+    model, feature_cols = train_model(train_selected)
     
     # Save model
     save_model(model, MODELS_DIR / f"model_window{window_id}.pkl")
     
     # Make predictions
-    predictions = predict(model, test_scaled, feature_cols)
+    predictions = predict(model, test_selected, feature_cols)
     
     return PipelineResult(
         window_id=window_id,
@@ -135,5 +160,4 @@ def run_single_window(
         predictions=predictions,
         test_data_with_labels=test_labeled,
         feature_cols=feature_cols,
-        price_data=wide_df,
     )

@@ -31,7 +31,6 @@ def create_labels(
     Returns:
         DataFrame with target column added. Rows without valid target are dropped.
     """
-    df = df.copy()
     lookahead_ms = lookahead_days * MS_PER_DAY
     
     # Use provided price_lookup_df or fall back to df
@@ -41,15 +40,15 @@ def create_labels(
     result_dfs = []
     
     for ticker in df[TICKER].unique():
-        ticker_df = df[df[TICKER] == ticker].copy()
-        ticker_df = ticker_df.sort_values(TIMESTAMP).reset_index(drop=True)
+        ticker_df = df[df[TICKER] == ticker].copy()  # Only copy filtered data
+        ticker_df.sort_values(TIMESTAMP, inplace=True)
+        ticker_df.reset_index(drop=True, inplace=True)
         
         if CLOSE not in ticker_df.columns:
             continue
         
         # Get price lookup data for this ticker (may include future data)
-        ticker_lookup = lookup_df[lookup_df[TICKER] == ticker].copy()
-        ticker_lookup = ticker_lookup.sort_values(TIMESTAMP)
+        ticker_lookup = lookup_df[lookup_df[TICKER] == ticker].sort_values(TIMESTAMP)
         
         if CLOSE not in ticker_lookup.columns:
             continue

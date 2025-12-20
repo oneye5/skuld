@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from dataclasses import dataclass
 import json
+import gc
 
 import pandas as pd
 import numpy as np
@@ -131,8 +132,16 @@ def run_rolling_windows(
     # Prepare wide format data
     wide_df = prepare_wide_data(long_df)
     
+    # Free memory from long_df immediately
+    del long_df
+    gc.collect()
+    
     if wide_df.empty:
         raise ValueError("No data after converting to wide format")
+    
+    # Create memory-efficient price lookup (only timestamp, ticker, close)
+    # This drastically reduces memory compared to keeping all features
+    price_lookup_df = wide_df[[TIMESTAMP, TICKER, CLOSE]].copy()
     
     # Get timestamp range
     data_max_ts = int(wide_df[TIMESTAMP].max())
@@ -163,12 +172,12 @@ def run_rolling_windows(
             print(f"  Skipping window {window_id}: insufficient data")
             continue
         
-        # Add window_id to predictions for tracking
-        predictions = result.predictions.copy()
-        predictions['window_id'] = window_id
+        # Add window_id to predictions for tracking (assign to avoid fragmentation)
+        result.predictions = result.predictions.assign(window_id=window_id)
+        result.test_data_with_labels = result.test_data_with_labels.assign(window_id=window_id)
         
-        actuals = result.test_data_with_labels.copy()
-        actuals['window_id'] = window_id
+        predictions = result.predictions
+        actuals = result.test_data_with_labels
         
         window_data = WindowData(
             window_id=window_id,
@@ -187,6 +196,10 @@ def run_rolling_windows(
         # Save predictions for this window
         _save_predictions(result.predictions, window_id)
         print(f"  Collected {len(predictions):,} predictions")
+        
+        # Clean up memory after each window
+        del result
+        gc.collect()
     
     if not all_window_data:
         raise ValueError("No windows completed successfully")
@@ -208,20 +221,20 @@ def run_rolling_windows(
     
     # Run combined trading simulation
     print("Running trading simulation...")
-    trading_metrics, trades = run_trading_simulation(combined_predictions, wide_df)
+    trading_metrics, trades = run_trading_simulation(combined_predictions, price_lookup_df)
     
     # Run baseline simulation (over entire test period)
     print("Running baseline simulation...")
     min_test_start = min(w.test_start_ts for w in all_window_data)
     max_test_end = max(w.test_end_ts for w in all_window_data)
-    baseline_metrics, _ = run_baseline_simulation(wide_df, min_test_start, max_test_end)
+    baseline_metrics, _ = run_baseline_simulation(price_lookup_df, min_test_start, max_test_end)
     
     # Create per-window summaries for visualization
     window_summaries = []
     for wd in all_window_data:
         # Evaluate per-window for comparison
         window_class_metrics = evaluate_predictions(wd.predictions, wd.actuals)
-        window_trade_metrics, _ = run_trading_simulation(wd.predictions, wide_df)
+        window_trade_metrics, _ = run_trading_simulation(wd.predictions, price_lookup_df)
         
         window_summaries.append({
             'window_id': wd.window_id,

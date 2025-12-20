@@ -58,3 +58,4 @@ python-ml/.continue/rules/new-rule.md
 *.pkl
 python/ml-pipeline/output/evaluation/figures/accuracy_by_window.png
 *.png
+java/sample_data.txt

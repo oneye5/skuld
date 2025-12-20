@@ -2,13 +2,9 @@ package lazic;
 
 import java.nio.file.Path;
 
-import lazic.sources.NzBusinessConfidence;
-import lazic.sources.NzGdp;
-import lazic.sources.NzLaborStats;
-import lazic.sources.NzRatesFx;
-import lazic.sources.NzVehicleRegistrations;
-import lazic.sources.YfFinances;
-import lazic.sources.YfPrices;
+import lazic.sources.*;
+import lazic.sources.GlobalAquacultureProduction;
+import lazic.sources.examples.NzRoadFatalities;
 import lazic.utils.ingest.CsvLongParser;
 import lazic.utils.ingest.IngestManager;
 
@@ -21,7 +17,8 @@ public class Main {
 		new YfFinances();
 		new YfPrices();
 		new NzLaborStats();
-
+ 		new NzRoadFatalities();
+		new GlobalAquacultureProduction();
 		IngestManager.INSTANCE.fetchDataFromSources();
 		IngestManager.INSTANCE.printSubset(100);
 

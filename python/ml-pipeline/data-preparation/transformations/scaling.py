@@ -82,17 +82,15 @@ def fit_scalers(train_df: pd.DataFrame) -> ScalerSet:
 
 def transform_data(df: pd.DataFrame, scaler_set: ScalerSet) -> pd.DataFrame:
     """
-    Transform data using fitted scalers.
+    Transform data using fitted scalers. Note: Modifies df inplace.
     
     Args:
         df: DataFrame with features to scale.
         scaler_set: ScalerSet containing fitted scalers.
     
     Returns:
-        DataFrame with scaled features.
+        DataFrame with scaled features (same object as input).
     """
-    df = df.copy()
-    
     # Get columns that exist in this DataFrame
     macro_cols = [c for c in scaler_set.macro_columns if c in df.columns]
     ticker_cols = [c for c in scaler_set.ticker_columns if c in df.columns]

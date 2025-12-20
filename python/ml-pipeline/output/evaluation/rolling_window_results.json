@@ -1,99 +1,99 @@
 {
   "combined_classification": {
-    "accuracy": 0.4898156640791034,
-    "precision": 0.4171211175368959,
-    "recall": 0.4590278677900194,
-    "f1": 0.43707227971441087,
-    "roc_auc": 0.4896141699632218,
+    "accuracy": 0.4715167192994244,
+    "precision": 0.4191117825340377,
+    "recall": 0.5789951259981334,
+    "f1": 0.4862478703658344,
+    "roc_auc": 0.4811126992227579,
     "confusion_matrix": [
       [
-        52167,
-        49487
+        39545,
+        61907
       ],
       [
-        41736,
-        35414
+        32478,
+        44666
       ]
     ]
   },
   "combined_trading": {
-    "total_return_pct": -16.026402485517146,
-    "median_return_pct": -4.97103760388394,
-    "lqr_return_pct": -8.170831698117555,
-    "uqr_return_pct": 5.444967602562005,
-    "std_return_pct": 17.351582812033858,
-    "sharpe_ratio": -0.19862961242579782,
-    "num_trades": 93,
-    "final_capital": 83973.59751448286
+    "total_return_pct": 20.763003782277753,
+    "median_return_pct": -0.20730134673232017,
+    "lqr_return_pct": -20.03078459487798,
+    "uqr_return_pct": 4.802545654353097,
+    "std_return_pct": 90.24314142555825,
+    "sharpe_ratio": 0.03834641143597831,
+    "num_trades": 120,
+    "final_capital": 120763.00378227775
   },
   "baseline": {
-    "total_return_pct": -6.0004750026666445,
-    "median_return_pct": -6.000475002666647,
-    "lqr_return_pct": -6.000475002666647,
-    "uqr_return_pct": -6.000475002666647,
+    "total_return_pct": -6.330082874958258,
+    "median_return_pct": -6.330082874958267,
+    "lqr_return_pct": -6.330082874958267,
+    "uqr_return_pct": -6.330082874958267,
     "std_return_pct": 0.0,
     "sharpe_ratio": 0.0,
     "num_trades": 1,
-    "final_capital": 93999.52499733336
+    "final_capital": 93669.91712504174
   },
-  "num_predictions": 178804,
+  "num_predictions": 178596,
   "num_windows": 5,
   "window_summaries": [
     {
       "window_id": 0,
-      "accuracy": 0.4832348714673479,
-      "precision": 0.714078374455733,
-      "recall": 0.049177869958518666,
-      "f1": 0.09201851592088651,
-      "trading_return": -6.625229355991556,
-      "num_predictions": 37578,
-      "test_start": "2023-12-18",
-      "test_end": "2024-12-14"
+      "accuracy": 0.5974996026911056,
+      "precision": 0.6083384319552486,
+      "recall": 0.6906817505209883,
+      "f1": 0.6469002695417789,
+      "trading_return": 1.5602193294094469,
+      "num_predictions": 37754,
+      "test_start": "2023-12-20",
+      "test_end": "2024-12-19"
     },
     {
       "window_id": 1,
-      "accuracy": 0.4986671063841482,
-      "precision": 0.3014056881333769,
-      "recall": 0.5051132213294376,
-      "f1": 0.37753361086466936,
-      "trading_return": -11.722240427333674,
-      "num_predictions": 36387,
-      "test_start": "2022-08-16",
-      "test_end": "2023-08-16"
+      "accuracy": 0.5550589079270479,
+      "precision": 0.3460107978404319,
+      "recall": 0.524745269286754,
+      "f1": 0.4170341985395127,
+      "trading_return": -7.4029571633509335,
+      "num_predictions": 36243,
+      "test_start": "2022-08-22",
+      "test_end": "2023-08-19"
     },
     {
       "window_id": 2,
-      "accuracy": 0.4671888172744826,
-      "precision": 0.18640191288075683,
-      "recall": 0.47648153069359556,
-      "f1": 0.26797190255567177,
-      "trading_return": 0.3944781510942412,
-      "num_predictions": 36771,
-      "test_start": "2021-04-16",
-      "test_end": "2022-04-15"
+      "accuracy": 0.32544989941825697,
+      "precision": 0.19254636360412752,
+      "recall": 0.7266158169409875,
+      "f1": 0.3044233895834501,
+      "trading_return": -20.22968869109999,
+      "num_predictions": 36786,
+      "test_start": "2021-04-20",
+      "test_end": "2022-04-20"
     },
     {
       "window_id": 3,
-      "accuracy": 0.5199749779635474,
-      "precision": 0.7068336234488181,
-      "recall": 0.5191141902758877,
-      "f1": 0.5986019306671739,
-      "trading_return": 2.7839477996395146,
-      "num_predictions": 35169,
-      "test_start": "2019-12-16",
-      "test_end": "2020-12-15"
+      "accuracy": 0.3892646300223534,
+      "precision": 0.6431663574520717,
+      "recall": 0.25903939557474365,
+      "f1": 0.36932911130182594,
+      "trading_return": 49.659877482343525,
+      "num_predictions": 34894,
+      "test_start": "2019-12-20",
+      "test_end": "2020-12-19"
     },
     {
       "window_id": 4,
-      "accuracy": 0.4805921152618621,
-      "precision": 0.45245715098499395,
-      "recall": 0.8827528791452754,
-      "f1": 0.5982697009591875,
-      "trading_return": -5.274808954180451,
-      "num_predictions": 32899,
-      "test_start": "2018-08-16",
-      "test_end": "2019-08-16"
+      "accuracy": 0.48546432151644947,
+      "precision": 0.4570368844014012,
+      "recall": 0.9218620116375728,
+      "f1": 0.6111034577765533,
+      "trading_return": 4.99972610084014,
+      "num_predictions": 32919,
+      "test_start": "2018-08-20",
+      "test_end": "2019-08-21"
     }
   ],
-  "num_trades": 93
+  "num_trades": 120
 }

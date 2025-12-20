@@ -40,8 +40,8 @@ class TestMacroPrefix:
         assert result.loc[0, FEATURE] == "Close"
         assert result.loc[1, FEATURE] == "Close"
     
-    def test_returns_copy(self):
-        """Should return a copy, not modify original."""
+    def test_modifies_inplace(self):
+        """Should modify DataFrame inplace for efficiency."""
         df = pd.DataFrame({
             TIMESTAMP: [1000],
             TICKER: [""],
@@ -49,8 +49,9 @@ class TestMacroPrefix:
             VALUE: [100.0],
         })
         
-        original_feature = df.loc[0, FEATURE]
         result = add_macro_prefix(df)
         
-        assert df.loc[0, FEATURE] == original_feature
-        assert result.loc[0, FEATURE] != original_feature
+        # Should be same object (inplace modification)
+        assert result is df
+        # Feature should be modified
+        assert df.loc[0, FEATURE] == f"{MACRO_PREFIX}GDP"

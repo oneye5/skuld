@@ -277,73 +277,49 @@ def run_baseline_simulation(
     initial_capital: float = INITIAL_CAPITAL,
     lookahead_days: int = LOOKAHEAD_DAYS,
     transaction_cost_pct: float = TRANSACTION_COST_PCT,
+    max_position_pct: float = MAX_POSITION_SIZE_PCT,
 ) -> tuple[TradingMetrics, list[Trade]]:
     """
     Run baseline simulation buying every ticker (for comparison).
     
-    Buys all tickers at start_ts and sells after lookahead_days.
+    Uses same logic as run_trading_simulation but with all tickers having
+    probability=1.0 at every timestamp. This creates a fair "buy everything"
+    baseline comparison.
     """
-    lookahead_ms = lookahead_days * MS_PER_DAY
-    cost_multiplier = transaction_cost_pct / 100
+    # Filter price data to test period first (much more efficient)
+    test_prices = price_data[
+        (price_data[TIMESTAMP] >= start_ts) & 
+        (price_data[TIMESTAMP] <= end_ts)
+    ].copy()
     
-    # Get prices at start time
-    start_prices = price_data[price_data[TIMESTAMP] == start_ts]
+    if test_prices.empty:
+        return TradingMetrics(
+            total_return_pct=0.0,
+            median_return_pct=0.0,
+            lqr_return_pct=0.0,
+            uqr_return_pct=0.0,
+            std_return_pct=0.0,
+            sharpe_ratio=0.0,
+            num_trades=0,
+            final_capital=initial_capital,
+        ), []
     
-    if start_prices.empty:
-        # Find closest timestamp to start
-        available_ts = price_data[TIMESTAMP].unique()
-        closest_ts = min(available_ts, key=lambda x: abs(x - start_ts))
-        start_prices = price_data[price_data[TIMESTAMP] == closest_ts]
-        start_ts = closest_ts
+    # Create baseline predictions directly from filtered price data
+    # Only include rows that already exist in price_data (no need to check)
+    baseline_predictions = test_prices[[TIMESTAMP, TICKER]].drop_duplicates()
+    baseline_predictions[PREDICTION_PROB] = 1.0  # Always buy
     
-    tickers = start_prices[TICKER].unique()
-    position_size = initial_capital / len(tickers) if len(tickers) > 0 else 0
-    
-    # Create price lookup
-    price_lookup = {}
-    for _, row in price_data.iterrows():
-        key = (row[TICKER], row[TIMESTAMP])
-        if CLOSE in row and pd.notna(row[CLOSE]):
-            price_lookup[key] = row[CLOSE]
-    
-    trades = []
-    sell_ts = start_ts + lookahead_ms
-    
-    for ticker in tickers:
-        buy_price = price_lookup.get((ticker, start_ts))
-        if buy_price is None or buy_price <= 0:
-            continue
-        
-        actual_buy_price = buy_price * (1 + cost_multiplier)
-        shares = position_size / actual_buy_price
-        
-        # Find sell price
-        sell_price = None
-        for ts in sorted(price_data[TIMESTAMP].unique()):
-            if ts >= sell_ts:
-                sell_price = price_lookup.get((ticker, ts))
-                if sell_price is not None:
-                    sell_ts_actual = ts
-                    break
-        
-        if sell_price is not None:
-            actual_sell_price = sell_price * (1 - cost_multiplier)
-            return_pct = ((actual_sell_price - actual_buy_price) / actual_buy_price) * 100
-            
-            trades.append(Trade(
-                ticker=ticker,
-                buy_timestamp=start_ts,
-                sell_timestamp=sell_ts_actual,
-                buy_price=actual_buy_price,
-                sell_price=actual_sell_price,
-                shares=shares,
-                return_pct=return_pct,
-            ))
-    
-    # Calculate final capital
-    final_capital = sum(t.shares * t.sell_price for t in trades)
-    
-    return _calculate_metrics(trades, initial_capital, final_capital), trades
+    # Use the same trading simulation logic with threshold=0.99
+    # This ensures we buy at same rate as model would if it predicted 1.0
+    return run_trading_simulation(
+        predictions_df=baseline_predictions,
+        price_data=price_data,
+        threshold=0.99,  # Will buy anything with prob >= 0.99
+        initial_capital=initial_capital,
+        lookahead_days=lookahead_days,
+        transaction_cost_pct=transaction_cost_pct,
+        max_position_pct=max_position_pct,
+    )
 
 
 def metrics_to_dict(metrics: TradingMetrics) -> dict:

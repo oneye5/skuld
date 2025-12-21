@@ -34,7 +34,9 @@ def compute_imputation_stats(df: pd.DataFrame) -> ImputationStats:
     
     for col in feature_cols:
         if df[col].dtype in ['float64', 'int64', 'float32', 'int32']:
-            feature_means[col] = df[col].mean()
+            mean_val = df[col].mean()
+            # Use 0.0 for columns that are 100% NaN (they'll be dropped by feature selection)
+            feature_means[col] = 0.0 if pd.isna(mean_val) else mean_val
     
     return ImputationStats(feature_means=feature_means)
 

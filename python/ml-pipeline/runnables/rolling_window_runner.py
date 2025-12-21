@@ -1,7 +1,5 @@
 """Rolling window runner for backtesting across multiple time periods."""
 
-import sys
-from pathlib import Path
 from dataclasses import dataclass
 import json
 import gc
@@ -9,12 +7,11 @@ import gc
 import pandas as pd
 import numpy as np
 
-# Add paths for hyphenated directories
-_ml_pipeline = Path(__file__).parent.parent
-sys.path.insert(0, str(_ml_pipeline))
-sys.path.insert(0, str(_ml_pipeline / "evaluation"))
-sys.path.insert(0, str(_ml_pipeline / "evaluation" / "model-evaluation"))
-sys.path.insert(0, str(_ml_pipeline / "evaluation" / "trade-simulation"))
+# Centralized path setup
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
+from path_setup import ML_PIPELINE_ROOT
 
 from config.column_names import TIMESTAMP, TICKER, TARGET, CLOSE
 from config.model_config import (
@@ -135,8 +132,8 @@ def run_rolling_windows(
     """
     ensure_output_dirs()
     
-    # Prepare wide format data
-    wide_df = prepare_wide_data(long_df)
+    # Prepare wide format data (keep_macro=False for faster processing initially)
+    wide_df = prepare_wide_data(long_df, keep_macro=False)
     
     # Free memory from long_df immediately
     del long_df

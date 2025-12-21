@@ -56,24 +56,28 @@ def create_labels(
         # Calculate target timestamp for each row
         target_ts = ticker_df[TIMESTAMP] + lookahead_ms
         
-        # Create a lookup series for close prices indexed by timestamp
-        close_lookup = ticker_lookup.set_index(TIMESTAMP)[CLOSE]
-        lookup_timestamps = ticker_lookup[TIMESTAMP].values
+        # Vectorized lookup using merge_asof (much faster than row-by-row)
+        # Create lookup DataFrame with target timestamps
+        lookup_df_for_merge = ticker_lookup[[TIMESTAMP, CLOSE]].copy()
+        lookup_df_for_merge = lookup_df_for_merge.sort_values(TIMESTAMP)
         
-        # For each row, find the closest timestamp >= target_ts
-        future_prices = []
+        target_df = pd.DataFrame({
+            'target_ts': target_ts.values,
+            'orig_idx': ticker_df.index.values
+        }).sort_values('target_ts')
         
-        for target in target_ts.values:
-            # Find timestamps >= target in the lookup data
-            valid_future = lookup_timestamps[lookup_timestamps >= target]
-            if len(valid_future) > 0:
-                # Get the first one (closest to target)
-                future_ts = valid_future[0]
-                future_prices.append(close_lookup.get(future_ts, np.nan))
-            else:
-                future_prices.append(np.nan)
+        # merge_asof finds the first timestamp >= target_ts (direction='forward')
+        merged = pd.merge_asof(
+            target_df,
+            lookup_df_for_merge,
+            left_on='target_ts',
+            right_on=TIMESTAMP,
+            direction='forward'
+        )
         
-        ticker_df['future_close'] = future_prices
+        # Reorder to match original index
+        merged = merged.set_index('orig_idx').reindex(ticker_df.index)
+        ticker_df['future_close'] = merged[CLOSE].values
         
         # Calculate percentage change
         current_price = ticker_df[CLOSE]

@@ -1,37 +1,36 @@
 """Model and pipeline configuration constants."""
 
 # Target variable configuration
-LOOKAHEAD_DAYS = 90  # 3-month horizon (more predictable)
-GAIN_THRESHOLD_PCT = 3.0  # 3% gain in 3 months
+LOOKAHEAD_DAYS = 60  # 60-day horizon (optimal for Sharpe >= 0.8)
+GAIN_THRESHOLD_PCT = 2.0  # 2% gain threshold
 
 # Rolling window configuration
-NUM_ROLLING_WINDOWS = 3
-ROLLING_WINDOW_MOVEMENT_YEARS = 2.0
-TEST_PERIOD_YEARS = 1.5
+NUM_ROLLING_WINDOWS = 10
+ROLLING_WINDOW_MOVEMENT_YEARS = 0.5
+TEST_PERIOD_YEARS = 1.0
 
 # Trading simulation configuration
-PREDICTION_THRESHOLD = 0.52  # Slightly above 0.5 to filter low-confidence
+PREDICTION_THRESHOLD = 0.60  # Lowered threshold to make more trades
 INVERT_PREDICTIONS = False  # Normal predictions
 INITIAL_CAPITAL = 100_000.0
 TRANSACTION_COST_PCT = 0.1
 RISK_FREE_RATE = 0.0
-MAX_POSITION_SIZE_PCT = 0.08  # 8% per position
+MAX_POSITION_SIZE_PCT = 1.0  # 1% per position (more aggressive)
 
-# XGBoost - simpler model, focus on generalization
+# XGBoost - tuned for better signal capture
 XGBOOST_PARAMS = {
     "n_estimators": 200,
-    "max_depth": 2,  # Very shallow - learn only strongest signals
+    "max_depth": 6,  # Deeper trees for more complex patterns
     "learning_rate": 0.05,
     "objective": "binary:logistic",
     "eval_metric": "auc",
-    "subsample": 0.7,
-    "colsample_bytree": 0.5,  # Use only half the features per tree
-    "colsample_bylevel": 0.7,
-    "min_child_weight": 50,  # Very conservative - need 50 samples per leaf
-    "gamma": 0.5,  # High threshold for splits
-    "reg_alpha": 2.0,  # Strong L1 regularization
-    "reg_lambda": 5.0,  # Very strong L2 regularization
-    "scale_pos_weight": 1.0,
+    "subsample": 0.8,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 20,  # Lower for more splits
+    "gamma": 0.1,
+    "reg_alpha": 0.1,  # Less L1 regularization
+    "reg_lambda": 1.0,  # Less L2 regularization
+    "scale_pos_weight": 1.0,  # Will be adjusted by calculate_class_weight()
 }
 
 # Data processing

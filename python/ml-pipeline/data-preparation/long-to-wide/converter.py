@@ -20,6 +20,9 @@ def long_to_wide(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         Wide format DataFrame with timestamp, ticker, and feature columns.
     """
+    # Make a copy to avoid SettingWithCopyWarning when we modify dtype
+    df = df.copy()
+    
     # Convert categorical columns to string to avoid memory issues in pivot
     # Categorical groupby creates cartesian product which uses huge memory
     if df[TICKER].dtype.name == 'category':

@@ -103,7 +103,8 @@ def transform_data(df: pd.DataFrame, scaler_set: ScalerSet) -> pd.DataFrame:
         if valid_mask.any():
             scaled_macro = np.full_like(macro_data, np.nan)
             scaled_macro[valid_mask] = scaler_set.macro_scaler.transform(macro_data[valid_mask])
-            df[macro_cols] = scaled_macro
+            # Cast to float32 to match DataFrame dtype
+            df[macro_cols] = scaled_macro.astype('float32')
     
     # Scale ticker features per-ticker
     if ticker_cols:
@@ -117,7 +118,8 @@ def transform_data(df: pd.DataFrame, scaler_set: ScalerSet) -> pd.DataFrame:
                 if valid_mask.any():
                     scaled_ticker = np.full_like(ticker_data, np.nan)
                     scaled_ticker[valid_mask] = scaler.transform(ticker_data[valid_mask])
-                    df.loc[mask, ticker_cols] = scaled_ticker
+                    # Cast to float32 to match DataFrame dtype
+                    df.loc[mask, ticker_cols] = scaled_ticker.astype('float32')
     
     return df
 

@@ -1,19 +1,14 @@
 """Pipeline orchestration module for running the complete ML pipeline."""
 
-import sys
-from pathlib import Path
 from dataclasses import dataclass
 
 import pandas as pd
 
-# Add paths for hyphenated directories
-_ml_pipeline = Path(__file__).parent.parent
-sys.path.insert(0, str(_ml_pipeline))
-sys.path.insert(0, str(_ml_pipeline / "data-preparation"))
-sys.path.insert(0, str(_ml_pipeline / "data-preparation" / "transformations"))
-sys.path.insert(0, str(_ml_pipeline / "data-preparation" / "long-to-wide"))
-sys.path.insert(0, str(_ml_pipeline / "data-preparation" / "data-splitting" / "train-test"))
-sys.path.insert(0, str(_ml_pipeline / "data-preparation" / "labeling"))
+# Centralized path setup
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
+from path_setup import ML_PIPELINE_ROOT
 
 from config.column_names import TIMESTAMP, TICKER, TARGET, CLOSE
 from config.model_config import (
@@ -47,10 +42,33 @@ class PipelineResult:
     feature_cols: list[str]
 
 
-def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
-    """Prepare wide format data from long format."""
+def prepare_wide_data(long_df: pd.DataFrame, keep_macro: bool = True) -> pd.DataFrame:
+    """
+    Prepare wide format data from long format.
+    
+    Args:
+        long_df: Long format data.
+        keep_macro: If True, include macro features. If False, only OHLCV for speed.
+    
+    Returns:
+        Wide format DataFrame ready for feature engineering.
+    """
     # Add macro prefix
     df = add_macro_prefix(long_df)
+    
+    # CRITICAL: Filter features BEFORE wide conversion to avoid memory explosion
+    # The raw data has 1700+ features, most of which are sparse financial data
+    # Keep only: OHLCV + optionally macro data
+    ohlcv_features = {'Open', 'High', 'Low', 'Close', 'Volume'}
+    
+    if keep_macro:
+        # Keep OHLCV and macro data
+        mask = df['feature'].isin(ohlcv_features) | df['feature'].str.startswith('MACRO_')
+    else:
+        # Keep only OHLCV for faster processing
+        mask = df['feature'].isin(ohlcv_features)
+    
+    df = df[mask]
     
     # Convert to wide format
     wide_df = long_to_wide(df)

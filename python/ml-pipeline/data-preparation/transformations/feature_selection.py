@@ -10,7 +10,7 @@ from config.column_names import TIMESTAMP, TICKER, TARGET
 # Thresholds for dropping features
 VARIANCE_THRESHOLD = 0.01  # Drop if variance below this (after scaling)
 CORRELATION_THRESHOLD = 0.95  # Drop if correlation above this with another feature
-MISSING_THRESHOLD = 0.95  # Drop if more than 95% missing
+MISSING_THRESHOLD = 0.50  # Drop if more than 50% missing (was 95%)
 
 
 def get_feature_columns(df: pd.DataFrame) -> list[str]:

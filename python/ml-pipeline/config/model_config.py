@@ -1,39 +1,64 @@
 """Model and pipeline configuration constants."""
 
 # Target variable configuration
-LOOKAHEAD_DAYS = 365  # How far into the future to predict
-GAIN_THRESHOLD_PCT = 2.0  # Minimum % gain for positive class
+LOOKAHEAD_DAYS = 90  # 3-month horizon (more predictable)
+GAIN_THRESHOLD_PCT = 3.0  # 3% gain in 3 months
 
 # Rolling window configuration
-NUM_ROLLING_WINDOWS = 5
-ROLLING_WINDOW_MOVEMENT_YEARS = 1.3333  # How far to move window back in time
+NUM_ROLLING_WINDOWS = 3
+ROLLING_WINDOW_MOVEMENT_YEARS = 2.0
+TEST_PERIOD_YEARS = 1.5
 
 # Trading simulation configuration
-PREDICTION_THRESHOLD = 0.7  # Minimum probability to trigger buy
+PREDICTION_THRESHOLD = 0.52  # Slightly above 0.5 to filter low-confidence
+INVERT_PREDICTIONS = False  # Normal predictions
 INITIAL_CAPITAL = 100_000.0
-TRANSACTION_COST_PCT = 0.1  # Cost per trade (buy or sell)
-RISK_FREE_RATE = 0.0  # For Sharpe ratio calculation
-MAX_POSITION_SIZE_PCT = 5.0  # Maximum % of capital per position
+TRANSACTION_COST_PCT = 0.1
+RISK_FREE_RATE = 0.0
+MAX_POSITION_SIZE_PCT = 0.08  # 8% per position
 
-# XGBoost tuned configuration for better generalization
+# XGBoost - simpler model, focus on generalization
 XGBOOST_PARAMS = {
-    "n_estimators": 300,
-    "max_depth": 5,  # Reduced from 6 to prevent overfitting
-    "learning_rate": 0.05,  # Reduced for better generalization
+    "n_estimators": 200,
+    "max_depth": 2,  # Very shallow - learn only strongest signals
+    "learning_rate": 0.05,
     "objective": "binary:logistic",
-    "eval_metric": "auc",  # Changed from logloss to auc for ranking
-    "subsample": 0.8,  # Row sampling to reduce overfitting
-    "colsample_bytree": 0.8,  # Feature sampling per tree
-    "colsample_bylevel": 0.8,  # Feature sampling per level
-    "min_child_weight": 5,  # Minimum sum of instance weight in child
-    "gamma": 0.1,  # Minimum loss reduction for split
-    "reg_alpha": 0.1,  # L1 regularization
-    "reg_lambda": 1.0,  # L2 regularization
-    "scale_pos_weight": 1.0,  # Will be adjusted based on class ratio
+    "eval_metric": "auc",
+    "subsample": 0.7,
+    "colsample_bytree": 0.5,  # Use only half the features per tree
+    "colsample_bylevel": 0.7,
+    "min_child_weight": 50,  # Very conservative - need 50 samples per leaf
+    "gamma": 0.5,  # High threshold for splits
+    "reg_alpha": 2.0,  # Strong L1 regularization
+    "reg_lambda": 5.0,  # Very strong L2 regularization
+    "scale_pos_weight": 1.0,
 }
 
 # Data processing
 MS_PER_DAY = 86_400_000  # Milliseconds per day (timestamps are in ms)
+
+
+def get_config_dict() -> dict:
+    """Return current configuration as a dictionary for logging."""
+    return {
+        "target": {
+            "lookahead_days": LOOKAHEAD_DAYS,
+            "gain_threshold_pct": GAIN_THRESHOLD_PCT,
+        },
+        "rolling_window": {
+            "num_windows": NUM_ROLLING_WINDOWS,
+            "movement_years": ROLLING_WINDOW_MOVEMENT_YEARS,
+            "test_period_years": TEST_PERIOD_YEARS,
+        },
+        "trading": {
+            "prediction_threshold": PREDICTION_THRESHOLD,
+            "invert_predictions": INVERT_PREDICTIONS,
+            "initial_capital": INITIAL_CAPITAL,
+            "transaction_cost_pct": TRANSACTION_COST_PCT,
+            "max_position_size_pct": MAX_POSITION_SIZE_PCT,
+        },
+        "xgboost": XGBOOST_PARAMS.copy(),
+    }
 
 
 def calculate_class_weight(y) -> float:

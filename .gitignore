@@ -59,3 +59,7 @@ python-ml/.continue/rules/new-rule.md
 python/ml-pipeline/output/evaluation/figures/accuracy_by_window.png
 *.png
 java/sample_data.txt
+python/ml-pipeline/output/runs/21-12-2025-1013/config.json
+*.json
+*.json
+python/ml-pipeline/output/evaluation/rolling_window_results.json

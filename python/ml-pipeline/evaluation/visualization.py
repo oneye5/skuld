@@ -8,7 +8,7 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_curve, precision_recall_curve
 
 from config.column_names import TARGET, PREDICTION, PREDICTION_PROB, TIMESTAMP, TICKER
-from config.file_paths import EVALUATION_DIR
+from config.file_paths import EVALUATION_DIR, get_run_evaluation_dir
 
 
 def plot_confusion_matrix(
@@ -342,7 +342,7 @@ def generate_all_visualizations(
     Returns:
         Dictionary of figure names to Figure objects.
     """
-    output_dir = output_dir or EVALUATION_DIR / "figures"
+    output_dir = output_dir or get_run_evaluation_dir() / "figures"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Merge predictions with actuals

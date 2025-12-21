@@ -22,8 +22,13 @@ from config.model_config import (
     ROLLING_WINDOW_MOVEMENT_YEARS,
     LOOKAHEAD_DAYS,
     MS_PER_DAY,
+    TEST_PERIOD_YEARS,
+    get_config_dict,
 )
-from config.file_paths import OUTPUT_DIR, EVALUATION_DIR, PREDICTIONS_DIR, ensure_output_dirs
+from config.file_paths import (
+    OUTPUT_DIR, EVALUATION_DIR, PREDICTIONS_DIR, ensure_output_dirs,
+    get_run_dir, get_run_evaluation_dir, get_run_predictions_dir,
+)
 
 from runnables.pipeline import prepare_wide_data, run_single_window, PipelineResult
 from metrics import (
@@ -69,6 +74,7 @@ def calculate_window_timestamps(
     num_windows: int = NUM_ROLLING_WINDOWS,
     window_movement_years: float = ROLLING_WINDOW_MOVEMENT_YEARS,
     lookahead_days: int = LOOKAHEAD_DAYS,
+    test_period_years: float = TEST_PERIOD_YEARS,
 ) -> list[tuple[int, int]]:
     """
     Calculate train_end and test_end timestamps for each rolling window.
@@ -82,12 +88,14 @@ def calculate_window_timestamps(
         num_windows: Number of rolling windows.
         window_movement_years: How far to move window back in time (in years).
         lookahead_days: Days needed for lookahead (affects test period end).
+        test_period_years: Length of test period in years.
     
     Returns:
         List of (train_end_ts, test_end_ts) tuples.
     """
     window_movement_ms = int(window_movement_years * 365.25 * MS_PER_DAY)
     lookahead_ms = lookahead_days * MS_PER_DAY
+    test_period_ms = int(test_period_years * 365.25 * MS_PER_DAY)
     
     # The most recent test_end must leave room for lookahead
     # So test_end = data_max - lookahead_days (to allow labeling)
@@ -99,9 +107,7 @@ def calculate_window_timestamps(
         # Test end moves backward by window_movement for each window
         test_end_ts = latest_test_end - (i * window_movement_ms)
         
-        # Train end is some time before test starts
-        # We use test_end - 1 year as test_start, and train_end = test_start
-        test_period_ms = int(1 * 365.25 * MS_PER_DAY)  # 1 year test period
+        # Train end is test_end minus test_period
         train_end_ts = test_end_ts - test_period_ms
         
         windows.append((train_end_ts, test_end_ts))
@@ -292,7 +298,9 @@ def run_rolling_windows(
 
 def _save_predictions(predictions: pd.DataFrame, window_id: int) -> None:
     """Save predictions for a window to disk."""
-    output_path = PREDICTIONS_DIR / f"predictions_window{window_id}.csv"
+    # Save to run-specific directory
+    run_pred_dir = get_run_predictions_dir()
+    output_path = run_pred_dir / f"predictions_window{window_id}.csv"
     predictions.to_csv(output_path, index=False)
     print(f"  Predictions saved to {output_path}")
 
@@ -300,6 +308,7 @@ def _save_predictions(predictions: pd.DataFrame, window_id: int) -> None:
 def _save_results(results: CombinedResults) -> None:
     """Save results to disk."""
     output = {
+        "config": get_config_dict(),  # Include config in results
         "combined_classification": classification_metrics_to_dict(results.classification_metrics),
         "combined_trading": trading_metrics_to_dict(results.trading_metrics),
         "baseline": trading_metrics_to_dict(results.baseline_metrics),
@@ -309,7 +318,9 @@ def _save_results(results: CombinedResults) -> None:
         "num_trades": len(results.trades),
     }
     
-    output_path = EVALUATION_DIR / "rolling_window_results.json"
+    # Save to run-specific directory
+    run_eval_dir = get_run_evaluation_dir()
+    output_path = run_eval_dir / "rolling_window_results.json"
     with open(output_path, 'w') as f:
         json.dump(output, f, indent=2)
     
@@ -318,9 +329,15 @@ def _save_results(results: CombinedResults) -> None:
     # Also save trades to CSV
     if results.trades:
         trades_df = pd.DataFrame(results.trades)
-        trades_path = EVALUATION_DIR / "all_trades.csv"
+        trades_path = run_eval_dir / "all_trades.csv"
         trades_df.to_csv(trades_path, index=False)
         print(f"Trades saved to {trades_path}")
+    
+    # Save config separately for easy reference
+    config_path = get_run_dir() / "config.json"
+    with open(config_path, 'w') as f:
+        json.dump(get_config_dict(), f, indent=2)
+    print(f"Config saved to {config_path}")
 
 
 def print_summary(results: CombinedResults) -> None:

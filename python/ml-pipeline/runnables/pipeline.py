@@ -28,6 +28,7 @@ from macro_prefix import add_macro_prefix
 from imputation import compute_imputation_stats, impute_data
 from feature_engineering import add_cyclical_time_features
 from technical_features import add_technical_features
+from price_transforms import convert_prices_to_returns
 from scaling import fit_scalers, transform_data, save_scalers
 from feature_selection import select_features
 from converter import long_to_wide
@@ -55,7 +56,7 @@ def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
     wide_df = long_to_wide(df)
     
     # Add technical features (before train/test split so all tickers have history)
-    # This is safe because technical features only use past data (rolling windows)
+    # These create momentum and trend features from price data
     wide_df = add_technical_features(wide_df)
     
     # Defragment DataFrame after adding many columns
@@ -117,6 +118,12 @@ def run_single_window(
     
     if train_labeled.empty or test_labeled.empty:
         return None
+    
+    # CRITICAL: Convert raw prices to returns AFTER labeling
+    # Labels need raw Close prices, but features should use returns
+    # This prevents the model from learning "high price = already gained = won't gain more"
+    train_labeled = convert_prices_to_returns(train_labeled)
+    test_labeled = convert_prices_to_returns(test_labeled)
     
     # Compute imputation stats from training data
     imputation_stats = compute_imputation_stats(train_labeled)

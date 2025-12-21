@@ -13,6 +13,7 @@ from config.model_config import (
     MS_PER_DAY,
     RISK_FREE_RATE,
     MAX_POSITION_SIZE_PCT,
+    INVERT_PREDICTIONS,
 )
 
 
@@ -58,12 +59,13 @@ def run_trading_simulation(
     lookahead_days: int = LOOKAHEAD_DAYS,
     transaction_cost_pct: float = TRANSACTION_COST_PCT,
     max_position_pct: float = MAX_POSITION_SIZE_PCT,
+    invert_predictions: bool = INVERT_PREDICTIONS,
 ) -> tuple[TradingMetrics, list[Trade]]:
     """
     Simulate trading based on model predictions.
     
     Strategy:
-    - Buy when prediction probability >= threshold
+    - Buy when prediction probability >= threshold (or <= if inverted)
     - Sell after lookahead_days regardless of performance
     - Position size limited to max_position_pct of initial capital
     
@@ -71,10 +73,11 @@ def run_trading_simulation(
         predictions_df: DataFrame with timestamp, ticker, prediction_probability.
         price_data: Wide format DataFrame with timestamp, ticker, Close prices.
         initial_capital: Starting capital amount.
-        threshold: Minimum probability to trigger buy.
+        threshold: Minimum probability to trigger buy (or maximum if inverted).
         lookahead_days: Days to hold position before selling.
         transaction_cost_pct: Transaction cost as percentage.
         max_position_pct: Maximum position size as percentage of initial capital.
+        invert_predictions: If True, buy when prob < threshold instead of >= threshold.
     
     Returns:
         Tuple of (TradingMetrics, list of completed Trades).
@@ -146,10 +149,16 @@ def run_trading_simulation(
         
         # Get buy signals for current day
         day_predictions = predictions_df[predictions_df[TIMESTAMP] == current_ts]
-        buy_signals = day_predictions[day_predictions[PREDICTION_PROB] >= threshold]
         
-        # Sort by probability (highest first) and limit trades
-        buy_signals = buy_signals.sort_values(PREDICTION_PROB, ascending=False)
+        # Apply threshold - inverted or normal
+        if invert_predictions:
+            buy_signals = day_predictions[day_predictions[PREDICTION_PROB] <= threshold]
+            # Sort by probability (lowest first when inverted)
+            buy_signals = buy_signals.sort_values(PREDICTION_PROB, ascending=True)
+        else:
+            buy_signals = day_predictions[day_predictions[PREDICTION_PROB] >= threshold]
+            # Sort by probability (highest first)
+            buy_signals = buy_signals.sort_values(PREDICTION_PROB, ascending=False)
         
         for _, signal in buy_signals.iterrows():
             if capital < max_position_size:

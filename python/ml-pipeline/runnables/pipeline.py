@@ -15,6 +15,9 @@ from config.model_config import (
     LOOKAHEAD_DAYS,
     GAIN_THRESHOLD_PCT,
     MS_PER_DAY,
+    USE_ENSEMBLE,
+    USE_ADVANCED_FEATURES,
+    USE_CROSS_SECTIONAL,
 )
 from config.file_paths import MODELS_DIR, SCALERS_DIR, ensure_output_dirs
 
@@ -23,9 +26,12 @@ from macro_prefix import add_macro_prefix
 from imputation import compute_imputation_stats, impute_data
 from feature_engineering import add_cyclical_time_features
 from technical_features import add_technical_features
+from advanced_features import add_advanced_features
+from cross_sectional_features import add_cross_sectional_features
 from price_transforms import convert_prices_to_returns
 from scaling import fit_scalers, transform_data, save_scalers
 from feature_selection import select_features
+from ticker_encoding import one_hot_encode_tickers
 from converter import long_to_wide
 from splitter import split_by_timestamp, TrainTestSplit
 from labeler import create_labels
@@ -40,7 +46,6 @@ class PipelineResult:
     predictions: pd.DataFrame
     test_data_with_labels: pd.DataFrame
     feature_cols: list[str]
-
 
 def prepare_wide_data(long_df: pd.DataFrame, keep_macro: bool = True) -> pd.DataFrame:
     """
@@ -76,6 +81,14 @@ def prepare_wide_data(long_df: pd.DataFrame, keep_macro: bool = True) -> pd.Data
     # Add technical features (before train/test split so all tickers have history)
     # These create momentum and trend features from price data
     wide_df = add_technical_features(wide_df)
+    
+    # Add advanced features if enabled (ATR, ADX, Stochastic, etc.)
+    if USE_ADVANCED_FEATURES:
+        wide_df = add_advanced_features(wide_df)
+    
+    # Add cross-sectional features if enabled (market-relative rankings)
+    if USE_CROSS_SECTIONAL:
+        wide_df = add_cross_sectional_features(wide_df)
     
     # Defragment DataFrame after adding many columns
     wide_df = wide_df.copy()
@@ -150,10 +163,14 @@ def run_single_window(
     # add_indicators=False to reduce feature count and memory usage
     train_imputed = impute_data(train_labeled, imputation_stats, add_indicators=False)
     test_imputed = impute_data(test_labeled, imputation_stats, add_indicators=False)
-    
+
     # Add cyclical time features
     train_features = add_cyclical_time_features(train_imputed)
     test_features = add_cyclical_time_features(test_imputed)
+    
+    # One-hot encode tickers (allows model to learn ticker-specific patterns)
+    train_features = one_hot_encode_tickers(train_features)
+    test_features = one_hot_encode_tickers(test_features)
     
     # Fit scalers on training data
     scaler_set = fit_scalers(train_features)

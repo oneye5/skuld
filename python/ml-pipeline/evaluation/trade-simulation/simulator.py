@@ -210,7 +210,7 @@ def run_trading_simulation(
             capital += proceeds
     
     # Calculate metrics
-    return _calculate_metrics(completed_trades, initial_capital, capital), completed_trades
+    return _calculate_metrics(completed_trades, initial_capital, capital, lookahead_days), completed_trades
 
 
 def _find_closest_price(
@@ -232,6 +232,7 @@ def _calculate_metrics(
     trades: list[Trade],
     initial_capital: float,
     final_capital: float,
+    lookahead_days: int = LOOKAHEAD_DAYS,
 ) -> TradingMetrics:
     """Calculate trading performance metrics."""
     if not trades:
@@ -254,9 +255,16 @@ def _calculate_metrics(
     uqr = np.percentile(returns, 75)
     std_return = np.std(returns)
     
-    # Sharpe ratio (assuming risk-free rate = 0)
+    # Annualized Sharpe ratio
+    # Each trade spans lookahead_days, so annualize by sqrt(252/lookahead_days)
+    # This gives the Sharpe ratio as if we were making these returns daily
     mean_return = np.mean(returns)
-    sharpe = mean_return / std_return if std_return > 0 else 0.0
+    if std_return > 0:
+        # Annualization factor: sqrt(trading days per year / days per trade)
+        annualization_factor = np.sqrt(252 / lookahead_days)
+        sharpe = (mean_return / std_return) * annualization_factor
+    else:
+        sharpe = 0.0
     
     return TradingMetrics(
         total_return_pct=total_return_pct,

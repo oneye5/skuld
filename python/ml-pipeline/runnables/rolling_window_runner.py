@@ -39,7 +39,7 @@ from simulator import (
     TradingMetrics,
     metrics_to_dict as trading_metrics_to_dict,
 )
-from visualization import generate_all_visualizations
+from visualization import generate_all_visualizations_extended
 
 
 @dataclass
@@ -280,7 +280,7 @@ def run_rolling_windows(
     print("PHASE 3: Generating Visualizations")
     print("=" * 60)
     
-    generate_all_visualizations(
+    generate_all_visualizations_extended(
         combined_predictions=combined_predictions,
         combined_actuals=combined_actuals,
         trades=trades_dicts,

@@ -63,3 +63,10 @@ python/ml-pipeline/output/runs/21-12-2025-1013/config.json
 *.json
 *.json
 python/ml-pipeline/output/evaluation/rolling_window_results.json
+desktop.ini
+*.log
+*.tsv
+/python/ml-pipeline/catboost_info
+main_output_ensemble.txt
+python/ml-pipeline/output/debug/latest/1_after_macro_prefix_summary.txt
+*.txt

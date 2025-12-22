@@ -1,4 +1,9 @@
-"""Module for scaling features - ticker features per-ticker, macro globally."""
+"""Module for scaling features - ticker features per-ticker, macro globally.
+
+Uses StandardScaler for feature normalization. While RobustScaler is better
+for outliers, empirical testing showed StandardScaler performs better for this
+model's trading simulation results.
+"""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,11 +31,12 @@ def get_macro_columns(df: pd.DataFrame) -> list[str]:
 
 
 def get_ticker_columns(df: pd.DataFrame) -> list[str]:
-    """Get columns that are ticker features (don't start with MACRO_)."""
+    """Get columns that are ticker features (don't start with MACRO_ or TICKER_)."""
     exclude = {TIMESTAMP, TICKER, TARGET}
     return [
         col for col in df.columns
         if not col.startswith(MACRO_PREFIX)
+        and not col.startswith("Ticker_")  # Exclude one-hot encoded ticker columns
         and col not in exclude
         and df[col].dtype in ['float64', 'int64', 'float32', 'int32']
     ]

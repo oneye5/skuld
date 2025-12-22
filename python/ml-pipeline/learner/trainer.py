@@ -8,7 +8,11 @@ import numpy as np
 from xgboost import XGBClassifier
 
 from config.column_names import TIMESTAMP, TICKER, TARGET
-from config.model_config import initialize_model, calculate_class_weight
+from config.model_config import (
+    initialize_model,
+    calculate_class_weight,
+    USE_ENSEMBLE,
+)
 
 
 def get_feature_columns(df: pd.DataFrame) -> list[str]:
@@ -26,7 +30,10 @@ def train_model(
     params: dict | None = None,
 ) -> tuple[object, list[str]]:
     """
-    Train XGBoost model with class weight balancing.
+    Train model with class weight balancing.
+    
+    Uses ensemble (XGBoost + LightGBM + CatBoost) if USE_ENSEMBLE is True,
+    otherwise uses XGBoost only.
 
     Args:
         train_df: Training DataFrame with features and target column.
@@ -42,12 +49,22 @@ def train_model(
     # Handle any remaining NaN (replace with 0)
     np.nan_to_num(X, copy=False, nan=0.0)
     
-    # Calculate class weight for imbalanced data
-    class_weight = calculate_class_weight(y)
-    
-    # Initialize model with class weight
-    model = initialize_model(params, class_weight=class_weight)
-    model.fit(X, y)
+    if USE_ENSEMBLE:
+        # Use ensemble of models
+        from .ensemble import EnsembleModel, EnsembleConfig
+        config = EnsembleConfig(
+            use_xgboost=True,
+            use_lightgbm=True,
+            use_catboost=True,
+            calibrate_probabilities=False,  # Avoid data leakage
+        )
+        model = EnsembleModel(config)
+        model.fit(X, y)
+    else:
+        # Use single XGBoost model
+        class_weight = calculate_class_weight(y)
+        model = initialize_model(params, class_weight=class_weight)
+        model.fit(X, y)
 
     return model, feature_cols
 

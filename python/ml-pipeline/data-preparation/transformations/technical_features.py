@@ -46,6 +46,17 @@ DAYS_SINCE_52W_LOW = "days_since_52w_low"
 PCT_FROM_52W_HIGH = "pct_from_52w_high"
 PCT_FROM_52W_LOW = "pct_from_52w_low"
 
+# MACD
+MACD_LINE = "macd_line"
+MACD_SIGNAL = "macd_signal"
+MACD_HIST = "macd_hist"
+
+# Bollinger Bands
+BB_UPPER = "bb_upper"
+BB_LOWER = "bb_lower"
+BB_PCT_B = "bb_pct_b"
+BB_WIDTH = "bb_width"
+
 
 def _calculate_returns(series: pd.Series, periods: int) -> pd.Series:
     """Calculate percentage returns over N periods."""
@@ -92,6 +103,36 @@ def _calculate_rsi(series: pd.Series, window: int = 14) -> pd.Series:
     rsi[no_gain_with_loss] = 0.0
     
     return rsi
+
+
+def _calculate_macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Calculate MACD line, signal line, and histogram."""
+    ema_fast = series.ewm(span=fast, adjust=False).mean()
+    ema_slow = series.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    macd_signal = macd_line.ewm(span=signal, adjust=False).mean()
+    macd_hist = macd_line - macd_signal
+    return macd_line, macd_signal, macd_hist
+
+
+def _calculate_bollinger_bands(series: pd.Series, window: int = 20, num_std: float = 2.0) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Calculate Bollinger Bands (Upper, Lower, %B, Width)."""
+    sma = series.rolling(window=window).mean()
+    std = series.rolling(window=window).std()
+    upper = sma + (std * num_std)
+    lower = sma - (std * num_std)
+    
+    # %B: (Price - Lower) / (Upper - Lower)
+    pct_b = (series - lower) / (upper - lower)
+    
+    # Bandwidth: (Upper - Lower) / Middle
+    width = (upper - lower) / sma
+    
+    # Handle division by zero (if sma is 0)
+    width = width.replace([np.inf, -np.inf], np.nan)
+    pct_b = pct_b.replace([np.inf, -np.inf], np.nan)
+    
+    return upper, lower, pct_b, width
 
 
 def _calculate_52w_features(group: pd.DataFrame) -> pd.DataFrame:
@@ -157,8 +198,18 @@ def add_technical_features(df: pd.DataFrame) -> pd.DataFrame:
         ticker_df[PRICE_TO_SMA_20] = (close / ticker_df[SMA_20] - 1) * 100
         ticker_df[PRICE_TO_SMA_60] = (close / ticker_df[SMA_60] - 1) * 100
         
+        # Handle division by zero
+        ticker_df[PRICE_TO_SMA_20] = ticker_df[PRICE_TO_SMA_20].replace([np.inf, -np.inf], np.nan)
+        ticker_df[PRICE_TO_SMA_60] = ticker_df[PRICE_TO_SMA_60].replace([np.inf, -np.inf], np.nan)
+        
         # RSI
         ticker_df[RSI_14] = _calculate_rsi(close, 14)
+        
+        # MACD
+        ticker_df[MACD_LINE], ticker_df[MACD_SIGNAL], ticker_df[MACD_HIST] = _calculate_macd(close)
+        
+        # Bollinger Bands
+        ticker_df[BB_UPPER], ticker_df[BB_LOWER], ticker_df[BB_PCT_B], ticker_df[BB_WIDTH] = _calculate_bollinger_bands(close)
         
         # 52-week features (simplified)
         rolling_high = close.rolling(window=252, min_periods=20).max()
@@ -176,7 +227,9 @@ def add_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     # Convert new float64 columns to float32 to save memory
     for col in [RETURN_5D, RETURN_20D, RETURN_60D, VOLATILITY_20D, 
                 SMA_20, SMA_60, PRICE_TO_SMA_20, PRICE_TO_SMA_60, 
-                RSI_14, PCT_FROM_52W_HIGH, PCT_FROM_52W_LOW]:
+                RSI_14, PCT_FROM_52W_HIGH, PCT_FROM_52W_LOW,
+                MACD_LINE, MACD_SIGNAL, MACD_HIST,
+                BB_UPPER, BB_LOWER, BB_PCT_B, BB_WIDTH]:
         if col in result.columns:
             result[col] = result[col].astype('float32')
     

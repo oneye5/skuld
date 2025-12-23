@@ -27,7 +27,7 @@ from config.file_paths import (
     get_run_dir, get_run_evaluation_dir, get_run_predictions_dir,
 )
 
-from runnables.pipeline import prepare_wide_data, run_single_window, PipelineResult
+from runnables.single_window_pipeline import prepare_wide_data, run_single_window, PipelineResult
 from metrics import (
     evaluate_predictions,
     ClassificationMetrics,

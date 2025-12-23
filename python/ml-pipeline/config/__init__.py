@@ -46,8 +46,9 @@ from config.model_config import (
     INITIAL_CAPITAL,
     TRANSACTION_COST_PCT,
     RISK_FREE_RATE,
-    XGBOOST_PARAMS,
     MS_PER_DAY,
+    create_model,
+    get_config_dict,
 )
 
 __all__ = [
@@ -90,6 +91,7 @@ __all__ = [
     "INITIAL_CAPITAL",
     "TRANSACTION_COST_PCT",
     "RISK_FREE_RATE",
-    "XGBOOST_PARAMS",
     "MS_PER_DAY",
+    "create_model",
+    "get_config_dict",
 ]

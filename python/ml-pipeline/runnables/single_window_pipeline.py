@@ -15,22 +15,22 @@ from config.model_config import (
     LOOKAHEAD_DAYS,
     GAIN_THRESHOLD_PCT,
     MS_PER_DAY,
-    USE_ENSEMBLE,
     USE_ADVANCED_FEATURES,
     USE_CROSS_SECTIONAL,
+    USE_TECHNICAL_FEATURES,
 )
 from config.file_paths import MODELS_DIR, SCALERS_DIR, ensure_output_dirs
 
 from utils.data_loader import load_long_data
 from macro_prefix import add_macro_prefix
 from imputation import compute_imputation_stats, impute_data
-from feature_engineering import add_cyclical_time_features
+from feature_engineering import add_cyclical_time_features, add_financial_ratios
 from technical_features import add_technical_features
 from advanced_features import add_advanced_features
 from cross_sectional_features import add_cross_sectional_features
 from price_transforms import convert_prices_to_returns
 from scaling import fit_scalers, transform_data, save_scalers
-from feature_selection import select_features
+from filter_selection import select_features
 from ticker_encoding import one_hot_encode_tickers
 from converter import long_to_wide
 from splitter import split_by_timestamp, TrainTestSplit
@@ -47,6 +47,10 @@ class PipelineResult:
     test_data_with_labels: pd.DataFrame
     feature_cols: list[str]
 
+# Year 2000 cutoff in milliseconds (2000-01-01 00:00:00 UTC)
+YEAR_2000_MS = 946684800000
+
+
 def prepare_wide_data(long_df: pd.DataFrame, keep_macro: bool = True) -> pd.DataFrame:
     """
     Prepare wide format data from long format.
@@ -58,29 +62,15 @@ def prepare_wide_data(long_df: pd.DataFrame, keep_macro: bool = True) -> pd.Data
     Returns:
         Wide format DataFrame ready for feature engineering.
     """
+    # Filter out data before year 2000 to avoid trailing data skewing time features
+    df = long_df[long_df[TIMESTAMP] >= YEAR_2000_MS].copy()
+    
     # Add macro prefix
-    df = add_macro_prefix(long_df)
-    
-    # CRITICAL: Filter features BEFORE wide conversion to avoid memory explosion
-    # The raw data has 1700+ features, most of which are sparse financial data
-    # Keep only: OHLCV + optionally macro data
-    ohlcv_features = {'Open', 'High', 'Low', 'Close', 'Volume'}
-    
-    if keep_macro:
-        # Keep OHLCV and macro data
-        mask = df['feature'].isin(ohlcv_features) | df['feature'].str.startswith('MACRO_')
-    else:
-        # Keep only OHLCV for faster processing
-        mask = df['feature'].isin(ohlcv_features)
-    
-    df = df[mask]
-    
-    # Convert to wide format
+    df = add_macro_prefix(df)
     wide_df = long_to_wide(df)
     
-    # Add technical features (before train/test split so all tickers have history)
-    # These create momentum and trend features from price data
-    wide_df = add_technical_features(wide_df)
+    if USE_TECHNICAL_FEATURES:
+        wide_df = add_technical_features(wide_df)
     
     # Add advanced features if enabled (ATR, ADX, Stochastic, etc.)
     if USE_ADVANCED_FEATURES:
@@ -89,7 +79,7 @@ def prepare_wide_data(long_df: pd.DataFrame, keep_macro: bool = True) -> pd.Data
     # Add cross-sectional features if enabled (market-relative rankings)
     if USE_CROSS_SECTIONAL:
         wide_df = add_cross_sectional_features(wide_df)
-    
+
     # Defragment DataFrame after adding many columns
     wide_df = wide_df.copy()
     
@@ -168,12 +158,29 @@ def run_single_window(
     train_features = add_cyclical_time_features(train_imputed)
     test_features = add_cyclical_time_features(test_imputed)
     
-    # One-hot encode tickers (allows model to learn ticker-specific patterns)
-    train_features = one_hot_encode_tickers(train_features)
-    test_features = one_hot_encode_tickers(test_features)
+    # Add financial ratio features (preserves relationships lost after scaling)
+    train_features = add_financial_ratios(train_features)
+    test_features = add_financial_ratios(test_features)
     
-    # Fit scalers on training data
-    scaler_set = fit_scalers(train_features)
+    # One-hot encode tickers on combined data to ensure consistent columns
+    # Then split back to train/test
+    n_train = len(train_features)
+    combined = pd.concat([train_features, test_features], ignore_index=True)
+    combined_encoded = one_hot_encode_tickers(combined)
+    train_features = combined_encoded.iloc[:n_train].copy()
+    test_features = combined_encoded.iloc[n_train:].copy()
+    
+    # Add min-max scaled time as a feature (nzx-predictor approach)
+    # Scale globally across train+test to preserve relative time information
+    time_min = combined_encoded[TIMESTAMP].min()
+    time_max = combined_encoded[TIMESTAMP].max()
+    train_features['Time_Scaled'] = (train_features[TIMESTAMP] - time_min) / (time_max - time_min)
+    test_features['Time_Scaled'] = (test_features[TIMESTAMP] - time_min) / (time_max - time_min)
+    
+    # Fit scalers on combined train+test (nzx-predictor approach)
+    # RobustScaler is fitted globally on all continuous features
+    combined = pd.concat([train_features, test_features], ignore_index=True)
+    scaler_set = fit_scalers(combined)
     
     # Transform both train and test
     train_scaled = transform_data(train_features, scaler_set)

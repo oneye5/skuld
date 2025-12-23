@@ -10,10 +10,10 @@ from pathlib import Path
 # Add paths for imports
 _ml_pipeline = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_ml_pipeline))
-sys.path.insert(0, str(_ml_pipeline / "data-preparation" / "transformations"))
+sys.path.insert(0, str(_ml_pipeline / "data-preparation" / "feature-selection"))
 
 from config.column_names import TIMESTAMP, TICKER, TARGET
-from feature_selection import (
+from filter_selection import (
     select_features,
     get_feature_columns,
     _drop_high_missing,

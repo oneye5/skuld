@@ -90,6 +90,13 @@ def convert_prices_to_returns(df: pd.DataFrame) -> pd.DataFrame:
     if VOLUME in result.columns:
         result = result.drop(columns=[VOLUME])
     
+    # Drop price-based technical indicators that contain raw prices
+    # These were calculated from Close and contain absolute price levels
+    price_based_indicators = ['sma_20', 'sma_60', 'bb_upper', 'bb_lower']
+    cols_to_drop = [c for c in price_based_indicators if c in result.columns]
+    if cols_to_drop:
+        result = result.drop(columns=cols_to_drop)
+    
     return result
 
 

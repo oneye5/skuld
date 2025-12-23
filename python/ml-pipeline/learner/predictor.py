@@ -15,7 +15,7 @@ def predict(
     Make predictions on test data.
     
     Args:
-        model: Trained model (XGBClassifier or EnsembleModel).
+        model: Trained model with predict_proba() method.
         test_df: Test DataFrame with features.
         feature_cols: List of feature column names used in training.
     
@@ -27,7 +27,6 @@ def predict(
     # Handle any remaining NaN
     X = np.nan_to_num(X, nan=0.0)
     
-    # Get probability predictions - works for both XGBoost and EnsembleModel
     probs = model.predict_proba(X)[:, 1]  # Probability of class 1
     predictions = (probs >= 0.5).astype(int)
     

@@ -25,7 +25,7 @@ def load_long_data(file_path: Path | None = None) -> pd.DataFrame:
             TIMESTAMP: "int64",
             TICKER: "str",
             FEATURE: "str",
-            VALUE: "float32",  # Use float32 instead of float64 to save 50% memory
+            VALUE: "float32", 
         },
         na_values=[""],
         keep_default_na=True,

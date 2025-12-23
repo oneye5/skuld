@@ -33,6 +33,26 @@ from scaling import (
     get_ticker_columns,
 )
 
+# Import from feature-selection
+sys.path.insert(0, str(_base / "feature-selection"))
+from filter_selection import select_features, get_feature_columns, compute_feature_stats
+from model_based_selection import TreeImportanceSelector, select_by_tree_importance
+from dimensionality_reduction import (
+    PCATransformer,
+    add_pca_features,
+    reduce_with_pca,
+)
+from sparse_handling import (
+    SparseConfig,
+    SparseHandlingResult,
+    analyze_sparsity,
+    forward_fill_sparse,
+    aggregate_correlated_sparse,
+    identify_sparse_groups,
+    handle_sparse_features,
+    select_representative_features,
+)
+
 __all__ = [
     "long_to_wide",
     "split_by_timestamp",
@@ -50,4 +70,23 @@ __all__ = [
     "ScalerSet",
     "get_macro_columns",
     "get_ticker_columns",
+    # Feature selection
+    "select_features",
+    "get_feature_columns",
+    "compute_feature_stats",
+    "TreeImportanceSelector",
+    "select_by_tree_importance",
+    # Dimensionality reduction
+    "PCATransformer",
+    "add_pca_features",
+    "reduce_with_pca",
+    # Sparse handling
+    "SparseConfig",
+    "SparseHandlingResult",
+    "analyze_sparsity",
+    "forward_fill_sparse",
+    "aggregate_correlated_sparse",
+    "identify_sparse_groups",
+    "handle_sparse_features",
+    "select_representative_features",
 ]

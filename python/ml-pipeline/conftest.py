@@ -13,6 +13,7 @@ sys.path.insert(0, str(ml_pipeline_root / "data-preparation" / "transformations"
 sys.path.insert(0, str(ml_pipeline_root / "data-preparation" / "long-to-wide"))
 sys.path.insert(0, str(ml_pipeline_root / "data-preparation" / "data-splitting" / "train-test"))
 sys.path.insert(0, str(ml_pipeline_root / "data-preparation" / "labeling"))
+sys.path.insert(0, str(ml_pipeline_root / "data-preparation" / "feature-selection"))
 sys.path.insert(0, str(ml_pipeline_root / "evaluation"))
 sys.path.insert(0, str(ml_pipeline_root / "evaluation" / "model-evaluation"))
 sys.path.insert(0, str(ml_pipeline_root / "evaluation" / "trade-simulation"))

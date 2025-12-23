@@ -32,3 +32,23 @@ DAY_OF_WEEK_SIN = "day_of_week_sin"
 DAY_OF_WEEK_COS = "day_of_week_cos"
 MONTH_SIN = "month_sin"
 MONTH_COS = "month_cos"
+
+# Financial data columns (from raw data)
+ANNUAL_NET_INCOME = "annualNetIncome"
+ANNUAL_BASIC_AVERAGE_SHARE = "annualBasicAverageShares"
+ANNUAL_TOTAL_REVENUE = "annualTotalRevenue"
+ANNUAL_SGA = "annualSellingGeneralAndAdministration"
+ANNUAL_DEPRECIATION = "annualDepreciationIncomeStatement"
+TRAILING_FEES_COMMISSION = "trailingFeesandCommissionExpense"
+LONG_TERM_INTEREST_RATE = "Long-term interest rates"
+IMMEDIATE_INTEREST_RATE = "Immediate interest rates- call money- interbank rate"
+SHORT_TERM_INTEREST_RATE = "Short-term interest rates"
+
+# Engineered ratio features
+EPS_BASIC = "EPS_Basic"
+NET_PROFIT_MARGIN = "NetProfitMargin"
+SGA_RATIO = "SGA_Ratio"
+DEPRECIATION_RATIO = "DepreciationRatio"
+COMMISSION_EFFICIENCY = "CommissionEfficiency"
+IMMEDIATE_INTEREST_VOLATILITY = "ImmediateInterestVolatility"
+SHORT_TERM_INTEREST_VOLATILITY = "ShortTermInterestVolatility"

@@ -4,7 +4,7 @@ import java.nio.file.Path;
 
 import lazic.sources.*;
 import lazic.sources.GlobalAquacultureProduction;
-import lazic.sources.examples.NzRoadFatalities;
+import lazic.sources.NzRoadFatalities;
 import lazic.utils.ingest.CsvLongParser;
 import lazic.utils.ingest.IngestManager;
 

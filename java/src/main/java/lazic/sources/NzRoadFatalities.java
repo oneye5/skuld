@@ -1,4 +1,4 @@
-package lazic.sources.examples;
+package lazic.sources;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;

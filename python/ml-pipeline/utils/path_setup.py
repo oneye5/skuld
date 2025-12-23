@@ -22,6 +22,7 @@ def setup_paths() -> Path:
         ml_pipeline / "data-preparation" / "long-to-wide",
         ml_pipeline / "data-preparation" / "data-splitting" / "train-test",
         ml_pipeline / "data-preparation" / "labeling",
+        ml_pipeline / "data-preparation" / "feature-selection",
         ml_pipeline / "evaluation",
         ml_pipeline / "evaluation" / "model-evaluation",
         ml_pipeline / "evaluation" / "trade-simulation",

@@ -36,12 +36,6 @@ from scaling import (
 # Import from feature-selection
 sys.path.insert(0, str(_base / "feature-selection"))
 from filter_selection import select_features, get_feature_columns, compute_feature_stats
-from model_based_selection import TreeImportanceSelector, select_by_tree_importance
-from dimensionality_reduction import (
-    PCATransformer,
-    add_pca_features,
-    reduce_with_pca,
-)
 from sparse_handling import (
     SparseConfig,
     SparseHandlingResult,
@@ -74,12 +68,6 @@ __all__ = [
     "select_features",
     "get_feature_columns",
     "compute_feature_stats",
-    "TreeImportanceSelector",
-    "select_by_tree_importance",
-    # Dimensionality reduction
-    "PCATransformer",
-    "add_pca_features",
-    "reduce_with_pca",
     # Sparse handling
     "SparseConfig",
     "SparseHandlingResult",

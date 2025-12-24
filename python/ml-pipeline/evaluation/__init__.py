@@ -1,31 +1,21 @@
-"""Evaluation module exports."""
+"""Evaluation package - metrics, trading simulation, and reporting."""
 
-from .model_evaluation import (
-    evaluate_predictions,
+from evaluation.metrics import (
     ClassificationMetrics,
-    metrics_to_dict as classification_metrics_to_dict,
-    aggregate_metrics as aggregate_classification_metrics,
+    compute_classification_metrics,
 )
-from .trade_simulation import (
-    run_trading_simulation,
-    run_baseline_simulation,
+from evaluation.simulator import (
     TradingMetrics,
     Trade,
-    Position,
-    metrics_to_dict as trading_metrics_to_dict,
-    aggregate_trading_metrics,
+    run_trading_simulation,
 )
+from evaluation.reporter import generate_report
 
 __all__ = [
-    "evaluate_predictions",
     "ClassificationMetrics",
-    "classification_metrics_to_dict",
-    "aggregate_classification_metrics",
-    "run_trading_simulation",
-    "run_baseline_simulation",
+    "compute_classification_metrics",
     "TradingMetrics",
     "Trade",
-    "Position",
-    "trading_metrics_to_dict",
-    "aggregate_trading_metrics",
+    "run_trading_simulation",
+    "generate_report",
 ]

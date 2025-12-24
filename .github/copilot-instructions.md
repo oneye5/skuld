@@ -4,12 +4,29 @@ This repo contains:
 - **Python ML pipeline** in `python/ml-pipeline/` (primary day-to-day work).
 - **Java ingestion** in `java/` (Maven project).
 
-When working in this workspace, optimize for an **iterative, agentic workflow**:
-1. **Reproduce** the current behavior (run the smallest command/test that shows the issue).
-2. **Write/adjust tests first** when changing behavior (TDD is preferred).
-3. Make the **smallest safe change**, then re-run the same test/command.
-4. Expand to a broader test run only after the focused check passes.
-5. If something fails, **surface the exact error**, locate the root cause, and iterate.
+## 🚨 CRITICAL: Development Philosophy 🚨
+
+**1. THE MODEL IS FROZEN**
+- **Do NOT change the model architecture (XGBoost/CatBoost/etc) or hyperparameters.**
+- **Do NOT change the target definition** unless explicitly instructed.
+- We assume the current model config is "good enough" to detect signal if the data is good.
+- **Goal:** Improve performance solely through **Feature Engineering, Data Cleaning, and Scaling**.
+
+**2. Research-Driven Development**
+- Before writing code, **review research** (university papers, financial ML forums, blogs).
+- Look for proven features in similar domains (e.g., "momentum features for mid-cap equities", "handling outliers in financial time series").
+- Propose features based on **domain logic**, not random guessing.
+
+**3. Optimize for Iteration Speed (Avoid the 15-minute wait)**
+- The full pipeline (`main.py`) takes ~15 minutes. **Do not run it for every small change.**
+- **Write Helper Scripts:** Create small scripts in `python/ml-pipeline/output/debug/` or `tests/` to verify your specific transformation on a small DataFrame subset.
+- **Unit Tests First:** Write a test for your new feature transformer. If the test passes, the logic is likely correct.
+- Only run the full pipeline when you are confident the code works and you need to see the *performance impact*.
+
+**4. Incremental Changes**
+- Make **one small change at a time** (e.g., add one feature, change one scaler).
+- Measure the direction of performance. Did Sharpe ratio go up? Did Precision improve?
+- If it didn't help, revert it before trying the next idea. Keep the codebase clean.
 
 ---
 
@@ -72,6 +89,15 @@ Run a single test by name/keyword:
 When making changes:
 - Start with the **smallest** relevant test selection.
 - Only run the full suite once the targeted tests pass.
+
+---
+
+## Where to find results
+
+After a full run (`main.py`), check `python/ml-pipeline/output/runs/<timestamp>/`:
+1. **`evaluation/metrics.json`**: High-level stats (Precision, Recall, F1, AUC).
+2. **`evaluation/trades.csv`**: Simulated PnL. Check the Sharpe Ratio and Max Drawdown.
+3. **`config.json`**: Verifies what config was used.
 
 ---
 

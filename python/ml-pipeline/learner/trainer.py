@@ -1,59 +1,54 @@
-"""Module for training models."""
-
-from pathlib import Path
-import pickle
+"""Model training module."""
 
 import pandas as pd
-import numpy as np
 
-from config.column_names import TIMESTAMP, TICKER, TARGET
-from config.model_config import create_model
+from config.columns import TARGET
+from config.settings import create_model
 
 
-def get_feature_columns(df: pd.DataFrame) -> list[str]:
-    """Get feature columns for training (exclude metadata and target).
+def train_model(
+    train_df: pd.DataFrame,
+    feature_cols: list[str],
+):
+    """Train a model on the training data.
     
-    Note: TIMESTAMP is included as a feature (should be min-max scaled first).
-    """
-    exclude = {TICKER, TARGET}  # TIMESTAMP now included as feature
-    return [
-        col for col in df.columns
-        if col not in exclude
-        and df[col].dtype in ['float64', 'int64', 'float32', 'int32']
-    ]
-
-
-def train_model(train_df: pd.DataFrame) -> tuple[object, list[str]]:
-    """
-    Train model on the provided data.
-
     Args:
-        train_df: Training DataFrame with features and target column.
-
+        train_df: Training DataFrame with features and target.
+        feature_cols: List of feature column names to use.
+    
     Returns:
-        Tuple of (trained model, list of feature column names).
+        Trained model instance.
     """
-    feature_cols = get_feature_columns(train_df)
-    X = train_df[feature_cols].to_numpy(copy=False)
-    y = train_df[TARGET].to_numpy(copy=False)
-
-    # Handle any remaining NaN
-    np.nan_to_num(X, copy=False, nan=0.0)
+    X_train = train_df[feature_cols].values
+    y_train = train_df[TARGET].values
     
     model = create_model()
-    model.fit(X, y)
-
-    return model, feature_cols
-
-
-def save_model(model, output_path: Path) -> None:
-    """Save trained model to disk."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, 'wb') as f:
-        pickle.dump(model, f)
+    model.fit(X_train, y_train)
+    
+    return model
 
 
-def load_model(model_path: Path):
-    """Load trained model from disk."""
-    with open(model_path, 'rb') as f:
-        return pickle.load(f)
+def get_feature_columns(df: pd.DataFrame, exclude_cols: list[str] | None = None) -> list[str]:
+    """Get list of feature columns from DataFrame.
+    
+    Args:
+        df: DataFrame to extract feature columns from.
+        exclude_cols: Additional columns to exclude beyond defaults.
+    
+    Returns:
+        List of feature column names.
+    """
+    from config.columns import TIMESTAMP, TICKER, TARGET
+    
+    default_exclude = {TIMESTAMP, TICKER, TARGET}
+    
+    if exclude_cols:
+        default_exclude.update(exclude_cols)
+    
+    feature_cols = [
+        col for col in df.columns 
+        if col not in default_exclude
+        and pd.api.types.is_numeric_dtype(df[col])
+    ]
+    
+    return feature_cols

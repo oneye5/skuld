@@ -3,7 +3,8 @@
 import pandas as pd
 import numpy as np
 
-from config.columns import TIMESTAMP, TICKER, TARGET
+from config.columns import TIMESTAMP, TICKER, TARGET, TIME_SCALED
+from config.settings import CLIP_THRESHOLD
 
 
 def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.DataFrame:
@@ -47,6 +48,16 @@ def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.Data
     for col in numeric_cols:
         result[col] = result[col].replace([np.inf, -np.inf], np.nan)
     
+    # Forward fill missing values within each ticker group
+    # This propagates the last known value (e.g. yesterday's price/rate)
+    if TICKER in result.columns:
+        # Sort by ticker and timestamp to ensure correct forward filling
+        result = result.sort_values([TICKER, TIMESTAMP])
+        
+        # Forward fill numeric columns by ticker
+        # Using transform to keep the same index and shape
+        result[numeric_cols] = result.groupby(TICKER)[numeric_cols].ffill()
+
     # Add missing flags for ALL features (matching nzx-predictor Java)
     # Flag = 1 means present, Flag = 0 means missing
     if add_missing_flags:
@@ -64,6 +75,42 @@ def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.Data
     # Fill NaN with 0.0
     for col in numeric_cols:
         result[col] = result[col].fillna(0.0)
+    
+    return result
+
+
+def clip_extreme_values(
+    df: pd.DataFrame,
+    threshold: float = CLIP_THRESHOLD,
+) -> pd.DataFrame:
+    """Clip extreme values in scaled features.
+    
+    After RobustScaler, most values should be in a reasonable range,
+    but extreme outliers can still exist. This clips them to avoid
+    model instability.
+    
+    Args:
+        df: DataFrame with scaled features.
+        threshold: Values beyond [-threshold, threshold] are clipped.
+    
+    Returns:
+        DataFrame with clipped values.
+    """
+    result = df.copy()
+    
+    # Columns to exclude from clipping
+    excluded = [TIMESTAMP, TICKER, TARGET, TIME_SCALED]
+    
+    for col in result.columns:
+        if col in excluded:
+            continue
+        if "MissingFlag" in col:
+            continue  # Binary flags, don't clip
+        if not pd.api.types.is_numeric_dtype(result[col]):
+            continue
+        
+        # Clip to [-threshold, threshold]
+        result[col] = result[col].clip(-threshold, threshold)
     
     return result
 

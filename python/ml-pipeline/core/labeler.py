@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 from config.columns import TIMESTAMP, TICKER, CLOSE, TARGET
-from config.settings import LOOKAHEAD_DAYS, GAIN_THRESHOLD_PCT, MS_PER_DAY
+from config.settings import LOOKAHEAD_DAYS, GAIN_THRESHOLD_PCT, MS_PER_DAY, LABELING_TOLERANCE_DAYS
 
 
 def create_labels(
@@ -67,12 +67,17 @@ def create_labels(
         }).sort_values("target_ts")
         
         # merge_asof finds the first timestamp >= target_ts (direction='forward')
+        # Add tolerance to avoid matching with data too far in the future (e.g. after delisting)
+        # Tolerance allows for weekends/holidays but prevents matching across large gaps
+        tolerance_ms = int(LABELING_TOLERANCE_DAYS * MS_PER_DAY)
+        
         merged = pd.merge_asof(
             target_df,
             lookup_for_merge,
             left_on="target_ts",
             right_on=TIMESTAMP,
             direction="forward",
+            tolerance=tolerance_ms,
         )
         
         # Reorder to match original index

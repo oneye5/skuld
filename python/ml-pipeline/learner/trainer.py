@@ -19,8 +19,8 @@ def train_model(
     Returns:
         Trained model instance.
     """
-    X_train = train_df[feature_cols].values
-    y_train = train_df[TARGET].values
+    X_train = train_df[feature_cols]
+    y_train = train_df[TARGET]
     
     model = create_model()
     model.fit(X_train, y_train)

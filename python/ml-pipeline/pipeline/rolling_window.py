@@ -71,7 +71,8 @@ def run_rolling_windows(
     if wide_df.empty:
         raise ValueError("No data after converting to wide format")
     
-    # Get timestamp range
+    # Get timestamp range for global time scaling
+    data_min_ts = int(wide_df[TIMESTAMP].min())
     data_max_ts = int(wide_df[TIMESTAMP].max())
     
     # Calculate window timestamps
@@ -94,7 +95,9 @@ def run_rolling_windows(
         print(f"\n--- Window {window_id + 1}/{num_windows} ---")
         
         result = run_single_window(
-            wide_df, train_end_ts, test_end_ts, window_id, lookahead_days
+            wide_df, train_end_ts, test_end_ts, window_id, lookahead_days,
+            global_time_min=data_min_ts,
+            global_time_max=data_max_ts,
         )
         
         if result is None:

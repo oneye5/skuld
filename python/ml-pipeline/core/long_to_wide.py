@@ -1,5 +1,8 @@
 """Module for converting long format data to wide format."""
 
+import re
+from urllib.parse import unquote
+
 import pandas as pd
 
 from config.columns import TIMESTAMP, TICKER, FEATURE, VALUE, CLOSE, MACRO_PREFIX, OPEN, HIGH, LOW, VOLUME
@@ -7,6 +10,44 @@ from config.columns import TIMESTAMP, TICKER, FEATURE, VALUE, CLOSE, MACRO_PREFI
 
 # OHLCV features that occur together at the same timestamp (no backfill needed)
 OHLCV_FEATURES = {CLOSE, OPEN, HIGH, LOW, VOLUME}
+
+# Pattern to identify NZ stock tickers (tradeable)
+# NZ stocks end with .NZ
+NZ_TICKER_PATTERN = re.compile(r'^[A-Z0-9]+\.NZ$')
+
+
+def clean_and_classify_tickers(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean ticker names and classify non-NZ tickers as macro data.
+    
+    - Decodes URL-encoded characters (e.g., %5E -> ^)
+    - Treats non-.NZ tickers as macro/global features (indices, forex, futures)
+    
+    Args:
+        df: Long format DataFrame with ticker column.
+    
+    Returns:
+        DataFrame with cleaned tickers and non-NZ data reclassified.
+    """
+    df = df.copy()
+    
+    # URL-decode ticker names (e.g., %5ETNX -> ^TNX)
+    df[TICKER] = df[TICKER].apply(lambda x: unquote(str(x)) if pd.notna(x) else x)
+    
+    # Identify non-NZ tickers (indices, forex, futures, etc.)
+    # These should be treated as macro features, not tradeable tickers
+    def is_tradeable_nz(ticker: str) -> bool:
+        if pd.isna(ticker) or ticker == "":
+            return False
+        return bool(NZ_TICKER_PATTERN.match(ticker))
+    
+    is_non_nz = ~df[TICKER].apply(is_tradeable_nz) & (df[TICKER] != "")
+    
+    # For non-NZ tickers, prefix feature with ticker name and clear ticker
+    # e.g., ticker="^TNX", feature="Close" -> feature="^TNX_Close", ticker=""
+    df.loc[is_non_nz, FEATURE] = df.loc[is_non_nz, TICKER] + "_" + df.loc[is_non_nz, FEATURE]
+    df.loc[is_non_nz, TICKER] = ""
+    
+    return df
 
 
 def add_macro_prefix(df: pd.DataFrame) -> pd.DataFrame:
@@ -157,7 +198,11 @@ def _backfill_features_vectorized(anchor_df: pd.DataFrame, features_df: pd.DataF
 
 
 def _merge_macro_data(ticker_wide: pd.DataFrame, macro_df: pd.DataFrame) -> pd.DataFrame:
-    """Merge macro data using merge_asof (most recent value at or before timestamp)."""
+    """Merge macro data using merge_asof (most recent value at or before timestamp).
+    
+    Uses backward merge_asof first, then forward-fills any remaining NaN.
+    This ensures early stock data (before first macro observation) gets filled.
+    """
     if ticker_wide.empty or macro_df.empty:
         return ticker_wide
     
@@ -168,6 +213,8 @@ def _merge_macro_data(ticker_wide: pd.DataFrame, macro_df: pd.DataFrame) -> pd.D
         values=VALUE,
         aggfunc="last",
     ).reset_index()
+    
+    macro_cols = [c for c in macro_pivoted.columns if c != TIMESTAMP]
     
     # Sort both for merge_asof
     ticker_wide = ticker_wide.sort_values(TIMESTAMP)
@@ -180,5 +227,12 @@ def _merge_macro_data(ticker_wide: pd.DataFrame, macro_df: pd.DataFrame) -> pd.D
         on=TIMESTAMP,
         direction="backward",
     )
+    
+    # Forward-fill any remaining NaN in macro columns
+    # (for early stock data before first macro observation)
+    result[macro_cols] = result[macro_cols].ffill()
+    
+    # Also backward-fill to handle any edge cases at the start
+    result[macro_cols] = result[macro_cols].bfill()
     
     return result

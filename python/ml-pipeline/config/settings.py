@@ -10,10 +10,13 @@ All configurable parameters should be defined here. No magic numbers elsewhere.
 LOOKAHEAD_DAYS: int = 366
 """Number of days to look ahead for price change prediction."""
 
-GAIN_THRESHOLD_PCT: float = 13.0
+GAIN_THRESHOLD_PCT: float = 1.0
 """Minimum percentage gain for positive class (1 = will gain >= X%)."""
 
-PREDICTION_THRESHOLD: float = 0.79
+LABELING_TOLERANCE_DAYS: int = 365/2
+"""Max days to look past target date for a price (handles weekends/holidays)."""
+
+PREDICTION_THRESHOLD: float = 0.8
 """Probability threshold for buy signal (0.79 matches nzx-predictor)."""
 
 
@@ -23,7 +26,7 @@ PREDICTION_THRESHOLD: float = 0.79
 NUM_ROLLING_WINDOWS: int = 25
 """Number of rolling windows for backtesting."""
 
-ROLLING_WINDOW_MOVEMENT_YEARS: float = 2.0
+ROLLING_WINDOW_MOVEMENT_YEARS: float = 0.3652423 * 2.2
 """How far back (in years) each window moves from the previous."""
 
 TEST_PERIOD_YEARS: float = 1.0/12.0
@@ -39,8 +42,18 @@ INITIAL_CAPITAL: float = 100_000.0
 TRANSACTION_COST_PCT: float = 0.0
 """Transaction cost as percentage (0.0 = no cost)."""
 
-MAX_POSITION_SIZE_PCT: float = 5.0
+MAX_POSITION_SIZE_PCT: float = 0.01
 """Maximum position size as percentage of initial capital."""
+
+
+# =============================================================================
+# DEBUG
+# =============================================================================
+SAVE_DEBUG_SAMPLES: bool = True
+"""Save preprocessed data samples to output/debug/ for inspection."""
+
+DEBUG_SAMPLE_SIZE: int = 500
+"""Number of rows to sample for debug output."""
 
 
 # =============================================================================
@@ -54,6 +67,9 @@ YEAR_2000_MS: int = 946684800000
 
 EPSILON: float = 1e-6
 """Small value to avoid division by zero in ratio calculations."""
+
+CLIP_THRESHOLD: float = 10.0
+"""Clip scaled feature values to [-CLIP_THRESHOLD, CLIP_THRESHOLD] after scaling."""
 
 
 # =============================================================================
@@ -71,6 +87,10 @@ def create_model():
     from lightgbm import LGBMClassifier
     
     return LGBMClassifier(
+        n_estimators=100,
+        learning_rate=0.05,
+        num_leaves=31,
+        class_weight="balanced",
         verbosity=-1,
         random_state=42,
     )

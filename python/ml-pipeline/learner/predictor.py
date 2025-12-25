@@ -27,7 +27,7 @@ def predict(
     Returns:
         DataFrame with timestamp, ticker, probability, and prediction columns.
     """
-    X_test = test_df[feature_cols].values
+    X_test = test_df[feature_cols]
     
     # Get probability of positive class
     proba = model.predict_proba(X_test)[:, 1]

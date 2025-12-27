@@ -4,9 +4,10 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 
-from config.columns import TIMESTAMP, TICKER, CLOSE, PREDICTION_PROB
+from config.columns import TIMESTAMP, TICKER, CLOSE, PREDICTION_PROB, PREDICTION
 from config.settings import (
     PREDICTION_THRESHOLD,
+    TOP_N_PREDICTIONS,
     INITIAL_CAPITAL,
     TRANSACTION_COST_PCT,
     LOOKAHEAD_DAYS,
@@ -48,6 +49,7 @@ def run_trading_simulation(
     price_data: pd.DataFrame,
     initial_capital: float = INITIAL_CAPITAL,
     threshold: float = PREDICTION_THRESHOLD,
+    top_n: int | None = TOP_N_PREDICTIONS,
     lookahead_days: int = LOOKAHEAD_DAYS,
     transaction_cost_pct: float = TRANSACTION_COST_PCT,
     max_position_pct: float = MAX_POSITION_SIZE_PCT,
@@ -55,7 +57,8 @@ def run_trading_simulation(
     """Simulate trading based on model predictions.
     
     Strategy:
-    - Buy when prediction probability >= threshold
+    - Select top N predictions per timestamp (or threshold if top_n=None)
+    - Buy selected stocks
     - Sell after lookahead_days regardless of performance
     - Position size limited to max_position_pct of initial capital
     
@@ -63,7 +66,9 @@ def run_trading_simulation(
         predictions_df: DataFrame with timestamp, ticker, prediction_probability.
         price_data: DataFrame with timestamp, ticker, Close prices.
         initial_capital: Starting capital amount.
-        threshold: Minimum probability to trigger buy.
+        threshold: Minimum probability to trigger buy (legacy, used if top_n=None).
+        top_n: Number of top predictions to select per timestamp. 
+               If None, fall back to threshold-based selection.
         lookahead_days: Days to hold position before selling.
         transaction_cost_pct: Transaction cost as percentage.
         max_position_pct: Maximum position size as percentage of initial capital.
@@ -97,8 +102,13 @@ def run_trading_simulation(
     
     completed_trades: list[Trade] = []
     
-    # Get buy signals
-    buy_signals = predictions_df[predictions_df[PREDICTION_PROB] >= threshold]
+    # Select buy signals using top N or threshold
+    if top_n is not None and top_n > 0:
+        # Top N selection per timestamp
+        buy_signals = _select_top_n_signals(predictions_df, top_n)
+    else:
+        # Legacy threshold-based selection
+        buy_signals = predictions_df[predictions_df[PREDICTION_PROB] >= threshold]
     
     for _, signal in buy_signals.iterrows():
         ticker = signal[TICKER]
@@ -138,6 +148,36 @@ def run_trading_simulation(
     metrics = _calculate_trading_metrics(completed_trades, initial_capital)
     
     return metrics, completed_trades
+
+
+def _select_top_n_signals(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
+    """Select top N predictions per unique timestamp.
+    
+    This is more realistic for trading - on each decision date, 
+    pick the top N most confident predictions.
+    
+    Args:
+        df: DataFrame with TIMESTAMP, TICKER, PREDICTION_PROB columns.
+        top_n: Number of top predictions to select per timestamp.
+    
+    Returns:
+        DataFrame containing only the top N rows per timestamp.
+    """
+    result_frames = []
+    
+    for ts in df[TIMESTAMP].unique():
+        ts_df = df[df[TIMESTAMP] == ts]
+        
+        if len(ts_df) <= top_n:
+            # If fewer than N samples, select all
+            result_frames.append(ts_df)
+        else:
+            # Select top N by probability
+            result_frames.append(ts_df.nlargest(top_n, PREDICTION_PROB))
+    
+    if result_frames:
+        return pd.concat(result_frames, ignore_index=True)
+    return df.head(0)  # Empty dataframe with same columns
 
 
 def _find_closest_price(

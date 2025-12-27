@@ -5,7 +5,115 @@ import numpy as np
 import pytest
 
 from config.columns import TIMESTAMP, TICKER, FEATURE, VALUE, CLOSE, MACRO_PREFIX
-from core.long_to_wide import long_to_wide, add_macro_prefix
+from core.long_to_wide import long_to_wide, add_macro_prefix, clean_and_classify_tickers
+
+
+class TestCleanAndClassifyTickers:
+    """Tests for clean_and_classify_tickers function."""
+    
+    def test_nzx_tickers_preserved(self):
+        """Test that NZX tickers (.NZ suffix) are preserved."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1, 2],
+            TICKER: ["AIR.NZ", "FPH.NZ"],
+            FEATURE: ["Close", "Close"],
+            VALUE: [5.0, 10.0],
+        })
+        
+        result = clean_and_classify_tickers(df)
+        
+        assert result[TICKER].tolist() == ["AIR.NZ", "FPH.NZ"]
+        assert result[FEATURE].tolist() == ["Close", "Close"]
+    
+    def test_forex_tickers_converted_to_macro(self):
+        """Test that forex tickers (=X suffix) become macro features."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1],
+            TICKER: ["NZDUSD=X"],
+            FEATURE: ["Close"],
+            VALUE: [0.65],
+        })
+        
+        result = clean_and_classify_tickers(df)
+        
+        assert result[TICKER].iloc[0] == ""
+        assert result[FEATURE].iloc[0] == "NZDUSD=X_Close"
+    
+    def test_futures_tickers_converted_to_macro(self):
+        """Test that futures/commodity tickers (=F suffix) become macro features."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1, 1],
+            TICKER: ["GC=F", "CL=F"],
+            FEATURE: ["Close", "Volume"],
+            VALUE: [1800.0, 100000.0],
+        })
+        
+        result = clean_and_classify_tickers(df)
+        
+        assert result[TICKER].tolist() == ["", ""]
+        assert result[FEATURE].tolist() == ["GC=F_Close", "CL=F_Volume"]
+    
+    def test_url_encoded_index_tickers_decoded(self):
+        """Test that URL-encoded index tickers (%5E) are decoded."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1],
+            TICKER: ["%5ETNX"],  # URL-encoded ^TNX
+            FEATURE: ["Close"],
+            VALUE: [4.5],
+        })
+        
+        result = clean_and_classify_tickers(df)
+        
+        assert result[TICKER].iloc[0] == ""
+        assert result[FEATURE].iloc[0] == "^TNX_Close"
+    
+    def test_shanghai_tickers_converted_to_macro(self):
+        """Test that Shanghai tickers (.SS suffix) become macro features."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1],
+            TICKER: ["000001.SS"],
+            FEATURE: ["Close"],
+            VALUE: [3000.0],
+        })
+        
+        result = clean_and_classify_tickers(df)
+        
+        assert result[TICKER].iloc[0] == ""
+        assert result[FEATURE].iloc[0] == "000001.SS_Close"
+    
+    def test_empty_tickers_unchanged(self):
+        """Test that empty tickers remain empty."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1],
+            TICKER: [""],
+            FEATURE: ["InterestRate"],
+            VALUE: [2.5],
+        })
+        
+        result = clean_and_classify_tickers(df)
+        
+        assert result[TICKER].iloc[0] == ""
+        assert result[FEATURE].iloc[0] == "InterestRate"
+    
+    def test_mixed_tickers(self):
+        """Test with a mix of NZX and non-NZX tickers."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1, 1, 1, 1],
+            TICKER: ["AIR.NZ", "NZDUSD=X", "GC=F", ""],
+            FEATURE: ["Close", "Close", "Close", "GDP"],
+            VALUE: [5.0, 0.65, 1800.0, 100.0],
+        })
+        
+        result = clean_and_classify_tickers(df)
+        
+        # NZX ticker preserved
+        assert result[result[FEATURE] == "Close"][TICKER].iloc[0] == "AIR.NZ"
+        # Forex converted
+        assert "NZDUSD=X_Close" in result[FEATURE].values
+        # Futures converted
+        assert "GC=F_Close" in result[FEATURE].values
+        # Empty ticker unchanged
+        assert result[result[FEATURE] == "GDP"][TICKER].iloc[0] == ""
 
 
 class TestAddMacroPrefix:

@@ -7,6 +7,9 @@ All configurable parameters should be defined here. No magic numbers elsewhere.
 # =============================================================================
 # TARGET DEFINITION
 # =============================================================================
+from sklearn.naive_bayes import BernoulliNB
+
+
 LOOKAHEAD_DAYS: int = 366
 """Number of days to look ahead for price change prediction."""
 
@@ -16,8 +19,12 @@ GAIN_THRESHOLD_PCT: float = 1.0
 LABELING_TOLERANCE_DAYS: int = 365/2
 """Max days to look past target date for a price (handles weekends/holidays)."""
 
-PREDICTION_THRESHOLD: float = 0.8
-"""Probability threshold for buy signal (0.79 matches nzx-predictor)."""
+PREDICTION_THRESHOLD: float = 0.6
+"""Probability threshold for buy signal (legacy - prefer TOP_N_PREDICTIONS)."""
+
+TOP_N_PREDICTIONS: int = 5
+"""Number of top predictions to select per time period for trading.
+This is more realistic than a threshold - you pick the best N opportunities."""
 
 
 # =============================================================================
@@ -84,16 +91,22 @@ def create_model():
     Returns:
         A classifier instance.
     """
+    from sklearn.ensemble import VotingClassifier
+    from sklearn.naive_bayes import GaussianNB
     from lightgbm import LGBMClassifier
     
-    return LGBMClassifier(
+
+    lgbm_goss = LGBMClassifier(
         n_estimators=100,
         learning_rate=0.05,
         num_leaves=31,
+        boosting_type="goss",  # Gradient-based One-Side Sampling
         class_weight="balanced",
         verbosity=-1,
         random_state=42,
     )
+
+    return BernoulliNB(binarize=0.5)
 
 
 # =============================================================================
@@ -120,6 +133,7 @@ def get_config_dict() -> dict:
         },
         "trading": {
             "prediction_threshold": PREDICTION_THRESHOLD,
+            "top_n_predictions": TOP_N_PREDICTIONS,
             "initial_capital": INITIAL_CAPITAL,
             "transaction_cost_pct": TRANSACTION_COST_PCT,
             "max_position_size_pct": MAX_POSITION_SIZE_PCT,

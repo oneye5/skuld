@@ -11,41 +11,56 @@ from config.columns import TIMESTAMP, TICKER, FEATURE, VALUE, CLOSE, MACRO_PREFI
 # OHLCV features that occur together at the same timestamp (no backfill needed)
 OHLCV_FEATURES = {CLOSE, OPEN, HIGH, LOW, VOLUME}
 
-# Pattern to identify NZ stock tickers (tradeable)
-# NZ stocks end with .NZ
-NZ_TICKER_PATTERN = re.compile(r'^[A-Z0-9]+\.NZ$')
-
 
 def clean_and_classify_tickers(df: pd.DataFrame) -> pd.DataFrame:
     """Clean ticker names and classify non-NZ tickers as macro data.
     
-    - Decodes URL-encoded characters (e.g., %5E -> ^)
-    - Treats non-.NZ tickers as macro/global features (indices, forex, futures)
+    Converts non-NZX tickers (indexes, forex, commodities, etc.) into macro features
+    that will be backfilled to all NZX ticker rows based on timestamp.
+    
+    Non-NZX ticker patterns detected:
+    - Forex: ends with '=X' (e.g., NZDUSD=X)
+    - Futures/Commodities: ends with '=F' (e.g., GC=F for gold, CL=F for oil)
+    - Global indexes: starts with '%5E' or '^' (e.g., ^TNX, ^FTSE)
+    - Shanghai: ends with '.SS' (e.g., 000001.SS)
+    
+    NZX tickers: end with '.NZ' (e.g., AIR.NZ, FPH.NZ)
     
     Args:
         df: Long format DataFrame with ticker column.
     
     Returns:
-        DataFrame with cleaned tickers and non-NZ data reclassified.
+        DataFrame with non-NZ tickers converted to macro features.
     """
     df = df.copy()
     
-    # URL-decode ticker names (e.g., %5ETNX -> ^TNX)
-    df[TICKER] = df[TICKER].apply(lambda x: unquote(str(x)) if pd.notna(x) else x)
+    # Vectorized URL-decode for tickers containing '%' (e.g., %5ETNX -> ^TNX)
+    # Only apply unquote to rows that contain '%' to avoid unnecessary processing
+    has_encoded = df[TICKER].str.contains('%', na=False)
+    if has_encoded.any():
+        # Use pandas vectorized string operations where possible
+        # For URL decoding, we need to use a map since unquote isn't vectorized
+        encoded_tickers = df.loc[has_encoded, TICKER].unique()
+        decode_map = {t: unquote(t) for t in encoded_tickers}
+        df.loc[has_encoded, TICKER] = df.loc[has_encoded, TICKER].map(decode_map)
     
-    # Identify non-NZ tickers (indices, forex, futures, etc.)
-    # These should be treated as macro features, not tradeable tickers
-    def is_tradeable_nz(ticker: str) -> bool:
-        if pd.isna(ticker) or ticker == "":
-            return False
-        return bool(NZ_TICKER_PATTERN.match(ticker))
+    # Vectorized identification of NZX tickers (ends with .NZ)
+    # Using str.endswith() which is much faster than regex or apply()
+    ticker_col = df[TICKER].fillna('')
+    is_nzx = ticker_col.str.endswith('.NZ')
+    is_empty = ticker_col == ''
     
-    is_non_nz = ~df[TICKER].apply(is_tradeable_nz) & (df[TICKER] != "")
+    # Non-NZX tickers: not .NZ and not empty (these become macro features)
+    is_non_nzx = ~is_nzx & ~is_empty
     
-    # For non-NZ tickers, prefix feature with ticker name and clear ticker
-    # e.g., ticker="^TNX", feature="Close" -> feature="^TNX_Close", ticker=""
-    df.loc[is_non_nz, FEATURE] = df.loc[is_non_nz, TICKER] + "_" + df.loc[is_non_nz, FEATURE]
-    df.loc[is_non_nz, TICKER] = ""
+    if is_non_nzx.any():
+        # For non-NZX tickers, convert to macro features:
+        # feature = ticker + "_" + original_feature (e.g., "^TNX_Close")
+        # ticker = "" (will get MACRO_ prefix later)
+        df.loc[is_non_nzx, FEATURE] = (
+            df.loc[is_non_nzx, TICKER] + "_" + df.loc[is_non_nzx, FEATURE]
+        )
+        df.loc[is_non_nzx, TICKER] = ""
     
     return df
 

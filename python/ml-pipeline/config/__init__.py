@@ -5,6 +5,7 @@ from config.settings import (
     LOOKAHEAD_DAYS,
     GAIN_THRESHOLD_PCT,
     PREDICTION_THRESHOLD,
+    TOP_N_PREDICTIONS,
     # Rolling window settings
     NUM_ROLLING_WINDOWS,
     ROLLING_WINDOW_MOVEMENT_YEARS,
@@ -38,6 +39,7 @@ from config.columns import (
     TARGET,
     # Generated columns
     PREDICTION_PROB,
+    PREDICTION,
     # Prefixes
     MACRO_PREFIX,
 )
@@ -55,6 +57,7 @@ __all__ = [
     "LOOKAHEAD_DAYS",
     "GAIN_THRESHOLD_PCT",
     "PREDICTION_THRESHOLD",
+    "TOP_N_PREDICTIONS",
     "NUM_ROLLING_WINDOWS",
     "ROLLING_WINDOW_MOVEMENT_YEARS",
     "TEST_PERIOD_YEARS",
@@ -78,6 +81,7 @@ __all__ = [
     "VOLUME",
     "TARGET",
     "PREDICTION_PROB",
+    "PREDICTION",
     "MACRO_PREFIX",
     # Paths
     "DATA_DIR",

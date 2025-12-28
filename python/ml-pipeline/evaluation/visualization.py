@@ -1,22 +1,102 @@
 """Visualization module for ranking-based stock prediction.
 
-This module provides plotting functions for analyzing ranking model performance:
-- Quintile return bar charts
-- IC time series plots
-- Cumulative return equity curves
-- Turnover histograms
+This module provides comprehensive plotting functions for analyzing ranking model performance:
+
+QUINTILE ANALYSIS:
+- plot_quintile_returns: Bar chart of average returns by quintile
+- plot_quintile_cumulative_returns: Line chart of cumulative returns over time
+- plot_quintile_heatmap: Heatmap showing quintile returns over time
+
+IC (INFORMATION COEFFICIENT) ANALYSIS:
+- plot_ic_series: IC over time with rolling average
+- plot_ic_distribution: Histogram of IC values
+- plot_ic_by_window: IC comparison across rolling windows
+- plot_ic_decay: IC at different forecast horizons
+
+BACKTEST & PERFORMANCE:
+- plot_cumulative_returns: Equity curve with benchmarks
+- plot_drawdown: Drawdown over time
+- plot_monthly_returns_heatmap: Monthly returns calendar view
+- plot_rolling_sharpe: Rolling Sharpe ratio over time
+- plot_returns_distribution: Distribution of portfolio returns
+
+TURNOVER & COSTS:
+- plot_turnover_histogram: Distribution of portfolio turnover
+- plot_turnover_over_time: Turnover series plot
+
+FACTOR ANALYSIS:
+- plot_feature_importance: Model feature importances
+- plot_prediction_distribution: Distribution of predicted scores
+- plot_prediction_vs_actual: Scatter plot with regression
+
+COMPREHENSIVE DASHBOARDS:
+- create_ranking_dashboard: Combined 2x2 dashboard
+- generate_all_figures: Generate and save all figures to directory
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List, Any
+from pathlib import Path
 import pandas as pd
 import numpy as np
 
 try:
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
+    from matplotlib.colors import LinearSegmentedColormap
+    import matplotlib.ticker as mticker
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
+
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+except ImportError:
+    SEABORN_AVAILABLE = False
+
+
+# =============================================================================
+# STYLE CONFIGURATION
+# =============================================================================
+
+# Define a consistent color palette
+COLORS = {
+    'primary': '#1f77b4',      # Blue
+    'secondary': '#ff7f0e',    # Orange
+    'positive': '#2ca02c',     # Green
+    'negative': '#d62728',     # Red
+    'neutral': '#7f7f7f',      # Gray
+    'highlight': '#9467bd',    # Purple
+}
+
+# Quintile color map (red to green)
+QUINTILE_CMAP = LinearSegmentedColormap.from_list(
+    'quintile', ['#d62728', '#ff7f0e', '#7f7f7f', '#98df8a', '#2ca02c']
+) if MATPLOTLIB_AVAILABLE else None
+
+
+def _set_style():
+    """Set consistent matplotlib style for all plots."""
+    if not MATPLOTLIB_AVAILABLE:
+        return
+    plt.style.use('seaborn-v0_8-whitegrid')
+    plt.rcParams.update({
+        'figure.facecolor': 'white',
+        'axes.facecolor': 'white',
+        'axes.edgecolor': '#333333',
+        'axes.labelcolor': '#333333',
+        'text.color': '#333333',
+        'xtick.color': '#333333',
+        'ytick.color': '#333333',
+        'grid.color': '#e0e0e0',
+        'grid.linestyle': '-',
+        'grid.linewidth': 0.5,
+        'font.size': 10,
+        'axes.titlesize': 12,
+        'axes.labelsize': 10,
+        'legend.fontsize': 9,
+        'figure.titlesize': 14,
+    })
 
 
 def _check_matplotlib():
@@ -26,6 +106,25 @@ def _check_matplotlib():
             "matplotlib is required for visualization. "
             "Install with: pip install matplotlib"
         )
+    _set_style()
+
+
+def _format_timestamp_axis(ax: "plt.Axes", timestamps: pd.Index) -> None:
+    """Format x-axis for timestamp data."""
+    try:
+        if hasattr(timestamps, 'to_pydatetime'):
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+            ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    except Exception:
+        pass  # Keep default formatting if timestamps are not datetime
+
+
+def _save_figure(fig: "plt.Figure", save_path: Optional[str], dpi: int = 150) -> None:
+    """Save figure to file if path provided."""
+    if save_path:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=dpi, bbox_inches='tight', facecolor='white')
 
 
 # =============================================================================
@@ -524,5 +623,1075 @@ def create_ranking_dashboard(
     
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    
+    return fig
+
+
+# =============================================================================
+# ADDITIONAL QUINTILE ANALYSIS
+# =============================================================================
+
+def plot_quintile_heatmap(
+    quintile_df: pd.DataFrame,
+    title: str = "Quintile Returns Over Time",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (14, 8),
+) -> "plt.Figure":
+    """Heatmap showing quintile returns over time.
+    
+    Useful for seeing how quintile performance varies across different periods.
+    
+    Args:
+        quintile_df: DataFrame with columns Q1, Q2, ..., Q5 and timestamp index.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    quintile_cols = [col for col in quintile_df.columns if col.startswith("Q")]
+    data = quintile_df[quintile_cols].T
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create heatmap
+    im = ax.imshow(data.values, aspect='auto', cmap='RdYlGn', 
+                   vmin=-data.abs().max().max(), vmax=data.abs().max().max())
+    
+    # Labels
+    ax.set_yticks(range(len(quintile_cols)))
+    ax.set_yticklabels(quintile_cols)
+    
+    # Reduce x-tick density
+    n_ticks = min(20, len(data.columns))
+    tick_positions = np.linspace(0, len(data.columns)-1, n_ticks, dtype=int)
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels([str(data.columns[i])[:10] for i in tick_positions], rotation=45, ha='right')
+    
+    ax.set_xlabel("Time", fontsize=10)
+    ax.set_ylabel("Quintile", fontsize=10)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    
+    # Colorbar
+    cbar = plt.colorbar(im, ax=ax, label='Return', format='%.2f')
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_quintile_spread_series(
+    quintile_df: pd.DataFrame,
+    title: str = "Long-Short Quintile Spread Over Time",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 5),
+) -> "plt.Figure":
+    """Plot the Q5-Q1 spread over time.
+    
+    Args:
+        quintile_df: DataFrame with columns Q1, Q2, ..., Q5.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    spread = quintile_df['Q5'] - quintile_df['Q1']
+    cumulative_spread = (1 + spread).cumprod() - 1
+    
+    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
+    
+    # Period spread
+    ax1 = axes[0]
+    colors = [COLORS['positive'] if x > 0 else COLORS['negative'] for x in spread.values]
+    ax1.bar(range(len(spread)), spread.values, color=colors, alpha=0.7, width=1.0)
+    ax1.axhline(0, color='black', linewidth=0.5)
+    ax1.axhline(spread.mean(), color=COLORS['secondary'], linewidth=1.5, linestyle='--', 
+                label=f'Mean: {spread.mean():.2%}')
+    ax1.set_ylabel("Q5-Q1 Spread")
+    ax1.set_title(title, fontsize=12, fontweight='bold')
+    ax1.legend(loc='upper right')
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    
+    # Cumulative spread
+    ax2 = axes[1]
+    ax2.fill_between(range(len(cumulative_spread)), 0, cumulative_spread.values,
+                     where=(cumulative_spread.values >= 0), color=COLORS['positive'], alpha=0.3)
+    ax2.fill_between(range(len(cumulative_spread)), 0, cumulative_spread.values,
+                     where=(cumulative_spread.values < 0), color=COLORS['negative'], alpha=0.3)
+    ax2.plot(range(len(cumulative_spread)), cumulative_spread.values, 
+             color=COLORS['primary'], linewidth=2)
+    ax2.axhline(0, color='black', linewidth=0.5)
+    ax2.set_xlabel("Time Period")
+    ax2.set_ylabel("Cumulative Spread")
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# ADDITIONAL IC ANALYSIS
+# =============================================================================
+
+def plot_ic_by_window(
+    window_ics: Dict[int, pd.Series],
+    title: str = "IC by Rolling Window",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 6),
+) -> "plt.Figure":
+    """Box plot of IC distribution by rolling window.
+    
+    Args:
+        window_ics: Dictionary mapping window_id to IC series.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    data = [window_ics[w].dropna().values for w in sorted(window_ics.keys())]
+    labels = [f"Window {w+1}" for w in sorted(window_ics.keys())]
+    
+    bp = ax.boxplot(data, labels=labels, patch_artist=True)
+    
+    # Color boxes
+    colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(data)))
+    for patch, color in zip(bp['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+    
+    ax.axhline(0, color='black', linewidth=0.5, linestyle='--')
+    ax.set_xlabel("Rolling Window", fontsize=10)
+    ax.set_ylabel("IC", fontsize=10)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    
+    # Add mean IC annotation for each window
+    means = [np.mean(d) for d in data]
+    for i, m in enumerate(means):
+        ax.annotate(f'{m:.3f}', xy=(i+1, m), xytext=(0, 5),
+                   textcoords='offset points', ha='center', fontsize=8)
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_rank_ic_comparison(
+    ic_series: pd.Series,
+    rank_ic_series: pd.Series,
+    rolling_window: int = 20,
+    title: str = "IC vs Rank IC Comparison",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 6),
+) -> "plt.Figure":
+    """Compare Pearson IC and Spearman Rank IC over time.
+    
+    Args:
+        ic_series: Pearson IC series.
+        rank_ic_series: Spearman Rank IC series.
+        rolling_window: Window for rolling average.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
+    
+    # Rolling means
+    ic_rolling = ic_series.rolling(rolling_window, min_periods=1).mean()
+    rank_ic_rolling = rank_ic_series.rolling(rolling_window, min_periods=1).mean()
+    
+    # Top plot: Both IC series
+    ax1 = axes[0]
+    ax1.plot(ic_series.index, ic_rolling.values, color=COLORS['primary'], 
+             linewidth=2, label=f'Pearson IC (Mean: {ic_series.mean():.4f})')
+    ax1.plot(rank_ic_series.index, rank_ic_rolling.values, color=COLORS['secondary'],
+             linewidth=2, label=f'Rank IC (Mean: {rank_ic_series.mean():.4f})')
+    ax1.axhline(0, color='black', linewidth=0.5)
+    ax1.set_ylabel(f"{rolling_window}-Period Rolling IC")
+    ax1.set_title(title, fontsize=12, fontweight='bold')
+    ax1.legend(loc='upper left')
+    
+    # Bottom plot: Difference
+    ax2 = axes[1]
+    diff = rank_ic_series - ic_series
+    ax2.fill_between(diff.index, 0, diff.values,
+                     where=(diff.values >= 0), color=COLORS['positive'], alpha=0.5, label='Rank IC > IC')
+    ax2.fill_between(diff.index, 0, diff.values,
+                     where=(diff.values < 0), color=COLORS['negative'], alpha=0.5, label='Rank IC < IC')
+    ax2.axhline(0, color='black', linewidth=0.5)
+    ax2.set_xlabel("Time")
+    ax2.set_ylabel("Rank IC - IC")
+    ax2.legend(loc='upper right')
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_ic_rolling_stats(
+    ic_series: pd.Series,
+    windows: List[int] = [10, 20, 50],
+    title: str = "IC Rolling Statistics",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 8),
+) -> "plt.Figure":
+    """Plot IC with multiple rolling windows and confidence bands.
+    
+    Args:
+        ic_series: Series of IC values.
+        windows: List of rolling window sizes.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
+    
+    # Top: IC with rolling means
+    ax1 = axes[0]
+    ax1.plot(ic_series.index, ic_series.values, alpha=0.3, color=COLORS['neutral'], 
+             linewidth=0.5, label='Daily IC')
+    
+    colors = [COLORS['primary'], COLORS['secondary'], COLORS['highlight']]
+    for window, color in zip(windows, colors):
+        rolling = ic_series.rolling(window, min_periods=1).mean()
+        ax1.plot(rolling.index, rolling.values, color=color, linewidth=1.5,
+                label=f'{window}-period MA')
+    
+    ax1.axhline(0, color='black', linewidth=0.5)
+    ax1.axhline(ic_series.mean(), color=COLORS['positive'], linewidth=1.5, 
+                linestyle='--', alpha=0.7, label=f'Overall Mean: {ic_series.mean():.4f}')
+    ax1.set_ylabel("IC")
+    ax1.set_title(title, fontsize=12, fontweight='bold')
+    ax1.legend(loc='upper left', ncol=2)
+    
+    # Bottom: Rolling IC std (volatility)
+    ax2 = axes[1]
+    for window, color in zip(windows, colors):
+        rolling_std = ic_series.rolling(window, min_periods=1).std()
+        ax2.plot(rolling_std.index, rolling_std.values, color=color, linewidth=1.5,
+                label=f'{window}-period Std')
+    
+    ax2.set_xlabel("Time")
+    ax2.set_ylabel("Rolling IC Std")
+    ax2.set_title("IC Volatility Over Time")
+    ax2.legend(loc='upper right')
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# PERFORMANCE ANALYSIS
+# =============================================================================
+
+def plot_monthly_returns_heatmap(
+    returns_series: pd.Series,
+    title: str = "Monthly Returns Heatmap",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 8),
+) -> "plt.Figure":
+    """Create a calendar heatmap of monthly returns.
+    
+    Args:
+        returns_series: Series of returns with datetime index.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    # Convert index to datetime if needed
+    if not isinstance(returns_series.index, pd.DatetimeIndex):
+        try:
+            # Try treating as millisecond timestamps
+            returns_series = returns_series.copy()
+            returns_series.index = pd.to_datetime(returns_series.index, unit='ms')
+        except Exception:
+            # Create a simple sequential plot instead
+            fig, ax = plt.subplots(figsize=figsize)
+            ax.bar(range(len(returns_series)), returns_series.values)
+            ax.set_title(f"{title} (non-datetime index)")
+            _save_figure(fig, save_path)
+            return fig
+    
+    # Resample to monthly (use 'ME' for month-end to avoid deprecation warning)
+    monthly = returns_series.resample('ME').apply(lambda x: (1 + x).prod() - 1)
+    
+    # Create year/month pivot
+    monthly_df = pd.DataFrame({
+        'year': monthly.index.year,
+        'month': monthly.index.month,
+        'return': monthly.values,
+    })
+    
+    pivot = monthly_df.pivot(index='year', columns='month', values='return')
+    pivot.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][:len(pivot.columns)]
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create heatmap
+    max_val = max(abs(pivot.min().min()), abs(pivot.max().max()))
+    im = ax.imshow(pivot.values, cmap='RdYlGn', aspect='auto',
+                   vmin=-max_val, vmax=max_val)
+    
+    # Labels
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels(pivot.index)
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels(pivot.columns, rotation=45, ha='right')
+    
+    # Add value annotations
+    for i in range(len(pivot.index)):
+        for j in range(len(pivot.columns)):
+            val = pivot.iloc[i, j]
+            if not pd.isna(val):
+                text_color = 'white' if abs(val) > max_val * 0.5 else 'black'
+                ax.text(j, i, f'{val:.1%}', ha='center', va='center', 
+                       fontsize=8, color=text_color)
+    
+    ax.set_xlabel("Month", fontsize=10)
+    ax.set_ylabel("Year", fontsize=10)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    
+    # Colorbar
+    cbar = plt.colorbar(im, ax=ax, format='%.1%%', label='Return')
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_rolling_sharpe(
+    returns_series: pd.Series,
+    windows: List[int] = [63, 126, 252],  # ~3mo, 6mo, 1yr
+    title: str = "Rolling Sharpe Ratio",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 6),
+) -> "plt.Figure":
+    """Plot rolling Sharpe ratio over time.
+    
+    Args:
+        returns_series: Series of returns.
+        windows: List of rolling window sizes in periods.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    colors = [COLORS['primary'], COLORS['secondary'], COLORS['highlight']]
+    labels = ['Short-term', 'Medium-term', 'Long-term']
+    
+    for window, color, label in zip(windows, colors, labels):
+        rolling_mean = returns_series.rolling(window).mean()
+        rolling_std = returns_series.rolling(window).std()
+        rolling_sharpe = (rolling_mean / rolling_std) * np.sqrt(252)  # Annualized
+        
+        ax.plot(rolling_sharpe.index, rolling_sharpe.values, color=color, 
+                linewidth=1.5, label=f'{label} ({window}d)')
+    
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.axhline(1.0, color=COLORS['positive'], linewidth=1, linestyle='--', alpha=0.5, label='Sharpe = 1')
+    ax.axhline(-1.0, color=COLORS['negative'], linewidth=1, linestyle='--', alpha=0.5)
+    
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Rolling Sharpe Ratio")
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.legend(loc='upper left')
+    
+    # Shade regions
+    ax.axhspan(1, 3, alpha=0.1, color=COLORS['positive'], label='Good (1-3)')
+    ax.axhspan(-1, 1, alpha=0.05, color=COLORS['neutral'])
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_returns_distribution(
+    returns_series: pd.Series,
+    title: str = "Returns Distribution",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (10, 6),
+) -> "plt.Figure":
+    """Distribution of portfolio returns with statistics.
+    
+    Args:
+        returns_series: Series of returns.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    
+    returns = returns_series.dropna()
+    
+    # Left: Histogram
+    ax1 = axes[0]
+    n, bins, patches = ax1.hist(returns, bins=50, density=True, alpha=0.7, 
+                                 color=COLORS['primary'], edgecolor='black', linewidth=0.5)
+    
+    # Color bars by sign
+    for patch, left_edge in zip(patches, bins[:-1]):
+        if left_edge < 0:
+            patch.set_facecolor(COLORS['negative'])
+        else:
+            patch.set_facecolor(COLORS['positive'])
+    
+    # Add normal distribution overlay
+    from scipy import stats
+    mu, std = returns.mean(), returns.std()
+    x = np.linspace(returns.min(), returns.max(), 100)
+    ax1.plot(x, stats.norm.pdf(x, mu, std), color='black', linewidth=2, 
+             linestyle='--', label='Normal Fit')
+    
+    ax1.axvline(0, color='black', linewidth=1)
+    ax1.axvline(mu, color=COLORS['secondary'], linewidth=2, label=f'Mean: {mu:.2%}')
+    ax1.set_xlabel("Return")
+    ax1.set_ylabel("Density")
+    ax1.set_title("Return Distribution", fontsize=11)
+    ax1.legend(loc='upper right')
+    ax1.xaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    
+    # Right: Q-Q plot
+    ax2 = axes[1]
+    stats.probplot(returns, dist="norm", plot=ax2)
+    ax2.set_title("Q-Q Plot (vs Normal)", fontsize=11)
+    ax2.get_lines()[0].set_markerfacecolor(COLORS['primary'])
+    ax2.get_lines()[0].set_markersize(4)
+    
+    # Statistics text box
+    skew = stats.skew(returns)
+    kurt = stats.kurtosis(returns)
+    stats_text = f"Mean: {mu:.2%}\nStd: {std:.2%}\nSkew: {skew:.2f}\nKurtosis: {kurt:.2f}"
+    ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes, fontsize=9,
+             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    fig.suptitle(title, fontsize=12, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_underwater(
+    returns_series: pd.Series,
+    title: str = "Underwater Plot (Time Spent in Drawdown)",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 5),
+) -> "plt.Figure":
+    """Plot underwater chart showing time spent in drawdown.
+    
+    Args:
+        returns_series: Series of returns.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    cumulative = (1 + returns_series).cumprod()
+    running_max = cumulative.cummax()
+    drawdown = (cumulative - running_max) / running_max
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    ax.fill_between(drawdown.index, 0, drawdown.values, 
+                    color=COLORS['negative'], alpha=0.6)
+    ax.plot(drawdown.index, drawdown.values, color='darkred', linewidth=0.5)
+    
+    # Highlight max drawdown period
+    max_dd_idx = drawdown.idxmin()
+    max_dd_val = drawdown.min()
+    ax.scatter([max_dd_idx], [max_dd_val], color='black', s=100, zorder=5, 
+               marker='v', label=f'Max DD: {max_dd_val:.1%}')
+    
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Drawdown")
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    ax.legend(loc='lower right')
+    
+    # Add recovery periods annotation
+    in_drawdown = (drawdown < -0.01).sum() / len(drawdown) * 100
+    ax.text(0.02, 0.02, f'Time in Drawdown (>1%): {in_drawdown:.1f}%', 
+            transform=ax.transAxes, fontsize=9,
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# FACTOR ANALYSIS
+# =============================================================================
+
+def plot_feature_importance(
+    importances: Dict[str, float],
+    top_n: int = 20,
+    title: str = "Top Feature Importances",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (10, 8),
+) -> "plt.Figure":
+    """Horizontal bar chart of feature importances.
+    
+    Args:
+        importances: Dictionary mapping feature name to importance.
+        top_n: Number of top features to display.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    # Sort and take top N
+    sorted_features = sorted(importances.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    features, values = zip(*sorted_features)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    y_pos = range(len(features))
+    colors = plt.cm.viridis(np.linspace(0.8, 0.2, len(features)))
+    
+    ax.barh(y_pos, values, color=colors, edgecolor='black', linewidth=0.5)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(features)
+    ax.invert_yaxis()  # Top feature at top
+    
+    ax.set_xlabel("Importance", fontsize=10)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    
+    # Add value labels
+    for i, (feature, value) in enumerate(zip(features, values)):
+        ax.text(value + max(values) * 0.01, i, f'{value:.4f}', 
+                va='center', fontsize=8)
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_prediction_vs_actual(
+    predicted: pd.Series,
+    actual: pd.Series,
+    title: str = "Predicted Score vs Actual Return",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (8, 8),
+) -> "plt.Figure":
+    """Scatter plot of predictions vs actual returns.
+    
+    Args:
+        predicted: Predicted scores.
+        actual: Actual returns.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Sample if too many points
+    n_points = len(predicted)
+    if n_points > 5000:
+        idx = np.random.choice(n_points, 5000, replace=False)
+        pred_sample = predicted.iloc[idx]
+        actual_sample = actual.iloc[idx]
+    else:
+        pred_sample = predicted
+        actual_sample = actual
+    
+    # Scatter plot with transparency
+    ax.scatter(pred_sample, actual_sample, alpha=0.2, s=10, color=COLORS['primary'])
+    
+    # Add regression line
+    from scipy import stats
+    slope, intercept, r_value, _, _ = stats.linregress(pred_sample, actual_sample)
+    x_line = np.array([pred_sample.min(), pred_sample.max()])
+    y_line = slope * x_line + intercept
+    ax.plot(x_line, y_line, color=COLORS['negative'], linewidth=2, 
+            label=f'Regression (R²={r_value**2:.4f})')
+    
+    # Add quintile means
+    try:
+        quintiles = pd.qcut(pred_sample, 5, labels=False, duplicates='drop')
+        q_means = pd.DataFrame({'pred': pred_sample, 'actual': actual_sample, 'q': quintiles})
+        q_summary = q_means.groupby('q').mean()
+        ax.scatter(q_summary['pred'], q_summary['actual'], color=COLORS['secondary'],
+                  s=200, marker='D', edgecolor='black', linewidth=2, zorder=5,
+                  label='Quintile Means')
+    except Exception:
+        pass
+    
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.axvline(0, color='black', linewidth=0.5)
+    
+    ax.set_xlabel("Predicted Score", fontsize=10)
+    ax.set_ylabel("Actual Return", fontsize=10)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.legend(loc='upper left')
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_prediction_distribution(
+    predictions: pd.Series,
+    title: str = "Prediction Score Distribution",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (10, 5),
+) -> "plt.Figure":
+    """Distribution of model prediction scores.
+    
+    Args:
+        predictions: Series of prediction scores.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    
+    # Left: Histogram
+    ax1 = axes[0]
+    ax1.hist(predictions.dropna(), bins=50, color=COLORS['primary'], 
+             edgecolor='black', alpha=0.7, density=True)
+    ax1.axvline(predictions.mean(), color=COLORS['secondary'], linewidth=2, 
+                label=f'Mean: {predictions.mean():.4f}')
+    ax1.axvline(predictions.median(), color=COLORS['highlight'], linewidth=2, 
+                linestyle='--', label=f'Median: {predictions.median():.4f}')
+    ax1.set_xlabel("Prediction Score")
+    ax1.set_ylabel("Density")
+    ax1.set_title("Distribution", fontsize=11)
+    ax1.legend()
+    
+    # Right: Box plot by timestamp (if index is available)
+    ax2 = axes[1]
+    ax2.boxplot([predictions.dropna().values], vert=True)
+    ax2.set_ylabel("Prediction Score")
+    ax2.set_title("Box Plot", fontsize=11)
+    
+    # Add statistics
+    stats_text = (f"Min: {predictions.min():.4f}\n"
+                  f"Q1: {predictions.quantile(0.25):.4f}\n"
+                  f"Median: {predictions.median():.4f}\n"
+                  f"Q3: {predictions.quantile(0.75):.4f}\n"
+                  f"Max: {predictions.max():.4f}\n"
+                  f"Std: {predictions.std():.4f}")
+    ax2.text(1.3, predictions.median(), stats_text, fontsize=9,
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    fig.suptitle(title, fontsize=12, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_hit_rate_over_time(
+    predictions_df: pd.DataFrame,
+    timestamp_col: str = "timestamp",
+    predicted_col: str = "predicted_score",
+    actual_col: str = "actual_return",
+    top_n: int = 10,
+    title: str = "Hit Rate Over Time",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 5),
+) -> "plt.Figure":
+    """Plot hit rate (% of top picks with positive returns) over time.
+    
+    Args:
+        predictions_df: DataFrame with predictions and actuals.
+        timestamp_col: Column name for timestamp.
+        predicted_col: Column name for predicted scores.
+        actual_col: Column name for actual returns.
+        top_n: Number of top picks to consider.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    hit_rates = []
+    timestamps = []
+    
+    for ts, group in predictions_df.groupby(timestamp_col):
+        if len(group) >= top_n:
+            top_picks = group.nlargest(top_n, predicted_col)
+            hit_rate = (top_picks[actual_col] > 0).mean()
+            hit_rates.append(hit_rate)
+            timestamps.append(ts)
+    
+    hit_rate_series = pd.Series(hit_rates, index=timestamps)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Bar plot
+    colors = [COLORS['positive'] if hr > 0.5 else COLORS['negative'] for hr in hit_rates]
+    ax.bar(range(len(hit_rates)), hit_rates, color=colors, alpha=0.7, width=1.0)
+    
+    # Rolling average
+    rolling = hit_rate_series.rolling(20, min_periods=1).mean()
+    ax.plot(range(len(rolling)), rolling.values, color='black', linewidth=2, 
+            label=f'20-period MA')
+    
+    ax.axhline(0.5, color='black', linewidth=1, linestyle='--', label='50% (Random)')
+    ax.axhline(hit_rate_series.mean(), color=COLORS['secondary'], linewidth=2, 
+               linestyle='--', label=f'Mean: {hit_rate_series.mean():.1%}')
+    
+    ax.set_xlabel("Time Period")
+    ax.set_ylabel("Hit Rate")
+    ax.set_title(f"{title} (Top {top_n} Picks)", fontsize=12, fontweight='bold')
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    ax.legend(loc='lower left')
+    ax.set_ylim(0, 1)
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# COMPREHENSIVE FIGURE GENERATION
+# =============================================================================
+
+def generate_all_figures(
+    predictions_df: pd.DataFrame,
+    ic_series: pd.Series,
+    rank_ic_series: pd.Series,
+    quintile_df: pd.DataFrame,
+    returns_series: pd.Series,
+    output_dir: str,
+    feature_importances: Optional[Dict[str, float]] = None,
+    timestamp_col: str = "timestamp",
+    predicted_col: str = "predicted_score",
+    actual_col: str = "actual_return",
+) -> Dict[str, str]:
+    """Generate all visualization figures and save to output directory.
+    
+    Args:
+        predictions_df: DataFrame with timestamp, ticker, predicted_score, actual_return.
+        ic_series: Pearson IC series.
+        rank_ic_series: Spearman Rank IC series.
+        quintile_df: DataFrame with quintile returns (Q1-Q5 columns).
+        returns_series: Portfolio returns series.
+        output_dir: Directory to save figures.
+        feature_importances: Optional dictionary of feature importances.
+        timestamp_col: Column name for timestamp.
+        predicted_col: Column name for predicted scores.
+        actual_col: Column name for actual returns.
+    
+    Returns:
+        Dictionary mapping figure name to file path.
+    """
+    _check_matplotlib()
+    
+    figures_dir = Path(output_dir) / "figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_figures = {}
+    
+    # 1. QUINTILE ANALYSIS
+    print("  Generating quintile analysis figures...")
+    
+    # Quintile returns bar chart
+    fig = plot_quintile_returns(quintile_df)
+    path = str(figures_dir / "01_quintile_returns.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['quintile_returns'] = path
+    
+    # Quintile cumulative returns
+    fig = plot_quintile_cumulative_returns(quintile_df)
+    path = str(figures_dir / "02_quintile_cumulative.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['quintile_cumulative'] = path
+    
+    # Quintile heatmap
+    if len(quintile_df) > 5:
+        fig = plot_quintile_heatmap(quintile_df)
+        path = str(figures_dir / "03_quintile_heatmap.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['quintile_heatmap'] = path
+    
+    # Quintile spread series
+    if 'Q5' in quintile_df.columns and 'Q1' in quintile_df.columns:
+        fig = plot_quintile_spread_series(quintile_df)
+        path = str(figures_dir / "04_quintile_spread.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['quintile_spread'] = path
+    
+    # 2. IC ANALYSIS
+    print("  Generating IC analysis figures...")
+    
+    # IC time series
+    fig = plot_ic_series(ic_series)
+    path = str(figures_dir / "05_ic_series.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['ic_series'] = path
+    
+    # IC distribution
+    fig = plot_ic_distribution(ic_series)
+    path = str(figures_dir / "06_ic_distribution.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['ic_distribution'] = path
+    
+    # IC vs Rank IC comparison
+    if len(rank_ic_series) > 0:
+        fig = plot_rank_ic_comparison(ic_series, rank_ic_series)
+        path = str(figures_dir / "07_ic_vs_rank_ic.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['ic_vs_rank_ic'] = path
+    
+    # IC rolling stats
+    fig = plot_ic_rolling_stats(ic_series)
+    path = str(figures_dir / "08_ic_rolling_stats.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['ic_rolling_stats'] = path
+    
+    # 3. BACKTEST & PERFORMANCE
+    print("  Generating performance figures...")
+    
+    # Cumulative returns
+    fig = plot_cumulative_returns(returns_series)
+    path = str(figures_dir / "09_cumulative_returns.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['cumulative_returns'] = path
+    
+    # Drawdown
+    fig = plot_drawdown(returns_series)
+    path = str(figures_dir / "10_drawdown.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['drawdown'] = path
+    
+    # Underwater plot
+    fig = plot_underwater(returns_series)
+    path = str(figures_dir / "11_underwater.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['underwater'] = path
+    
+    # Monthly returns heatmap
+    try:
+        fig = plot_monthly_returns_heatmap(returns_series)
+        path = str(figures_dir / "12_monthly_heatmap.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['monthly_heatmap'] = path
+    except Exception as e:
+        print(f"    Warning: Could not generate monthly heatmap: {e}")
+    
+    # Rolling Sharpe
+    if len(returns_series) > 63:
+        fig = plot_rolling_sharpe(returns_series)
+        path = str(figures_dir / "13_rolling_sharpe.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['rolling_sharpe'] = path
+    
+    # Returns distribution
+    fig = plot_returns_distribution(returns_series)
+    path = str(figures_dir / "14_returns_distribution.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['returns_distribution'] = path
+    
+    # 4. FACTOR ANALYSIS
+    print("  Generating factor analysis figures...")
+    
+    # Prediction vs Actual scatter
+    fig = plot_prediction_vs_actual(
+        predictions_df[predicted_col],
+        predictions_df[actual_col]
+    )
+    path = str(figures_dir / "15_prediction_vs_actual.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['prediction_vs_actual'] = path
+    
+    # Prediction distribution
+    fig = plot_prediction_distribution(predictions_df[predicted_col])
+    path = str(figures_dir / "16_prediction_distribution.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['prediction_distribution'] = path
+    
+    # Hit rate over time
+    fig = plot_hit_rate_over_time(
+        predictions_df, timestamp_col, predicted_col, actual_col
+    )
+    path = str(figures_dir / "17_hit_rate.png")
+    _save_figure(fig, path)
+    plt.close(fig)
+    saved_figures['hit_rate'] = path
+    
+    # Feature importances (if provided)
+    if feature_importances and len(feature_importances) > 0:
+        fig = plot_feature_importance(feature_importances)
+        path = str(figures_dir / "18_feature_importance.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['feature_importance'] = path
+    
+    # 5. DASHBOARDS
+    print("  Generating dashboard...")
+    
+    # Main dashboard
+    fig = create_ranking_dashboard(
+        ic_series, quintile_df, returns_series,
+        title="Ranking Model Performance Dashboard"
+    )
+    path = str(figures_dir / "00_dashboard.png")
+    _save_figure(fig, path, dpi=200)
+    plt.close(fig)
+    saved_figures['dashboard'] = path
+    
+    print(f"  Generated {len(saved_figures)} figures in {figures_dir}")
+    
+    return saved_figures
+
+
+def create_performance_summary_figure(
+    metrics: Dict[str, Any],
+    backtest_metrics: Dict[str, Any],
+    title: str = "Performance Summary",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 8),
+) -> "plt.Figure":
+    """Create a summary figure with key metrics displayed as text.
+    
+    Args:
+        metrics: Dictionary of ranking metrics (IC, ICIR, etc.).
+        backtest_metrics: Dictionary of backtest metrics (Sharpe, etc.).
+        title: Figure title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.axis('off')
+    
+    # Build text content
+    lines = []
+    lines.append("═" * 50)
+    lines.append(f"  {title.upper()}")
+    lines.append("═" * 50)
+    lines.append("")
+    lines.append("  RANKING METRICS")
+    lines.append("  " + "-" * 40)
+    
+    for key, value in metrics.items():
+        if isinstance(value, float):
+            if 'rate' in key.lower() or 'spread' in key.lower():
+                lines.append(f"  {key:.<30} {value:>10.2%}")
+            else:
+                lines.append(f"  {key:.<30} {value:>10.4f}")
+        else:
+            lines.append(f"  {key:.<30} {value}")
+    
+    lines.append("")
+    lines.append("  BACKTEST RESULTS")
+    lines.append("  " + "-" * 40)
+    
+    for key, value in backtest_metrics.items():
+        if isinstance(value, float):
+            if 'return' in key.lower() or 'drawdown' in key.lower() or 'turnover' in key.lower():
+                lines.append(f"  {key:.<30} {value:>10.2%}")
+            else:
+                lines.append(f"  {key:.<30} {value:>10.2f}")
+        else:
+            lines.append(f"  {key:.<30} {value}")
+    
+    lines.append("")
+    lines.append("═" * 50)
+    
+    text = "\n".join(lines)
+    ax.text(0.5, 0.5, text, transform=ax.transAxes, fontsize=11,
+            verticalalignment='center', horizontalalignment='center',
+            fontfamily='monospace',
+            bbox=dict(boxstyle='round', facecolor='white', edgecolor='gray', alpha=0.9))
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
     
     return fig

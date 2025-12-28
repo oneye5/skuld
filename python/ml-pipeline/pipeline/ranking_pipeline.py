@@ -547,46 +547,37 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
     with open(output_dir / "window_summaries.json", "w") as f:
         json.dump(result.window_summaries, f, indent=2)
     
-    # Generate visualizations
+    # Generate comprehensive visualizations
     try:
-        from evaluation.visualization import (
-            plot_quintile_returns,
-            plot_ic_series,
-            plot_cumulative_returns,
-            create_ranking_dashboard,
+        from evaluation.visualization import generate_all_figures
+        
+        print("\nGenerating visualizations...")
+        saved_figures = generate_all_figures(
+            predictions_df=result.predictions_df,
+            ic_series=result.metrics.ic_series,
+            rank_ic_series=result.metrics.rank_ic_series,
+            quintile_df=result.quintile_returns,
+            returns_series=result.backtest.daily_returns,
+            output_dir=str(output_dir),
+            feature_importances=None,  # TODO: Add feature importances from ranker
+            timestamp_col=TIMESTAMP,
+            predicted_col="predicted_score",
+            actual_col="actual_return",
         )
         
-        # Quintile chart
-        plot_quintile_returns(
-            result.quintile_returns,
-            save_path=str(output_dir / "quintile_returns.png"),
-        )
-        
-        # IC series
-        plot_ic_series(
-            result.metrics.ic_series,
-            save_path=str(output_dir / "ic_series.png"),
-        )
-        
-        # Cumulative returns
-        plot_cumulative_returns(
-            result.backtest.daily_returns,
-            save_path=str(output_dir / "cumulative_returns.png"),
-        )
-        
-        # Dashboard
-        create_ranking_dashboard(
-            result.metrics.ic_series,
-            result.quintile_returns,
-            result.backtest.daily_returns,
-            save_path=str(output_dir / "dashboard.png"),
-        )
+        # Save figure paths to a manifest
+        with open(output_dir / "figures" / "manifest.json", "w") as f:
+            json.dump(saved_figures, f, indent=2)
         
         import matplotlib.pyplot as plt
         plt.close('all')
         
-    except ImportError:
-        print("Warning: matplotlib not available, skipping visualizations")
+    except ImportError as e:
+        print(f"Warning: Could not generate visualizations: {e}")
+    except Exception as e:
+        print(f"Warning: Error generating visualizations: {e}")
+        import traceback
+        traceback.print_exc()
     
     return output_dir
 

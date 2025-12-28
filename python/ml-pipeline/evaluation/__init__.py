@@ -1,21 +1,29 @@
-"""Evaluation package - metrics, trading simulation, and reporting."""
+"""Evaluation package - ranking metrics and portfolio simulation."""
 
-from evaluation.metrics import (
-    ClassificationMetrics,
-    compute_classification_metrics,
+from evaluation.ranking_metrics import (
+    RankingMetrics,
+    compute_ic,
+    compute_rank_ic,
+    compute_icir,
+    compute_quintile_returns,
 )
-from evaluation.simulator import (
-    TradingMetrics,
-    Trade,
-    run_trading_simulation,
+from evaluation.portfolio_simulator import (
+    PortfolioConfig,
+    BacktestResult,
+    run_portfolio_backtest,
+    compute_sharpe_ratio,
+    infer_periods_per_year,
 )
-from evaluation.reporter import generate_report
 
 __all__ = [
-    "ClassificationMetrics",
-    "compute_classification_metrics",
-    "TradingMetrics",
-    "Trade",
-    "run_trading_simulation",
-    "generate_report",
+    "RankingMetrics",
+    "compute_ic",
+    "compute_rank_ic",
+    "compute_icir",
+    "compute_quintile_returns",
+    "PortfolioConfig",
+    "BacktestResult",
+    "run_portfolio_backtest",
+    "compute_sharpe_ratio",
+    "infer_periods_per_year",
 ]

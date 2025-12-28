@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.preprocessing import RobustScaler
 
 from config.columns import TIMESTAMP, TICKER, TARGET, TIME_SCALED
+from core.target_builder import FORWARD_RETURN
 
 
 @dataclass
@@ -33,7 +34,8 @@ def fit_scaler(df: pd.DataFrame) -> ScalerSet:
     """
     # Columns to exclude from scaling
     # TIME_SCALED is already 0-1 normalized, don't scale it again
-    excluded_cols = [TIMESTAMP, TICKER, TARGET, TIME_SCALED]
+    # FORWARD_RETURN is the target for ranking - must not be scaled
+    excluded_cols = [TIMESTAMP, TICKER, TARGET, TIME_SCALED, FORWARD_RETURN]
     excluded_cols = [c for c in excluded_cols if c in df.columns]
     
     # Identify binary columns (exactly 2 unique values or all 0/1)
@@ -85,10 +87,19 @@ def transform_data(df: pd.DataFrame, scaler_set: ScalerSet) -> pd.DataFrame:
         cols_to_transform = [c for c in scaler_set.continuous_cols if c in result.columns]
         
         if cols_to_transform:
-            # Transform and keep as float32 to save memory
-            transformed = scaler_set.continuous_scaler.transform(
-                result[cols_to_transform].values
-            ).astype(np.float32)
-            result[cols_to_transform] = transformed
+            # If all fitted columns exist, use the scaler directly
+            if cols_to_transform == scaler_set.continuous_cols:
+                transformed = scaler_set.continuous_scaler.transform(
+                    result[cols_to_transform].values
+                ).astype(np.float32)
+                result[cols_to_transform] = transformed
+            else:
+                # Only some columns exist - transform column by column using the 
+                # fitted parameters for each column
+                for col in cols_to_transform:
+                    col_idx = scaler_set.continuous_cols.index(col)
+                    center = scaler_set.continuous_scaler.center_[col_idx]
+                    scale = scaler_set.continuous_scaler.scale_[col_idx]
+                    result[col] = ((result[col].values - center) / scale).astype(np.float32)
     
     return result

@@ -3,28 +3,27 @@
 All configurable parameters should be defined here. No magic numbers elsewhere.
 """
 
+from enum import Enum
+
+
+class ReturnType(str, Enum):
+    """Type of return calculation."""
+    SIMPLE = "simple"  # (P_t+n - P_t) / P_t
+    LOG = "log"        # ln(P_t+n / P_t)
+
 
 # =============================================================================
-# TARGET DEFINITION
+# TARGET DEFINITION (Ranking Pipeline)
 # =============================================================================
-from sklearn.naive_bayes import BernoulliNB
+FORWARD_RETURN_DAYS: int = 5
+"""Number of days to compute forward return. Common values: 1, 5, 20."""
 
+RETURN_TYPE: ReturnType = ReturnType.SIMPLE
+"""Type of returns to calculate: SIMPLE for arithmetic, LOG for logarithmic."""
 
-LOOKAHEAD_DAYS: int = 366
-"""Number of days to look ahead for price change prediction."""
-
-GAIN_THRESHOLD_PCT: float = 1.0
-"""Minimum percentage gain for positive class (1 = will gain >= X%)."""
-
-LABELING_TOLERANCE_DAYS: int = 365/2
-"""Max days to look past target date for a price (handles weekends/holidays)."""
-
-PREDICTION_THRESHOLD: float = 0.6
-"""Probability threshold for buy signal (legacy - prefer TOP_N_PREDICTIONS)."""
-
-TOP_N_PREDICTIONS: int = 5
-"""Number of top predictions to select per time period for trading.
-This is more realistic than a threshold - you pick the best N opportunities."""
+WINSORIZE_LIMITS: tuple[float, float] | None = (-0.5, 0.5)
+"""Clip extreme returns to this range. None to disable winsorization.
+E.g., (-0.5, 0.5) clips returns to [-50%, +50%]."""
 
 
 # =============================================================================
@@ -36,21 +35,75 @@ NUM_ROLLING_WINDOWS: int = 25
 ROLLING_WINDOW_MOVEMENT_YEARS: float = 0.3652423 * 2.2
 """How far back (in years) each window moves from the previous."""
 
-TEST_PERIOD_YEARS: float = 1.0/12.0
+TEST_PERIOD_YEARS: float = 1.0 / 12.0
 """Length of test period in each window (in years)."""
 
 
 # =============================================================================
-# TRADING SIMULATION
+# RANKING MODEL (LightGBM LGBMRanker)
 # =============================================================================
+RANKER_N_ESTIMATORS: int = 100
+"""Number of boosting iterations for the ranking model."""
+
+RANKER_LEARNING_RATE: float = 0.05
+"""Learning rate (shrinkage) for the ranking model."""
+
+RANKER_NUM_LEAVES: int = 31
+"""Maximum number of leaves per tree."""
+
+RANKER_MAX_DEPTH: int = -1
+"""Maximum tree depth. -1 means no limit."""
+
+RANKER_MIN_CHILD_SAMPLES: int = 20
+"""Minimum number of samples required in a leaf."""
+
+RANKER_SUBSAMPLE: float = 0.8
+"""Fraction of samples to use for each boosting iteration."""
+
+RANKER_COLSAMPLE_BYTREE: float = 0.8
+"""Fraction of features to use for each tree."""
+
+RANKER_EVAL_AT: tuple[int, ...] = (5, 10, 20)
+"""Evaluation positions for NDCG metric."""
+
+LABEL_GAIN: list[float] | None = None
+"""Custom label gains for NDCG. None = use default (2^label - 1)."""
+
+MIN_STOCKS_PER_TIMESTAMP: int = 10
+"""Minimum stocks required per timestamp for valid ranking. 
+LGBMRanker needs sufficient group size for meaningful ranking."""
+
+
+# =============================================================================
+# PORTFOLIO CONSTRUCTION
+# =============================================================================
+PORTFOLIO_TOP_N: int = 10
+"""Number of top-ranked stocks for long portfolio."""
+
+PORTFOLIO_BOTTOM_N: int = 10
+"""Number of bottom-ranked stocks for short portfolio."""
+
+TRANSACTION_COST_BPS: float = 10.0
+"""Round-trip transaction cost in basis points (10 bps = 0.1%)."""
+
+LONG_ONLY: bool = False
+"""If True, only take long positions (no shorting)."""
+
 INITIAL_CAPITAL: float = 100_000.0
-"""Starting capital for trading simulation."""
+"""Starting capital for portfolio simulation."""
 
-TRANSACTION_COST_PCT: float = 0.0
-"""Transaction cost as percentage (0.0 = no cost)."""
 
-MAX_POSITION_SIZE_PCT: float = 0.01
-"""Maximum position size as percentage of initial capital."""
+# =============================================================================
+# EVALUATION
+# =============================================================================
+MIN_STOCKS_FOR_IC: int = 5
+"""Minimum stocks per timestamp to compute IC."""
+
+TOP_N_FOR_HIT_RATE: int = 10
+"""Number of top predictions to consider for hit rate calculation."""
+
+PERIODS_PER_YEAR: int = 252
+"""Trading days per year, used for annualizing ICIR."""
 
 
 # =============================================================================
@@ -80,36 +133,6 @@ CLIP_THRESHOLD: float = 10.0
 
 
 # =============================================================================
-# MODEL DEFINITION
-# =============================================================================
-def create_model():
-    """Create and return the model instance.
-    
-    Edit this function to change the model architecture.
-    Any sklearn-compatible classifier with fit() and predict_proba() works.
-    
-    Returns:
-        A classifier instance.
-    """
-    from sklearn.ensemble import VotingClassifier
-    from sklearn.naive_bayes import GaussianNB
-    from lightgbm import LGBMClassifier
-    
-
-    lgbm_goss = LGBMClassifier(
-        n_estimators=100,
-        learning_rate=0.05,
-        num_leaves=31,
-        boosting_type="goss",  # Gradient-based One-Side Sampling
-        class_weight="balanced",
-        verbosity=-1,
-        random_state=42,
-    )
-
-    return BernoulliNB(binarize=0.5)
-
-
-# =============================================================================
 # CONFIG EXPORT
 # =============================================================================
 def get_config_dict() -> dict:
@@ -118,28 +141,33 @@ def get_config_dict() -> dict:
     Returns:
         Dictionary with all configuration values.
     """
-    model = create_model()
-    model_params = model.get_params() if hasattr(model, "get_params") else {}
-    
     return {
         "target": {
-            "lookahead_days": LOOKAHEAD_DAYS,
-            "gain_threshold_pct": GAIN_THRESHOLD_PCT,
+            "forward_return_days": FORWARD_RETURN_DAYS,
+            "return_type": RETURN_TYPE.value,
+            "winsorize_limits": WINSORIZE_LIMITS,
         },
         "rolling_window": {
             "num_windows": NUM_ROLLING_WINDOWS,
             "movement_years": ROLLING_WINDOW_MOVEMENT_YEARS,
             "test_period_years": TEST_PERIOD_YEARS,
         },
-        "trading": {
-            "prediction_threshold": PREDICTION_THRESHOLD,
-            "top_n_predictions": TOP_N_PREDICTIONS,
-            "initial_capital": INITIAL_CAPITAL,
-            "transaction_cost_pct": TRANSACTION_COST_PCT,
-            "max_position_size_pct": MAX_POSITION_SIZE_PCT,
+        "ranking_model": {
+            "n_estimators": RANKER_N_ESTIMATORS,
+            "learning_rate": RANKER_LEARNING_RATE,
+            "num_leaves": RANKER_NUM_LEAVES,
+            "max_depth": RANKER_MAX_DEPTH,
         },
-        "model": {
-            "type": type(model).__name__,
-            "params": model_params,
+        "portfolio": {
+            "top_n": PORTFOLIO_TOP_N,
+            "bottom_n": PORTFOLIO_BOTTOM_N,
+            "transaction_cost_bps": TRANSACTION_COST_BPS,
+            "initial_capital": INITIAL_CAPITAL,
+            "long_only": LONG_ONLY,
+        },
+        "evaluation": {
+            "min_stocks_for_ic": MIN_STOCKS_FOR_IC,
+            "min_stocks_per_timestamp": MIN_STOCKS_PER_TIMESTAMP,
         },
     }
+

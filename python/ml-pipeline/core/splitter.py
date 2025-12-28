@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from config.columns import TIMESTAMP
-from config.settings import MS_PER_DAY, LOOKAHEAD_DAYS
+from config.settings import MS_PER_DAY
 
 
 @dataclass

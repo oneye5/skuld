@@ -1,9 +1,17 @@
-"""Learner package - model training and prediction."""
+"""Learner package - LightGBM ranking model training and prediction."""
 
-from learner.trainer import train_model
-from learner.predictor import predict
+from learner.ranking import (
+    LightGBMRankerWrapper,
+    RankerConfig,
+    build_group_from_timestamps,
+    prepare_ranking_data,
+    filter_min_stocks_per_timestamp,
+)
 
 __all__ = [
-    "train_model",
-    "predict",
+    "LightGBMRankerWrapper",
+    "RankerConfig",
+    "build_group_from_timestamps",
+    "prepare_ranking_data",
+    "filter_min_stocks_per_timestamp",
 ]

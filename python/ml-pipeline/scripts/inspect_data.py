@@ -2,7 +2,7 @@
 """Debug script for inspecting data at various pipeline stages.
 
 Usage:
-    uv run scripts/debug_data.py
+    uv run python scripts/inspect_data.py
 """
 
 import sys
@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.columns import TIMESTAMP, TICKER, CLOSE
 from core.data_loader import load_long_data
-from pipeline.single_window import prepare_wide_data
+from pipeline.ranking_pipeline import prepare_wide_data
 
 
 def main():

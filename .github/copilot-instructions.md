@@ -6,11 +6,8 @@ This repo contains:
 
 ## 🚨 CRITICAL: Development Philosophy 🚨
 
-**1. THE MODEL IS FROZEN**
-- **Do NOT change the model architecture (XGBoost/CatBoost/etc) or hyperparameters.**
-- **Do NOT change the target definition** unless explicitly instructed.
-- We assume the current model config is "good enough" to detect signal if the data is good.
-- **Goal:** Improve performance solely through **Feature Engineering, Data Cleaning, and Scaling**.
+**1. Purpose: Improve Ranking Model Performance**
+- The goal is to **improve the ranking model's performance** (Sharpe ratio, Precision, etc.) on the validation set.
 
 **2. Research-Driven Development**
 - Before writing code, **review research** (university papers, financial ML forums, blogs).
@@ -32,10 +29,11 @@ This repo contains:
 
 ## Canonical docs to read first
 
-The project blueprint is in:
-- [python/ml-pipeline/documentation/README.md](../python/ml-pipeline/documentation/README.md)
+The project blueprint and guides are in:
+- [docs/RANKING_PIPELINE_GUIDE.md](../docs/RANKING_PIPELINE_GUIDE.md) — How to run evaluation & predictions
+- [docs/IMPLEMENTATION_PLAN_RANKING.md](../docs/IMPLEMENTATION_PLAN_RANKING.md) — Architecture details
 
-Before changing pipeline semantics, review that doc’s sections on:
+Before changing pipeline semantics, review the guide's sections on:
 - **Data format** (`skuld/data/data_long.csv`) and long→wide conversion rules
 - **Leakage prevention** (fit scalers on training only; rolling-window isolation)
 - **Macro vs ticker handling** via the `MACRO_` prefix
@@ -60,10 +58,15 @@ If you add a dependency:
 - Prefer `uv add <package>` (or update `pyproject.toml`), then run `uv sync`.
 
 ### Run the pipeline
-The main entrypoint is:
-- `uv run .\main.py`
 
-Other runnable entrypoints live in `python/ml-pipeline/runnables/`.
+**Ranking Pipeline (Primary)**:
+- `uv run python scripts/run_model_evaluation.py` — Full evaluation with rolling windows
+- `uv run python scripts/debug_ranking_quick.py` — Quick validation (~30 sec)
+- `uv run python scripts/generate_predictions.py` — Generate predictions for latest data
+
+**Utility Scripts**:
+- `uv run python scripts/inspect_data.py` — Debug data loading/conversion
+- `uv run python scripts/analyze_sparsity.py` — Analyze column sparsity
 
 **Rule:** when Copilot suggests running Python code, prefer `uv run <file.py>` (not `python <file.py>`).
 
@@ -81,10 +84,10 @@ Run all tests:
 - `uv run pytest`
 
 Run a single test file:
-- `uv run pytest .\tests\data-preparation\labeling\test_labeler.py -v`
+- `uv run pytest tests/test_scaler.py -v`
 
 Run a single test by name/keyword:
-- `uv run pytest -k labeler -v`
+- `uv run pytest -k scaler -v`
 
 When making changes:
 - Start with the **smallest** relevant test selection.
@@ -94,10 +97,11 @@ When making changes:
 
 ## Where to find results
 
-After a full run (`main.py`), check `python/ml-pipeline/output/runs/<timestamp>/`:
-1. **`evaluation/metrics.json`**: High-level stats (Precision, Recall, F1, AUC).
-2. **`evaluation/trades.csv`**: Simulated PnL. Check the Sharpe Ratio and Max Drawdown.
-3. **`config.json`**: Verifies what config was used.
+**Ranking Pipeline** — After running evaluation:
+- `python/ml-pipeline/output/runs/ranking_<timestamp>/metrics.json` — IC, ICIR, Sharpe
+- `python/ml-pipeline/output/runs/ranking_<timestamp>/predictions.csv` — All predictions
+- `python/ml-pipeline/output/runs/ranking_<timestamp>/quintile_returns.csv` — Returns by quintile
+- `python/ml-pipeline/output/runs/ranking_<timestamp>/plots/` — Visualizations
 
 ---
 
@@ -107,8 +111,6 @@ After a full run (`main.py`), check `python/ml-pipeline/output/runs/<timestamp>/
 - **Centralized config:** constants belong in `python/ml-pipeline/config/*.py`.
 - **No leakage:** scalers/feature transforms must be fit on training data only.
 - **Tests mirror structure:** keep `tests/` organized to match the module layout.
-
-Note: some directories use hyphens (e.g. `data-preparation/`). Imports are handled via explicit path setup; if you add new import roots, ensure tests/runnables can still import them cleanly.
 
 ---
 

@@ -1,11 +1,25 @@
-"""Pipeline package - orchestration for single and rolling window runs."""
+"""Pipeline package - ranking pipeline orchestration."""
 
-from pipeline.single_window import run_single_window, SingleWindowResult
-from pipeline.rolling_window import run_rolling_windows, RollingWindowResult
+from pipeline.ranking_pipeline import (
+    RankingWindowResult,
+    RankingPipelineResult,
+    prepare_wide_data,
+    add_all_features,
+    get_feature_columns_for_ranking,
+    run_single_ranking_window,
+    run_ranking_pipeline,
+    save_ranking_results,
+    print_ranking_summary,
+)
 
 __all__ = [
-    "run_single_window",
-    "SingleWindowResult",
-    "run_rolling_windows",
-    "RollingWindowResult",
+    "RankingWindowResult",
+    "RankingPipelineResult",
+    "prepare_wide_data",
+    "add_all_features",
+    "get_feature_columns_for_ranking",
+    "run_single_ranking_window",
+    "run_ranking_pipeline",
+    "save_ranking_results",
+    "print_ranking_summary",
 ]

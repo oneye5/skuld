@@ -19,6 +19,7 @@ from scipy import stats
 from typing import Dict, Optional
 
 from config.columns import TIMESTAMP, TICKER
+from config.settings import FORWARD_RETURN_DAYS
 
 
 # =============================================================================
@@ -103,7 +104,10 @@ def compute_icir(
     Args:
         ic_series: Series of IC values over time.
         annualize: If True, multiply by sqrt(periods_per_year).
-        periods_per_year: Number of periods per year (252 for daily data).
+        periods_per_year: Number of independent periods per year. For overlapping
+                         returns (e.g., 5-day returns observed daily), use
+                         252/forward_return_days (e.g., 252/5=50 for 5-day returns)
+                         to avoid inflating ICIR due to autocorrelation.
     
     Returns:
         ICIR value. Higher is better.
@@ -389,7 +393,7 @@ class RankingMetrics:
         actual_col: str = "actual_return",
         min_stocks: int = 5,
         top_n_for_hit_rate: int = 10,
-        periods_per_year: int = 252,
+        forward_return_days: int = FORWARD_RETURN_DAYS,
     ) -> "RankingMetrics":
         """Create RankingMetrics from a predictions DataFrame.
         
@@ -400,11 +404,16 @@ class RankingMetrics:
             actual_col: Column name for actual returns.
             min_stocks: Minimum stocks per timestamp to include.
             top_n_for_hit_rate: N for hit rate calculation.
-            periods_per_year: For annualizing ICIR.
+            forward_return_days: The horizon of forward returns in days (e.g., 5 for
+                                5-day returns). Used to compute periods_per_year for
+                                ICIR annualization as 252/forward_return_days.
         
         Returns:
             RankingMetrics instance with all computed metrics.
         """
+        # Compute periods_per_year from forward return horizon
+        # E.g., 5-day returns = 252/5 ≈ 50 independent periods per year
+        periods_per_year = int(252 / forward_return_days)
         # Compute IC series
         ic_series = compute_cross_sectional_ic_series(
             df, timestamp_col, predicted_col, actual_col, 

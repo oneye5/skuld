@@ -457,6 +457,7 @@ def run_ranking_pipeline(
         predicted_col="predicted_score",
         actual_col="actual_return",
         min_stocks=MIN_STOCKS_FOR_IC,
+        forward_return_days=forward_return_days,
     )
     
     # Compute quintile returns

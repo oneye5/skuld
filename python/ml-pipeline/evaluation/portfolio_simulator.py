@@ -14,6 +14,7 @@ import pandas as pd
 import numpy as np
 
 from config.columns import TIMESTAMP, TICKER
+from config.settings import FORWARD_RETURN_DAYS
 
 
 # =============================================================================
@@ -289,33 +290,50 @@ def compute_sharpe_ratio(
     returns: pd.Series,
     risk_free_rate: float = 0.0,
     periods_per_year: int | None = None,
+    return_horizon_days: int = FORWARD_RETURN_DAYS,
 ) -> float:
-    """Compute annualized Sharpe ratio.
+    """Compute annualized Sharpe ratio, handling overlapping returns.
+    
+    When observations are more frequent than the return horizon (e.g., daily
+    observations of 5-day returns), the returns overlap and have artificially
+    low volatility due to autocorrelation. This function samples every Nth
+    observation to get non-overlapping returns before computing Sharpe.
     
     Args:
         returns: Series of periodic returns. Index should be timestamps.
         risk_free_rate: Annual risk-free rate (default 0).
-        periods_per_year: Number of periods per year. If None, inferred from
-                         timestamps in the returns index.
+        periods_per_year: Number of independent periods per year for annualization.
+                         If None, computed as 252 / return_horizon_days.
+        return_horizon_days: The horizon of the returns in days (e.g., 5 for 5-day
+                            returns). Used to determine sampling interval for
+                            non-overlapping returns.
     
     Returns:
-        Annualized Sharpe ratio.
+        Annualized Sharpe ratio based on non-overlapping returns.
     
     Note:
-        If periods_per_year is not provided and cannot be inferred,
-        defaults to 252 (daily).
+        For 5-day returns observed daily, we sample every 5th observation
+        to get ~50 independent periods per year (252/5).
     """
     if len(returns) < 2:
         return np.nan
     
-    # Infer periods_per_year if not provided
-    if periods_per_year is None:
-        try:
-            periods_per_year = infer_periods_per_year(pd.Series(returns.index))
-        except:
-            periods_per_year = 252  # Fallback to daily
+    # Sample non-overlapping returns if observations are more frequent than horizon
+    # E.g., for 5-day returns observed daily, take every 5th observation
+    if return_horizon_days > 1 and len(returns) >= return_horizon_days:
+        # Sample every return_horizon_days observations to avoid overlap
+        non_overlapping_returns = returns.iloc[::return_horizon_days]
+    else:
+        non_overlapping_returns = returns
     
-    excess_returns = returns - risk_free_rate / periods_per_year
+    if len(non_overlapping_returns) < 2:
+        return np.nan
+    
+    # Compute periods_per_year based on return horizon
+    if periods_per_year is None:
+        periods_per_year = int(252 / return_horizon_days)
+    
+    excess_returns = non_overlapping_returns - risk_free_rate / periods_per_year
     
     mean_return = excess_returns.mean()
     std_return = excess_returns.std()
@@ -363,7 +381,7 @@ def run_portfolio_backtest(
     ticker_col: str = TICKER,
     score_col: str = "predicted_score",
     return_col: str = "actual_return",
-    return_horizon_days: int = 1,
+    return_horizon_days: int = FORWARD_RETURN_DAYS,
 ) -> BacktestResult:
     """Run long-short portfolio backtest.
     
@@ -454,16 +472,34 @@ def run_portfolio_backtest(
     returns_df = pd.DataFrame(daily_returns)
     returns_series = returns_df.set_index("timestamp")["return"]
     
-    # Compute cumulative returns
-    cumulative = (1 + returns_series).cumprod() - 1
+    # For overlapping returns (e.g., 5-day returns observed daily), we need to:
+    # 1. Sample non-overlapping returns for Sharpe and total return calculation
+    # 2. Keep all returns for cumulative visualization (but understand it's smoothed)
     
-    # Compute metrics
+    # Sample non-overlapping returns for accurate metrics
+    if return_horizon_days > 1 and len(returns_series) >= return_horizon_days:
+        non_overlapping_returns = returns_series.iloc[::return_horizon_days]
+    else:
+        non_overlapping_returns = returns_series
+    
+    # Compute cumulative returns from non-overlapping returns (true compounding)
+    cumulative_non_overlapping = (1 + non_overlapping_returns).cumprod() - 1
+    
+    # Also compute overlapping cumulative for visualization (smoother but inflated)
+    cumulative_all = (1 + returns_series).cumprod() - 1
+    
+    # Compute metrics using non-overlapping returns
     # For proper annualization, use the return horizon to determine periods per year
     # E.g., 5-day returns = 252/5 ≈ 50 periods per year
     periods_per_year = int(252 / return_horizon_days)
-    sharpe = compute_sharpe_ratio(returns_series, periods_per_year=periods_per_year)
-    max_dd = compute_max_drawdown(cumulative)
-    total_return = cumulative.iloc[-1] if len(cumulative) > 0 else 0.0
+    sharpe = compute_sharpe_ratio(
+        returns_series, 
+        periods_per_year=periods_per_year,
+        return_horizon_days=return_horizon_days,
+    )
+    max_dd = compute_max_drawdown(cumulative_all)  # Use all data for drawdown
+    # Use non-overlapping cumulative for true total return
+    total_return = cumulative_non_overlapping.iloc[-1] if len(cumulative_non_overlapping) > 0 else 0.0
     avg_turnover = np.mean(turnovers) if turnovers else 0.0
     
     # Build holdings history
@@ -471,10 +507,10 @@ def run_portfolio_backtest(
     
     return BacktestResult(
         daily_returns=returns_series,
-        cumulative_returns=cumulative,
+        cumulative_returns=cumulative_all,  # Use all data for smooth visualization
         sharpe_ratio=sharpe,
         max_drawdown=max_dd,
-        total_return=total_return,
+        total_return=total_return,  # True total return from non-overlapping
         avg_turnover=avg_turnover,
         holdings_history=holdings_df,
     )

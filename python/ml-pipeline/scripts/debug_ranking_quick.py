@@ -223,6 +223,7 @@ def main():
         predicted_col="predicted_score",
         actual_col="actual_return",
         min_stocks=5,
+        forward_return_days=5,  # Must match lookahead_days used for returns
     )
     
     print("\n" + metrics.summary())
@@ -240,6 +241,7 @@ def main():
         timestamp_col=TIMESTAMP,
         score_col="predicted_score",
         return_col="actual_return",
+        return_horizon_days=5,  # Must match lookahead_days used for returns
     )
     
     print(backtest.summary())

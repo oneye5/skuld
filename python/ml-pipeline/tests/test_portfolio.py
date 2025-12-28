@@ -11,7 +11,7 @@ class TestPortfolioConfig:
     """Tests for PortfolioConfig dataclass."""
     
     def test_default_values(self):
-        """PortfolioConfig should have sensible defaults."""
+        """PortfolioConfig should have sensible defaults for Sharesies NZX."""
         from evaluation.portfolio_simulator import PortfolioConfig
         
         config = PortfolioConfig()
@@ -19,7 +19,8 @@ class TestPortfolioConfig:
         assert config.top_n == 10
         assert config.bottom_n == 10
         assert config.weighting == "equal"
-        assert config.transaction_cost_bps == 10.0
+        assert config.transaction_cost_bps == 190.0  # Sharesies 1.9% fee
+        assert config.slippage_bps == 15.0  # NZX typical slippage
     
     def test_long_only_mode(self):
         """Long-only mode should disable bottom_n."""
@@ -103,6 +104,36 @@ class TestComputePortfolioReturn:
         net_return = apply_transaction_costs(gross_return, turnover, cost_bps)
         
         # Cost = 0.5 * 20 / 10000 = 0.001
+        expected = 0.10 - 0.001
+        assert abs(net_return - expected) < 1e-6
+    
+    def test_slippage_applied(self):
+        """Returns should be reduced by both transaction costs and slippage."""
+        from evaluation.portfolio_simulator import apply_transaction_costs
+        
+        gross_return = 0.10
+        turnover = 0.5  # 50% turnover
+        cost_bps = 20.0  # 20 bps round-trip
+        slippage_bps = 10.0  # 10 bps slippage
+        
+        net_return = apply_transaction_costs(gross_return, turnover, cost_bps, slippage_bps)
+        
+        # Total cost = 0.5 * (20 + 10) / 10000 = 0.0015
+        expected = 0.10 - 0.0015
+        assert abs(net_return - expected) < 1e-6
+    
+    def test_slippage_defaults_to_zero(self):
+        """Slippage should default to zero for backward compatibility."""
+        from evaluation.portfolio_simulator import apply_transaction_costs
+        
+        gross_return = 0.10
+        turnover = 0.5
+        cost_bps = 20.0
+        
+        # Without slippage argument
+        net_return = apply_transaction_costs(gross_return, turnover, cost_bps)
+        
+        # Cost = 0.5 * 20 / 10000 = 0.001 (same as before)
         expected = 0.10 - 0.001
         assert abs(net_return - expected) < 1e-6
 

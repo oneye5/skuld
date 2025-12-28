@@ -42,8 +42,18 @@ def returns_to_relevance_grades(
     Returns:
         Integer array with values 0 to (n_grades - 1).
         Higher values = higher returns = better.
+    
+    Raises:
+        ValueError: If input contains NaN values.
     """
     y_arr = np.asarray(y)
+    
+    # Check for NaN values - LGBMRanker requires non-negative labels
+    if np.isnan(y_arr).any():
+        raise ValueError(
+            f"Input contains {np.isnan(y_arr).sum()} NaN values. "
+            "Forward returns must not contain NaN for ranking."
+        )
     
     # Use percentile-based assignment to handle ties and ensure balance
     try:
@@ -53,7 +63,12 @@ def returns_to_relevance_grades(
         ranks = pd.Series(y_arr).rank(method='first')
         grades = pd.cut(ranks, bins=n_grades, labels=False)
     
-    return grades.astype(np.int32)
+    # Final safety check - grades should not have NaN
+    grades_arr = np.asarray(grades)
+    if np.isnan(grades_arr).any():
+        raise ValueError("Grade conversion produced NaN values unexpectedly.")
+    
+    return grades_arr.astype(np.int32)
 
 
 # =============================================================================
@@ -404,6 +419,7 @@ def prepare_ranking_data(
     """Prepare DataFrame for ranking model training.
     
     Sorts data by timestamp and builds the group parameter required by LGBMRanker.
+    Drops rows with NaN in target column to ensure valid labels.
     
     Args:
         df: DataFrame with features, target, and timestamp.
@@ -421,8 +437,16 @@ def prepare_ranking_data(
         >>> X, y, groups = prepare_ranking_data(df, ['feat1', 'feat2'], 'return')
         >>> ranker.fit(X, y, groups)
     """
+    # Drop rows with NaN in target - LGBMRanker requires valid labels
+    df_clean = df.dropna(subset=[target_col]).copy()
+    
+    if len(df_clean) < len(df):
+        dropped = len(df) - len(df_clean)
+        import warnings
+        warnings.warn(f"Dropped {dropped} rows with NaN in target column '{target_col}'")
+    
     # Sort by timestamp
-    df_sorted = df.sort_values(timestamp_col).reset_index(drop=True)
+    df_sorted = df_clean.sort_values(timestamp_col).reset_index(drop=True)
     
     # Extract features and target
     X = df_sorted[feature_cols].copy()

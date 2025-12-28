@@ -30,13 +30,16 @@ class PortfolioConfig:
         bottom_n: Number of bottom-ranked stocks for short portfolio.
         weighting: Portfolio weighting scheme ('equal' or 'score_weighted').
         transaction_cost_bps: Round-trip transaction cost in basis points.
+        slippage_bps: Slippage in basis points per trade (models market impact,
+            bid-ask spread, and execution timing differences).
         long_only: If True, only take long positions (no shorting).
         initial_capital: Starting capital for simulation.
     """
     top_n: int = 10
     bottom_n: int = 10
     weighting: str = "equal"
-    transaction_cost_bps: float = 10.0
+    transaction_cost_bps: float = 190.0
+    slippage_bps: float = 15.0
     long_only: bool = False
     initial_capital: float = 100_000.0
 
@@ -163,18 +166,23 @@ def apply_transaction_costs(
     gross_return: float,
     turnover: float,
     cost_bps: float,
+    slippage_bps: float = 0.0,
 ) -> float:
-    """Apply transaction costs to gross return.
+    """Apply transaction costs and slippage to gross return.
+    
+    Total cost = (transaction_cost_bps + slippage_bps) * turnover
     
     Args:
         gross_return: Return before costs.
         turnover: Portfolio turnover as a fraction (0.5 = 50% of positions changed).
         cost_bps: Round-trip transaction cost in basis points.
+        slippage_bps: Slippage in basis points per trade (market impact, bid-ask spread).
     
     Returns:
-        Net return after transaction costs.
+        Net return after transaction costs and slippage.
     """
-    cost = turnover * cost_bps / 10_000
+    total_cost_bps = cost_bps + slippage_bps
+    cost = turnover * total_cost_bps / 10_000
     return gross_return - cost
 
 
@@ -450,9 +458,9 @@ def run_portfolio_backtest(
             long_returns, short_returns, config.weighting
         )
         
-        # Apply transaction costs
+        # Apply transaction costs and slippage
         net_return = apply_transaction_costs(
-            gross_return, turnover, config.transaction_cost_bps
+            gross_return, turnover, config.transaction_cost_bps, config.slippage_bps
         )
         
         daily_returns.append({"timestamp": ts, "return": net_return})
@@ -486,6 +494,7 @@ def run_portfolio_backtest(
     cumulative_non_overlapping = (1 + non_overlapping_returns).cumprod() - 1
     
     # Also compute overlapping cumulative for visualization (smoother but inflated)
+    # WARNING: This is NOT accurate for performance measurement with overlapping returns
     cumulative_all = (1 + returns_series).cumprod() - 1
     
     # Compute metrics using non-overlapping returns
@@ -497,7 +506,8 @@ def run_portfolio_backtest(
         periods_per_year=periods_per_year,
         return_horizon_days=return_horizon_days,
     )
-    max_dd = compute_max_drawdown(cumulative_all)  # Use all data for drawdown
+    # Use non-overlapping cumulative for accurate drawdown (overlapping inflates it)
+    max_dd = compute_max_drawdown(cumulative_non_overlapping)
     # Use non-overlapping cumulative for true total return
     total_return = cumulative_non_overlapping.iloc[-1] if len(cumulative_non_overlapping) > 0 else 0.0
     avg_turnover = np.mean(turnovers) if turnovers else 0.0

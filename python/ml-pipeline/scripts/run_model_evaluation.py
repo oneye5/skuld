@@ -26,6 +26,7 @@ from config.settings import (
     PORTFOLIO_TOP_N,
     PORTFOLIO_BOTTOM_N,
     TRANSACTION_COST_BPS,
+    SLIPPAGE_BPS,
     MIN_STOCKS_PER_TIMESTAMP,
     NUM_ROLLING_WINDOWS,
     ROLLING_WINDOW_MOVEMENT_YEARS,
@@ -80,6 +81,10 @@ def main():
         "--cost-bps", type=float, default=TRANSACTION_COST_BPS,
         help="Transaction cost in basis points"
     )
+    parser.add_argument(
+        "--slippage-bps", type=float, default=SLIPPAGE_BPS,
+        help="Slippage in basis points (market impact, bid-ask spread)"
+    )
     
     # Other settings
     parser.add_argument(
@@ -105,6 +110,7 @@ def main():
     print(f"Portfolio top-N:      {args.top_n}")
     print(f"Portfolio bottom-N:   {args.bottom_n}")
     print(f"Transaction cost:     {args.cost_bps} bps")
+    print(f"Slippage:             {args.slippage_bps} bps")
     print(f"Min stocks/timestamp: {args.min_stocks}")
     print("=" * 60)
     
@@ -120,6 +126,7 @@ def main():
         portfolio_top_n=args.top_n,
         portfolio_bottom_n=args.bottom_n,
         transaction_cost_bps=args.cost_bps,
+        slippage_bps=args.slippage_bps,
         save_results=not args.no_save,
     )
     

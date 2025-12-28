@@ -15,8 +15,8 @@ class ReturnType(str, Enum):
 # =============================================================================
 # TARGET DEFINITION (Ranking Pipeline)
 # =============================================================================
-FORWARD_RETURN_DAYS: int = 5
-"""Number of days to compute forward return. Common values: 1, 5, 20."""
+FORWARD_RETURN_DAYS: int = 189
+"""Number of days ahead to calculate returns for ranking target."""
 
 RETURN_TYPE: ReturnType = ReturnType.SIMPLE
 """Type of returns to calculate: SIMPLE for arithmetic, LOG for logarithmic."""
@@ -29,13 +29,13 @@ E.g., (-0.5, 0.5) clips returns to [-50%, +50%]."""
 # =============================================================================
 # ROLLING WINDOW SETTINGS
 # =============================================================================
-NUM_ROLLING_WINDOWS: int = 25
+NUM_ROLLING_WINDOWS: int = 30
 """Number of rolling windows for backtesting."""
 
-ROLLING_WINDOW_MOVEMENT_YEARS: float = 0.3652423 * 2.2
+ROLLING_WINDOW_MOVEMENT_YEARS: float = 0.6666666666
 """How far back (in years) each window moves from the previous."""
 
-TEST_PERIOD_YEARS: float = 1.0 / 12.0
+TEST_PERIOD_YEARS: float = 0.6666666666
 """Length of test period in each window (in years)."""
 
 
@@ -83,10 +83,17 @@ PORTFOLIO_TOP_N: int = 10
 PORTFOLIO_BOTTOM_N: int = 10
 """Number of bottom-ranked stocks for short portfolio."""
 
-TRANSACTION_COST_BPS: float = 10.0
-"""Round-trip transaction cost in basis points (10 bps = 0.1%)."""
+TRANSACTION_COST_BPS: float = 190.0
+"""Round-trip transaction cost in basis points.
+Default reflects Sharesies NZX fee of 1.9% (190 bps) per trade."""
 
-LONG_ONLY: bool = False
+SLIPPAGE_BPS: float = 15.0
+"""Slippage in basis points per trade (15 bps = 0.15%).
+Slippage models the difference between expected and executed price due to
+market impact, bid-ask spread, and order timing.
+NZX typically has wider spreads than US markets due to lower liquidity."""
+
+LONG_ONLY: bool = True
 """If True, only take long positions (no shorting)."""
 
 INITIAL_CAPITAL: float = 100_000.0
@@ -162,6 +169,7 @@ def get_config_dict() -> dict:
             "top_n": PORTFOLIO_TOP_N,
             "bottom_n": PORTFOLIO_BOTTOM_N,
             "transaction_cost_bps": TRANSACTION_COST_BPS,
+            "slippage_bps": SLIPPAGE_BPS,
             "initial_capital": INITIAL_CAPITAL,
             "long_only": LONG_ONLY,
         },

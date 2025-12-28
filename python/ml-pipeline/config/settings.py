@@ -15,7 +15,7 @@ class ReturnType(str, Enum):
 # =============================================================================
 # TARGET DEFINITION (Ranking Pipeline)
 # =============================================================================
-FORWARD_RETURN_DAYS: int = 189
+FORWARD_RETURN_DAYS: int = 365
 """Number of days ahead to calculate returns for ranking target."""
 
 RETURN_TYPE: ReturnType = ReturnType.SIMPLE

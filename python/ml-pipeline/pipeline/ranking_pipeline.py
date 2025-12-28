@@ -343,13 +343,7 @@ def run_ranking_pipeline(
     portfolio_bottom_n: int = PORTFOLIO_BOTTOM_N,
     transaction_cost_bps: float = TRANSACTION_COST_BPS,
     slippage_bps: float = SLIPPAGE_BPS,
-    # Model hyperparameters
-    n_estimators: int = RANKER_N_ESTIMATORS,
-    learning_rate: float = RANKER_LEARNING_RATE,
-    num_leaves: int = 31,
-    # Output control
     save_results: bool = True,
-    save_outputs: bool = True,  # Alias for save_results (for experiment runner)
 ) -> RankingPipelineResult:
     """Run the full ranking pipeline across rolling windows.
     
@@ -365,18 +359,12 @@ def run_ranking_pipeline(
         portfolio_top_n: Stocks for long portfolio.
         portfolio_bottom_n: Stocks for short portfolio.
         transaction_cost_bps: Transaction cost in basis points.
-        slippage_bps: Slippage in basis points (market impact, bid-ask spread).
-        n_estimators: Number of boosting iterations.
-        learning_rate: Learning rate for gradient boosting.
-        num_leaves: Maximum leaves per tree.
+        slippage_bps: Slippage in basis points per trade.
         save_results: If True, save results to output directory.
-        save_outputs: Alias for save_results (for experiment runner).
     
     Returns:
         RankingPipelineResult with metrics, backtest, and predictions.
     """
-    # Handle save_outputs alias
-    save_results = save_results and save_outputs
     # Load data
     if long_df is None:
         print("Loading data...")
@@ -407,11 +395,10 @@ def run_ranking_pipeline(
         test_period_years,
     )
     
-    # Ranker configuration - use passed parameters
+    # Ranker configuration
     ranker_config = RankerConfig(
-        n_estimators=n_estimators,
-        learning_rate=learning_rate,
-        num_leaves=num_leaves,
+        n_estimators=RANKER_N_ESTIMATORS,
+        learning_rate=RANKER_LEARNING_RATE,
     )
     
     # Run each window
@@ -473,7 +460,6 @@ def run_ranking_pipeline(
         predicted_col="predicted_score",
         actual_col="actual_return",
         min_stocks=MIN_STOCKS_FOR_IC,
-        forward_return_days=forward_return_days,
     )
     
     # Compute quintile returns
@@ -513,10 +499,8 @@ def run_ranking_pipeline(
         "portfolio_top_n": portfolio_top_n,
         "portfolio_bottom_n": portfolio_bottom_n,
         "transaction_cost_bps": transaction_cost_bps,
-        "slippage_bps": slippage_bps,
         "ranker_n_estimators": ranker_config.n_estimators,
         "ranker_learning_rate": ranker_config.learning_rate,
-        "ranker_num_leaves": ranker_config.num_leaves,
     }
     
     result = RankingPipelineResult(
@@ -566,37 +550,46 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
     with open(output_dir / "window_summaries.json", "w") as f:
         json.dump(result.window_summaries, f, indent=2)
     
-    # Generate comprehensive visualizations
+    # Generate visualizations
     try:
-        from evaluation.visualization import generate_all_figures
-        
-        print("\nGenerating visualizations...")
-        saved_figures = generate_all_figures(
-            predictions_df=result.predictions_df,
-            ic_series=result.metrics.ic_series,
-            rank_ic_series=result.metrics.rank_ic_series,
-            quintile_df=result.quintile_returns,
-            returns_series=result.backtest.daily_returns,
-            output_dir=str(output_dir),
-            feature_importances=None,  # TODO: Add feature importances from ranker
-            timestamp_col=TIMESTAMP,
-            predicted_col="predicted_score",
-            actual_col="actual_return",
+        from evaluation.visualization import (
+            plot_quintile_returns,
+            plot_ic_series,
+            plot_cumulative_returns,
+            create_ranking_dashboard,
         )
         
-        # Save figure paths to a manifest
-        with open(output_dir / "figures" / "manifest.json", "w") as f:
-            json.dump(saved_figures, f, indent=2)
+        # Quintile chart
+        plot_quintile_returns(
+            result.quintile_returns,
+            save_path=str(output_dir / "quintile_returns.png"),
+        )
+        
+        # IC series
+        plot_ic_series(
+            result.metrics.ic_series,
+            save_path=str(output_dir / "ic_series.png"),
+        )
+        
+        # Cumulative returns
+        plot_cumulative_returns(
+            result.backtest.daily_returns,
+            save_path=str(output_dir / "cumulative_returns.png"),
+        )
+        
+        # Dashboard
+        create_ranking_dashboard(
+            result.metrics.ic_series,
+            result.quintile_returns,
+            result.backtest.daily_returns,
+            save_path=str(output_dir / "dashboard.png"),
+        )
         
         import matplotlib.pyplot as plt
         plt.close('all')
         
-    except ImportError as e:
-        print(f"Warning: Could not generate visualizations: {e}")
-    except Exception as e:
-        print(f"Warning: Error generating visualizations: {e}")
-        import traceback
-        traceback.print_exc()
+    except ImportError:
+        print("Warning: matplotlib not available, skipping visualizations")
     
     return output_dir
 

@@ -14,7 +14,6 @@ import pandas as pd
 import numpy as np
 
 from config.columns import TIMESTAMP, TICKER
-from config.settings import FORWARD_RETURN_DAYS
 
 
 # =============================================================================
@@ -30,18 +29,22 @@ class PortfolioConfig:
         bottom_n: Number of bottom-ranked stocks for short portfolio.
         weighting: Portfolio weighting scheme ('equal' or 'score_weighted').
         transaction_cost_bps: Round-trip transaction cost in basis points.
-        slippage_bps: Slippage in basis points per trade (models market impact,
-            bid-ask spread, and execution timing differences).
+        slippage_bps: Slippage in basis points per trade (market impact, bid-ask spread).
         long_only: If True, only take long positions (no shorting).
         initial_capital: Starting capital for simulation.
     """
     top_n: int = 10
     bottom_n: int = 10
     weighting: str = "equal"
-    transaction_cost_bps: float = 190.0
-    slippage_bps: float = 15.0
+    transaction_cost_bps: float = 10.0
+    slippage_bps: float = 0.0
     long_only: bool = False
     initial_capital: float = 100_000.0
+    
+    @property
+    def total_cost_bps(self) -> float:
+        """Total trading cost (transaction + slippage) in basis points."""
+        return self.transaction_cost_bps + self.slippage_bps
 
 
 @dataclass
@@ -166,23 +169,18 @@ def apply_transaction_costs(
     gross_return: float,
     turnover: float,
     cost_bps: float,
-    slippage_bps: float = 0.0,
 ) -> float:
-    """Apply transaction costs and slippage to gross return.
-    
-    Total cost = (transaction_cost_bps + slippage_bps) * turnover
+    """Apply transaction costs to gross return.
     
     Args:
         gross_return: Return before costs.
         turnover: Portfolio turnover as a fraction (0.5 = 50% of positions changed).
         cost_bps: Round-trip transaction cost in basis points.
-        slippage_bps: Slippage in basis points per trade (market impact, bid-ask spread).
     
     Returns:
-        Net return after transaction costs and slippage.
+        Net return after transaction costs.
     """
-    total_cost_bps = cost_bps + slippage_bps
-    cost = turnover * total_cost_bps / 10_000
+    cost = turnover * cost_bps / 10_000
     return gross_return - cost
 
 
@@ -298,50 +296,33 @@ def compute_sharpe_ratio(
     returns: pd.Series,
     risk_free_rate: float = 0.0,
     periods_per_year: int | None = None,
-    return_horizon_days: int = FORWARD_RETURN_DAYS,
 ) -> float:
-    """Compute annualized Sharpe ratio, handling overlapping returns.
-    
-    When observations are more frequent than the return horizon (e.g., daily
-    observations of 5-day returns), the returns overlap and have artificially
-    low volatility due to autocorrelation. This function samples every Nth
-    observation to get non-overlapping returns before computing Sharpe.
+    """Compute annualized Sharpe ratio.
     
     Args:
         returns: Series of periodic returns. Index should be timestamps.
         risk_free_rate: Annual risk-free rate (default 0).
-        periods_per_year: Number of independent periods per year for annualization.
-                         If None, computed as 252 / return_horizon_days.
-        return_horizon_days: The horizon of the returns in days (e.g., 5 for 5-day
-                            returns). Used to determine sampling interval for
-                            non-overlapping returns.
+        periods_per_year: Number of periods per year. If None, inferred from
+                         timestamps in the returns index.
     
     Returns:
-        Annualized Sharpe ratio based on non-overlapping returns.
+        Annualized Sharpe ratio.
     
     Note:
-        For 5-day returns observed daily, we sample every 5th observation
-        to get ~50 independent periods per year (252/5).
+        If periods_per_year is not provided and cannot be inferred,
+        defaults to 252 (daily).
     """
     if len(returns) < 2:
         return np.nan
     
-    # Sample non-overlapping returns if observations are more frequent than horizon
-    # E.g., for 5-day returns observed daily, take every 5th observation
-    if return_horizon_days > 1 and len(returns) >= return_horizon_days:
-        # Sample every return_horizon_days observations to avoid overlap
-        non_overlapping_returns = returns.iloc[::return_horizon_days]
-    else:
-        non_overlapping_returns = returns
-    
-    if len(non_overlapping_returns) < 2:
-        return np.nan
-    
-    # Compute periods_per_year based on return horizon
+    # Infer periods_per_year if not provided
     if periods_per_year is None:
-        periods_per_year = int(252 / return_horizon_days)
+        try:
+            periods_per_year = infer_periods_per_year(pd.Series(returns.index))
+        except:
+            periods_per_year = 252  # Fallback to daily
     
-    excess_returns = non_overlapping_returns - risk_free_rate / periods_per_year
+    excess_returns = returns - risk_free_rate / periods_per_year
     
     mean_return = excess_returns.mean()
     std_return = excess_returns.std()
@@ -389,7 +370,7 @@ def run_portfolio_backtest(
     ticker_col: str = TICKER,
     score_col: str = "predicted_score",
     return_col: str = "actual_return",
-    return_horizon_days: int = FORWARD_RETURN_DAYS,
+    return_horizon_days: int = 1,
 ) -> BacktestResult:
     """Run long-short portfolio backtest.
     
@@ -413,6 +394,13 @@ def run_portfolio_backtest(
         BacktestResult with performance metrics.
     """
     timestamps = sorted(df[timestamp_col].unique())
+    
+    # Sample timestamps at intervals matching the return horizon to avoid overlapping periods
+    # For example, with 126-day returns, we should only rebalance every ~126 days
+    # to avoid compounding overlapping returns
+    if return_horizon_days > 1:
+        # Sample every return_horizon_days timestamps
+        timestamps = timestamps[::return_horizon_days]
     
     daily_returns = []
     turnovers = []
@@ -458,9 +446,9 @@ def run_portfolio_backtest(
             long_returns, short_returns, config.weighting
         )
         
-        # Apply transaction costs and slippage
+        # Apply transaction costs (including slippage)
         net_return = apply_transaction_costs(
-            gross_return, turnover, config.transaction_cost_bps, config.slippage_bps
+            gross_return, turnover, config.total_cost_bps
         )
         
         daily_returns.append({"timestamp": ts, "return": net_return})
@@ -480,36 +468,17 @@ def run_portfolio_backtest(
     returns_df = pd.DataFrame(daily_returns)
     returns_series = returns_df.set_index("timestamp")["return"]
     
-    # For overlapping returns (e.g., 5-day returns observed daily), we need to:
-    # 1. Sample non-overlapping returns for Sharpe and total return calculation
-    # 2. Keep all returns for cumulative visualization (but understand it's smoothed)
+    # Compute cumulative returns
+    cumulative = (1 + returns_series).cumprod() - 1
     
-    # Sample non-overlapping returns for accurate metrics
-    if return_horizon_days > 1 and len(returns_series) >= return_horizon_days:
-        non_overlapping_returns = returns_series.iloc[::return_horizon_days]
-    else:
-        non_overlapping_returns = returns_series
-    
-    # Compute cumulative returns from non-overlapping returns (true compounding)
-    cumulative_non_overlapping = (1 + non_overlapping_returns).cumprod() - 1
-    
-    # Also compute overlapping cumulative for visualization (smoother but inflated)
-    # WARNING: This is NOT accurate for performance measurement with overlapping returns
-    cumulative_all = (1 + returns_series).cumprod() - 1
-    
-    # Compute metrics using non-overlapping returns
+    # Compute metrics
     # For proper annualization, use the return horizon to determine periods per year
     # E.g., 5-day returns = 252/5 ≈ 50 periods per year
-    periods_per_year = int(252 / return_horizon_days)
-    sharpe = compute_sharpe_ratio(
-        returns_series, 
-        periods_per_year=periods_per_year,
-        return_horizon_days=return_horizon_days,
-    )
-    # Use non-overlapping cumulative for accurate drawdown (overlapping inflates it)
-    max_dd = compute_max_drawdown(cumulative_non_overlapping)
-    # Use non-overlapping cumulative for true total return
-    total_return = cumulative_non_overlapping.iloc[-1] if len(cumulative_non_overlapping) > 0 else 0.0
+    # Ensure at least 1 period per year to avoid division by zero
+    periods_per_year = max(1, 252 // return_horizon_days)
+    sharpe = compute_sharpe_ratio(returns_series, periods_per_year=periods_per_year)
+    max_dd = compute_max_drawdown(cumulative)
+    total_return = cumulative.iloc[-1] if len(cumulative) > 0 else 0.0
     avg_turnover = np.mean(turnovers) if turnovers else 0.0
     
     # Build holdings history
@@ -517,10 +486,10 @@ def run_portfolio_backtest(
     
     return BacktestResult(
         daily_returns=returns_series,
-        cumulative_returns=cumulative_all,  # Use all data for smooth visualization
+        cumulative_returns=cumulative,
         sharpe_ratio=sharpe,
         max_drawdown=max_dd,
-        total_return=total_return,  # True total return from non-overlapping
+        total_return=total_return,
         avg_turnover=avg_turnover,
         holdings_history=holdings_df,
     )

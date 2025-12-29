@@ -7,6 +7,12 @@ This pipeline implements Learning-to-Rank for cross-sectional stock prediction:
 4. Compute ranking metrics (IC, RankIC, ICIR)
 5. Run portfolio backtest
 6. Generate visualizations and reports
+
+Key safeguards against data leakage:
+- Train/test split with strict temporal ordering
+- Scalers fit on training data only
+- Cross-sectional features computed per-timestamp after split
+- Forward returns computed with proper lookahead handling
 """
 
 from dataclasses import dataclass, field
@@ -49,6 +55,23 @@ from core.target_builder import compute_forward_returns, FORWARD_RETURN
 from core.splitter import split_by_timestamp, calculate_window_timestamps
 from core.scaler import fit_scaler, transform_data
 from core.preprocessor import preprocess_data, clip_extreme_values
+from core.validation import (
+    validate_wide_data,
+    validate_no_lookahead,
+    validate_groups_match_data,
+    check_data_quality_report,
+    ValidationError,
+)
+from core.experiment_tracking import create_experiment_manifest, compute_data_hash
+from core.logging_config import (
+    get_logger,
+    log_timing,
+    log_dataframe_info,
+    log_metrics,
+    log_window_start,
+    log_window_result,
+    log_pipeline_summary,
+)
 
 from features.ratios import add_financial_ratios
 from features.technical import add_technical_features
@@ -76,6 +99,9 @@ from evaluation.portfolio_simulator import (
     PortfolioConfig,
     BacktestResult,
 )
+
+# Module logger
+logger = get_logger(__name__)
 
 
 # =============================================================================
@@ -253,6 +279,9 @@ def run_single_ranking_window(
     
     Returns:
         RankingWindowResult or None if insufficient data.
+    
+    Raises:
+        ValidationError: If data validation fails (e.g., lookahead bias detected).
     """
     lookahead_ms = forward_return_days * MS_PER_DAY
     
@@ -264,32 +293,42 @@ def run_single_ranking_window(
     split = split_by_timestamp(wide_slice, train_end_ts, test_end_ts)
     
     if split.train.empty or split.test.empty:
+        logger.warning(f"Window {window_id}: Empty train or test split")
         return None
+    
+    # VALIDATION: Ensure no lookahead bias in train/test split
+    try:
+        validate_no_lookahead(split.train, split.test, TIMESTAMP)
+    except ValidationError as e:
+        logger.error(f"Window {window_id}: Lookahead validation failed: {e}")
+        raise
     
     # Compute forward returns for both train and test
     # Use full slice as price lookup to get future prices
-    train_with_returns = compute_forward_returns(
-        split.train,
-        lookahead_days=forward_return_days,
-        return_type=return_type,
-        winsorize_limits=winsorize_limits,
-        drop_na=True,
-        price_lookup_df=wide_slice,
-    )
-    
-    test_with_returns = compute_forward_returns(
-        split.test,
-        lookahead_days=forward_return_days,
-        return_type=return_type,
-        winsorize_limits=winsorize_limits,
-        drop_na=True,
-        price_lookup_df=wide_slice,
-    )
+    with log_timing(f"Window {window_id}: compute forward returns", logger):
+        train_with_returns = compute_forward_returns(
+            split.train,
+            lookahead_days=forward_return_days,
+            return_type=return_type,
+            winsorize_limits=winsorize_limits,
+            drop_na=True,
+            price_lookup_df=wide_slice,
+        )
+        
+        test_with_returns = compute_forward_returns(
+            split.test,
+            lookahead_days=forward_return_days,
+            return_type=return_type,
+            winsorize_limits=winsorize_limits,
+            drop_na=True,
+            price_lookup_df=wide_slice,
+        )
     
     del wide_slice
     gc.collect()
     
     if train_with_returns.empty or test_with_returns.empty:
+        logger.warning(f"Window {window_id}: Empty data after forward return computation")
         return None
     
     # Filter timestamps with too few stocks
@@ -301,6 +340,7 @@ def run_single_ranking_window(
     )
     
     if train_with_returns.empty or test_with_returns.empty:
+        logger.warning(f"Window {window_id}: Insufficient stocks per timestamp")
         return None
     
     # Add features (including experimental if specified)
@@ -310,7 +350,14 @@ def run_single_ranking_window(
     test_features = add_all_features(
         test_with_returns, global_time_min, global_time_max, experimental_features
     )
+    
+    # Add cross-sectional features (computed per-timestamp)
+    # Must be done AFTER splitting to avoid leakage, but BEFORE scaling
+    train_features = add_cross_sectional_features(train_features)
+    test_features = add_cross_sectional_features(test_features)
+    
     del train_with_returns, test_with_returns
+    gc.collect()
     
     # Preprocess (handle NaN, infinities)
     train_features = preprocess_data(train_features, add_missing_flags=False)
@@ -320,6 +367,14 @@ def run_single_ranking_window(
     train_feature_cols = set(get_feature_columns_for_ranking(train_features))
     test_feature_cols = set(get_feature_columns_for_ranking(test_features))
     feature_cols = sorted(train_feature_cols & test_feature_cols)
+    
+    # Log dropped features
+    dropped_train = train_feature_cols - test_feature_cols
+    dropped_test = test_feature_cols - train_feature_cols
+    if dropped_train:
+        print(f"  Warning: Dropped {len(dropped_train)} features present in train but not test: {list(dropped_train)[:5]}...")
+    if dropped_test:
+        print(f"  Warning: Dropped {len(dropped_test)} features present in test but not train: {list(dropped_test)[:5]}...")
     
     if not feature_cols:
         return None

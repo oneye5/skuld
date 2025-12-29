@@ -90,6 +90,7 @@ def add_alpha_factors(df: pd.DataFrame) -> pd.DataFrame:
         
         # --- Volume Patterns ---
         ticker_df = _add_volume_features(ticker_df)
+        ticker_df = _add_amihud_illiquidity(ticker_df, window=20)
         
         # --- Price Acceleration ---
         ticker_df = _add_momentum_acceleration(ticker_df)
@@ -491,4 +492,15 @@ def add_seasonality_features(df: pd.DataFrame) -> pd.DataFrame:
     # Is Friday (Friday effect - sentiment before weekend)
     df["IsFriday"] = (dt.dt.dayofweek == 4).astype(int)
     
+    return df
+
+
+def _add_amihud_illiquidity(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+    """Calculate Amihud Illiquidity (Abs(Ret) / Volume)."""
+    if VOLUME not in df.columns or CLOSE not in df.columns:
+        return df
+        
+    # Avoid division by zero
+    illiq = df[CLOSE].pct_change().abs() / (df[VOLUME] * df[CLOSE] + EPSILON)
+    df[f"Amihud_{window}"] = illiq.rolling(window=window).mean()
     return df

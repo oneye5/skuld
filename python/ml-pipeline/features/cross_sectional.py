@@ -1,4 +1,14 @@
-"""Cross-sectional features (ranking across tickers)."""
+"""Cross-sectional features (ranking across tickers).
+
+IMPORTANT: These features compute percentile ranks WITHIN each timestamp,
+meaning they compare stocks to their peers at the same point in time.
+This is safe from lookahead bias as long as this function is called
+AFTER train/test split (which the ranking_pipeline does correctly).
+
+The ranking is done per-timestamp, so:
+- Train data ranks are computed only using train data
+- Test data ranks are computed only using test data
+"""
 
 import pandas as pd
 import numpy as np
@@ -13,11 +23,16 @@ def add_cross_sectional_features(df: pd.DataFrame) -> pd.DataFrame:
     for each timestamp. This helps normalize for market conditions
     (e.g., high RSI in a crash vs bull market).
     
+    LEAKAGE NOTE: This function is safe from lookahead bias because:
+    1. Ranking is done per-timestamp (groupby TIMESTAMP)
+    2. It should be called AFTER train/test split in the pipeline
+    
     Args:
         df: Wide format DataFrame with technical features.
+            Should be either train or test data, NOT the full dataset.
     
     Returns:
-        DataFrame with Rank_* features added.
+        DataFrame with Rank_* features added (values 0.0 to 1.0).
     """
     # Features to rank - includes base technical and alpha factors
     features_to_rank = [

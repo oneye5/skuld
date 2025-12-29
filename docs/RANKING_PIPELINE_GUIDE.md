@@ -2,7 +2,7 @@
 
 **Project**: Skuld - Time Series Forecasting Framework  
 **Pipeline**: Ranking-Based Cross-Sectional Stock Prediction  
-**Last Updated**: 2025-12-28
+**Last Updated**: 2025-12-29
 
 ---
 
@@ -14,8 +14,11 @@
 4. [Running Predictions on Future Data](#running-predictions-on-future-data)
 5. [Configuration Options](#configuration-options)
 6. [Understanding Results](#understanding-results)
-7. [Troubleshooting](#troubleshooting)
-8. [API Reference](#api-reference)
+7. [Data Validation & Quality](#data-validation--quality)
+8. [Experiment Tracking](#experiment-tracking)
+9. [Logging](#logging)
+10. [Troubleshooting](#troubleshooting)
+11. [API Reference](#api-reference)
 
 ---
 
@@ -27,7 +30,7 @@ The ranking pipeline uses **Learning-to-Rank (LTR)** with LightGBM's `LGBMRanker
 
 | Concept | Description |
 |---------|-------------|
-| **Forward Returns** | Target variable: 5-day simple returns `(P_{t+5} - P_t) / P_t` |
+| **Forward Returns** | Target variable: 365-day simple returns `(P_{t+365} - P_t) / P_t` |
 | **Cross-Sectional Ranking** | At each timestamp, rank all stocks by predicted score |
 | **IC (Information Coefficient)** | Correlation between predicted ranks and actual returns |
 | **Long-Short Portfolio** | Go long top-N, short bottom-N ranked stocks |
@@ -39,18 +42,33 @@ Raw Data (data_long.csv)
     ↓
 Wide Format Conversion
     ↓
-Forward Return Calculation (5-day)
+Data Validation (timestamps, duplicates, prices)
     ↓
-Feature Engineering (technical, ratios, cross-sectional)
+Forward Return Calculation (365-day)
+    ↓
+Feature Engineering (technical, ratios, cross-sectional, alpha factors)
     ↓
 Rolling Window Train/Test Split
+    ↓
+Lookahead Validation (ensure no data leakage)
     ↓
 LGBMRanker Training & Prediction
     ↓
 Evaluation (IC, ICIR, Quintile Returns)
     ↓
 Portfolio Backtest (Sharpe, Drawdown)
+    ↓
+Experiment Manifest (reproducibility)
 ```
+
+### Key Safeguards Against Data Leakage
+
+The pipeline includes multiple safeguards to prevent data leakage:
+
+1. **Temporal Validation**: `validate_no_lookahead()` ensures test data comes strictly after training data
+2. **Scaler Isolation**: Scalers are fit on training data only, then applied to test data
+3. **Cross-Sectional Features**: Computed per-timestamp after train/test split
+4. **Forward Fill Safety**: Data is sorted by `[TICKER, TIMESTAMP]` before forward fill to prevent future→past leakage
 
 ---
 
@@ -93,7 +111,7 @@ uv run python scripts/run_model_evaluation.py
 ```
 
 This runs the full pipeline with default settings:
-- 5-day forward returns
+- 365-day forward returns
 - 5 rolling windows
 - Long top-10, short bottom-10 stocks
 - 10 bps transaction costs
@@ -127,7 +145,7 @@ uv run python scripts/run_model_evaluation.py --forward-days 10 --top-n 5 --num-
 | `--num-windows` | 5 | Number of rolling windows |
 | `--window-movement` | 0.5 | Years between window starts |
 | `--test-period` | 0.5 | Test period length in years |
-| `--forward-days` | 5 | Forward return horizon (days) |
+| `--forward-days` | 365 | Forward return horizon (days) |
 | `--return-type` | simple | Return type: `simple` or `log` |
 | `--no-winsorize` | False | Disable return winsorization |
 | `--top-n` | 10 | Long portfolio size |
@@ -341,7 +359,7 @@ Configuration lives in `config/ranking_config.py`:
 
 ```python
 # Target settings
-FORWARD_RETURN_DAYS = 5       # Change to 1, 10, 20 for different horizons
+FORWARD_RETURN_DAYS = 365     # Change to 1, 10, 20 for different horizons
 RETURN_TYPE = "simple"        # "simple" or "log"
 WINSORIZE_LIMITS = (-0.5, 0.5)  # Clip extreme returns
 
@@ -411,6 +429,212 @@ Avg Turnover:   45%
 | **Model Not Learning** | IC < 0, non-monotonic quintiles | Insufficient data, wrong features |
 | **Overfitting** | High train IC, low test IC | Too many trees, not enough data |
 | **Wrong Annualization** | Sharpe seems too high | Mismatch between return horizon and annualization |
+
+---
+
+## Data Validation & Quality
+
+The pipeline includes comprehensive validation utilities in `core/validation.py` to catch data issues early.
+
+### Automatic Validation
+
+The pipeline automatically validates:
+- **No lookahead bias**: Test timestamps must come strictly after train timestamps
+- **Group consistency**: LGBMRanker group sizes must match data size
+- **Data quality**: Warnings for missing values, infinities, invalid prices
+
+### Manual Validation
+
+You can run validation checks manually:
+
+```python
+from core.validation import (
+    validate_wide_data,
+    validate_no_lookahead,
+    check_data_quality_report,
+)
+
+# Validate wide format data
+issues = validate_wide_data(df, raise_on_error=False)
+if issues:
+    print("Data issues found:", issues)
+
+# Check for lookahead bias
+validate_no_lookahead(train_df, test_df)  # Raises ValidationError if violated
+
+# Generate quality report
+report = check_data_quality_report(df)
+print(f"Rows: {report['n_rows']}, Columns: {report['n_columns']}")
+print(f"Columns with missing: {report['columns_with_missing']}")
+print(f"Columns with infinities: {report['columns_with_infinities']}")
+```
+
+### Validation Decorators
+
+Use decorators to validate function inputs:
+
+```python
+from core.validation import validate_dataframe, validate_no_nan
+
+@validate_dataframe(required_cols=['timestamp', 'ticker'], min_rows=10)
+def process_data(df):
+    # df is guaranteed to have required columns and minimum rows
+    ...
+
+@validate_no_nan(columns=['Close', 'Volume'])
+def compute_features(df):
+    # df is guaranteed to have no NaN in specified columns
+    ...
+```
+
+### Data Quality Checks
+
+| Check | Description | Action on Failure |
+|-------|-------------|-------------------|
+| Missing columns | Required columns not present | Raises `ValidationError` |
+| Negative timestamps | Timestamps < 0 | Reports issue |
+| Invalid Close prices | Close <= 0 or NaN | Warns (may be macro data) |
+| Duplicate pairs | Same (timestamp, ticker) | Reports issue |
+| Unsorted timestamps | Timestamps not monotonic | Reports issue |
+
+---
+
+## Experiment Tracking
+
+The pipeline supports experiment tracking for reproducibility via `core/experiment_tracking.py`.
+
+### Experiment Manifest
+
+Each experiment can generate a manifest containing:
+- Git commit hash and branch
+- Whether there were uncommitted changes
+- Configuration parameters used
+- Feature columns
+- Performance metrics
+- Data hash for verification
+
+```python
+from core.experiment_tracking import create_experiment_manifest, compute_data_hash
+
+# Create manifest
+manifest = create_experiment_manifest(
+    config={
+        "forward_days": 365,
+        "top_n": 10,
+        "num_windows": 5,
+    },
+    feature_columns=feature_cols,
+    metrics={
+        "mean_ic": 0.05,
+        "sharpe": 1.2,
+    },
+    data_hash=compute_data_hash(df),
+    notes="Baseline experiment with alpha factors",
+)
+
+# Save to output directory
+manifest.save(output_dir)
+```
+
+### Comparing Experiments
+
+```python
+from core.experiment_tracking import (
+    ExperimentManifest,
+    compare_experiments,
+    find_best_experiment,
+)
+
+# Load two experiments
+manifest_a = ExperimentManifest.load(Path("output/runs/exp_a/manifest.json"))
+manifest_b = ExperimentManifest.load(Path("output/runs/exp_b/manifest.json"))
+
+# Compare them
+diff = compare_experiments(manifest_a, manifest_b)
+print(f"Same git commit: {diff['same_git_commit']}")
+print(f"Config changes: {diff['config_differences']}")
+print(f"Metric changes: {diff['metric_differences']}")
+
+# Find best experiment by metric
+best = find_best_experiment(
+    Path("output/runs"),
+    metric="sharpe_ratio",
+    higher_is_better=True,
+)
+print(f"Best experiment: {best.experiment_id}")
+```
+
+---
+
+## Logging
+
+The pipeline uses structured logging via `core/logging_config.py`.
+
+### Setting Up Logging
+
+```python
+from core.logging_config import setup_logging, get_logger
+
+# Set up logging (call once at startup)
+setup_logging(
+    level=logging.INFO,
+    log_file=Path("output/pipeline.log"),
+    console=True,
+)
+
+# Get module-specific logger
+logger = get_logger(__name__)
+logger.info("Starting pipeline...")
+```
+
+### Timing Operations
+
+```python
+from core.logging_config import log_timing, timed
+
+# Context manager for timing
+with log_timing("feature engineering"):
+    df = add_features(df)
+# Logs: "Starting: feature engineering"
+# Logs: "Completed: feature engineering (2.34s)"
+
+# Decorator for timing functions
+@timed
+def slow_function():
+    ...
+# Logs execution time automatically
+```
+
+### Structured Logging Helpers
+
+```python
+from core.logging_config import log_dataframe_info, log_metrics
+
+# Log DataFrame info
+log_dataframe_info(df, "Training data")
+# Logs: "Training data: 10,000 rows × 50 cols (12.3 MB)"
+
+# Log metrics
+log_metrics({
+    "mean_ic": 0.05,
+    "sharpe": 1.2,
+}, prefix="Final")
+# Logs formatted metrics with prefix
+```
+
+### Progress Logging
+
+```python
+from core.logging_config import ProgressLogger
+
+progress = ProgressLogger(total=100, desc="Processing windows")
+for i in range(100):
+    process_window(i)
+    progress.update()
+progress.finish()
+# Logs: "Processing windows: 10% (10/100) [1.2s elapsed, ETA 10.8s]"
+# Logs: "Processing windows: Complete! 100 items in 12.0s"
+```
 
 ---
 
@@ -590,6 +814,8 @@ df = compute_forward_returns(
 
 ## See Also
 
-- [IMPLEMENTATION_PLAN_RANKING.md](IMPLEMENTATION_PLAN_RANKING.md) - Technical implementation details
-- [config/ranking_config.py](../python/ml-pipeline/config/ranking_config.py) - All configuration options
-- [tests/test_ranking*.py](../python/ml-pipeline/tests/) - Unit tests for ranking components
+- [config/settings.py](../python/ml-pipeline/config/settings.py) - All configuration options
+- [core/validation.py](../python/ml-pipeline/core/validation.py) - Data validation utilities
+- [core/experiment_tracking.py](../python/ml-pipeline/core/experiment_tracking.py) - Experiment tracking
+- [core/logging_config.py](../python/ml-pipeline/core/logging_config.py) - Logging utilities
+- [tests/](../python/ml-pipeline/tests/) - Unit tests for all components

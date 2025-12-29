@@ -31,11 +31,12 @@ This repo contains:
 
 The project blueprint and guides are in:
 - [docs/RANKING_PIPELINE_GUIDE.md](../docs/RANKING_PIPELINE_GUIDE.md) — How to run evaluation & predictions
-- [docs/IMPLEMENTATION_PLAN_RANKING.md](../docs/IMPLEMENTATION_PLAN_RANKING.md) — Architecture details
 
 Before changing pipeline semantics, review the guide's sections on:
 - **Data format** (`skuld/data/data_long.csv`) and long→wide conversion rules
 - **Leakage prevention** (fit scalers on training only; rolling-window isolation)
+- **Validation utilities** (`core/validation.py`) for data quality checks
+- **Experiment tracking** (`core/experiment_tracking.py`) for reproducibility
 - **Macro vs ticker handling** via the `MACRO_` prefix
 - **Rolling window** approach and model config defaults
 
@@ -110,7 +111,23 @@ When making changes:
 - **Modularity:** prefer pure functions and “data in → data out” modules.
 - **Centralized config:** constants belong in `python/ml-pipeline/config/*.py`.
 - **No leakage:** scalers/feature transforms must be fit on training data only.
+- **Validation:** use `core/validation.py` decorators and functions for input checking.
+- **Logging:** use `core/logging_config.py` instead of print statements.
+- **Experiment tracking:** use `core/experiment_tracking.py` for reproducibility.
 - **Tests mirror structure:** keep `tests/` organized to match the module layout.
+
+---
+
+## Key modules
+
+| Module | Purpose |
+|--------|---------|
+| `core/validation.py` | Data validation decorators, lookahead bias checks |
+| `core/experiment_tracking.py` | Experiment manifests, git tracking, comparison |
+| `core/logging_config.py` | Structured logging, timing utilities |
+| `core/preprocessor.py` | NaN handling, forward fill (sorted by timestamp) |
+| `features/cross_sectional.py` | Per-timestamp ranking features |
+| `learner/ranking.py` | LGBMRanker wrapper |
 
 ---
 

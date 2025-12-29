@@ -401,6 +401,12 @@ def run_portfolio_backtest(
     if return_horizon_days > 1:
         # Sample every return_horizon_days timestamps
         timestamps = timestamps[::return_horizon_days]
+        
+    if len(timestamps) < 2:
+        print(f"WARNING: Only {len(timestamps)} period(s) for backtest after sampling.")
+        print(f"  Return horizon: {return_horizon_days} days")
+        print(f"  Total timestamps: {len(df[timestamp_col].unique())}")
+        print("  Sharpe ratio will be NaN.")
     
     daily_returns = []
     turnovers = []

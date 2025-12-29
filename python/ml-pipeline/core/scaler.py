@@ -24,7 +24,7 @@ def fit_scaler(df: pd.DataFrame) -> ScalerSet:
     Uses RobustScaler for continuous features (robust to outliers).
     Binary features are not scaled.
     
-    Following nzx-predictor approach: fit on combined train+test data.
+    Fits ONLY on the provided DataFrame (typically training data) to avoid leakage.
     
     Args:
         df: DataFrame to fit scalers on.

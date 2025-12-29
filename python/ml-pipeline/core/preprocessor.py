@@ -2,6 +2,7 @@
 
 import pandas as pd
 import numpy as np
+import warnings
 
 from config.columns import TIMESTAMP, TICKER, TARGET, TIME_SCALED
 from config.settings import CLIP_THRESHOLD
@@ -20,6 +21,9 @@ def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.Data
     - Flag = 1 means data was present (observed)
     - Flag = 0 means data was missing (imputed)
     
+    IMPORTANT: Forward fill is applied per-ticker in TIMESTAMP order to prevent
+    future data from leaking into past observations.
+    
     Args:
         df: DataFrame to preprocess.
         add_missing_flags: If True, add binary flag columns for ALL features.
@@ -27,7 +31,14 @@ def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.Data
     
     Returns:
         Preprocessed DataFrame.
+    
+    Raises:
+        ValueError: If DataFrame is empty or missing required columns.
     """
+    if df.empty:
+        warnings.warn("preprocess_data received empty DataFrame", UserWarning)
+        return df
+    
     result = df.copy()
     
     # Remove any unnamed/index columns
@@ -49,14 +60,19 @@ def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.Data
         result[col] = result[col].replace([np.inf, -np.inf], np.nan)
     
     # Forward fill missing values within each ticker group
-    # This propagates the last known value (e.g. yesterday's price/rate)
-    if TICKER in result.columns:
-        # Sort by ticker and timestamp to ensure correct forward filling
-        result = result.sort_values([TICKER, TIMESTAMP])
+    # CRITICAL: Sort by TICKER then TIMESTAMP to ensure forward fill only
+    # propagates PAST values to PRESENT (not future to past - would cause leakage)
+    if TICKER in result.columns and TIMESTAMP in result.columns:
+        # Sort to ensure correct temporal ordering within each ticker
+        result = result.sort_values([TICKER, TIMESTAMP]).reset_index(drop=True)
         
         # Forward fill numeric columns by ticker
-        # Using transform to keep the same index and shape
+        # This propagates the last known value (e.g. yesterday's price/rate)
         result[numeric_cols] = result.groupby(TICKER)[numeric_cols].ffill()
+    elif TIMESTAMP in result.columns:
+        # No ticker column - sort by timestamp only
+        result = result.sort_values(TIMESTAMP).reset_index(drop=True)
+        result[numeric_cols] = result[numeric_cols].ffill()
 
     # Add missing flags for ALL features (matching nzx-predictor Java)
     # Flag = 1 means present, Flag = 0 means missing

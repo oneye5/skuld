@@ -72,6 +72,12 @@ def add_technical_features(df: pd.DataFrame) -> pd.DataFrame:
         # 52-week High/Low Position
         ticker_df = _add_52week_high_low(ticker_df)
         
+        # Garman-Klass Volatility
+        ticker_df = _add_garman_klass_vol(ticker_df, window=20)
+        
+        # Interaction Features
+        ticker_df = _add_interaction_features(ticker_df)
+        
         # --- Lagged Returns ---
         
         # Returns for t-1, t-2, t-3, t-5
@@ -230,4 +236,42 @@ def _add_lagged_return(df: pd.DataFrame, lag: int) -> pd.DataFrame:
     daily_return = df[CLOSE].pct_change()
     df[f"Ret_Lag_{lag}"] = daily_return.shift(lag)
     
+    return df
+
+
+def _add_garman_klass_vol(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+    """Calculate Garman-Klass volatility (more efficient than close-to-close)."""
+    if not all(c in df.columns for c in [OPEN, HIGH, LOW, CLOSE]):
+        return df
+        
+    # Ensure valid inputs for log
+    # High/Low should be >= 1. Clip to 1.0 to avoid negative logs or errors
+    hl_ratio = (df[HIGH] / (df[LOW] + EPSILON)).clip(lower=1.0)
+    
+    # Close/Open can be < 1 or > 1, but must be positive
+    co_ratio = (df[CLOSE] / (df[OPEN] + EPSILON)).clip(lower=EPSILON)
+    
+    log_hl = np.log(hl_ratio)
+    log_co = np.log(co_ratio)
+    
+    # GK formula: 0.5 * (ln(H/L))^2 - (2*ln(2)-1) * (ln(C/O))^2
+    gk_var = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
+    
+    # Clip negative variance (can happen due to data errors or approximation)
+    gk_var = gk_var.clip(lower=0.0)
+    
+    df[f"Vol_GK_{window}"] = np.sqrt(gk_var.rolling(window=window).mean())
+    return df
+
+
+def _add_interaction_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add interaction features (Momentum / Volatility)."""
+    # Volatility-adjusted Momentum
+    if "RSI_14" in df.columns and "Vol_20" in df.columns:
+        df["RSI_div_Vol"] = df["RSI_14"] / (df["Vol_20"] + EPSILON)
+        
+    # Price vs High/Low Range
+    if "Dist_MA_50" in df.columns and "BB_Width_20" in df.columns:
+        df["Trend_x_Vol"] = df["Dist_MA_50"] * df["BB_Width_20"]
+        
     return df

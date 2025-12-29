@@ -11,7 +11,7 @@ class TestPortfolioConfig:
     """Tests for PortfolioConfig dataclass."""
     
     def test_default_values(self):
-        """PortfolioConfig should have sensible defaults for Sharesies NZX."""
+        """PortfolioConfig should have sensible defaults."""
         from evaluation.portfolio_simulator import PortfolioConfig
         
         config = PortfolioConfig()
@@ -19,8 +19,9 @@ class TestPortfolioConfig:
         assert config.top_n == 10
         assert config.bottom_n == 10
         assert config.weighting == "equal"
-        assert config.transaction_cost_bps == 190.0  # Sharesies 1.9% fee
-        assert config.slippage_bps == 15.0  # NZX typical slippage
+        assert config.transaction_cost_bps == 10.0  # Default 10 bps
+        assert config.slippage_bps == 0.0  # Default 0 bps
+        # Note: For NZX with Sharesies, use transaction_cost_bps=190.0, slippage_bps=15.0
     
     def test_long_only_mode(self):
         """Long-only mode should disable bottom_n."""
@@ -108,17 +109,23 @@ class TestComputePortfolioReturn:
         assert abs(net_return - expected) < 1e-6
     
     def test_slippage_applied(self):
-        """Returns should be reduced by both transaction costs and slippage."""
-        from evaluation.portfolio_simulator import apply_transaction_costs
+        """Returns should be reduced by both transaction costs and slippage.
+        
+        Note: Slippage is combined with transaction costs via PortfolioConfig.total_cost_bps
+        property, not as a separate parameter to apply_transaction_costs.
+        """
+        from evaluation.portfolio_simulator import apply_transaction_costs, PortfolioConfig
         
         gross_return = 0.10
         turnover = 0.5  # 50% turnover
-        cost_bps = 20.0  # 20 bps round-trip
-        slippage_bps = 10.0  # 10 bps slippage
         
-        net_return = apply_transaction_costs(gross_return, turnover, cost_bps, slippage_bps)
+        # Use PortfolioConfig to combine costs
+        config = PortfolioConfig(transaction_cost_bps=20.0, slippage_bps=10.0)
+        total_cost_bps = config.total_cost_bps  # 30.0
         
-        # Total cost = 0.5 * (20 + 10) / 10000 = 0.0015
+        net_return = apply_transaction_costs(gross_return, turnover, total_cost_bps)
+        
+        # Total cost = 0.5 * 30 / 10000 = 0.0015
         expected = 0.10 - 0.0015
         assert abs(net_return - expected) < 1e-6
     

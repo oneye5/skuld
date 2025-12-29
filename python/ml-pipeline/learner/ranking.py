@@ -99,6 +99,8 @@ class RankerConfig:
     min_child_samples: int = 20
     subsample: float = 0.8
     colsample_bytree: float = 0.8
+    reg_alpha: float = 0.1
+    reg_lambda: float = 0.1
     objective: str = "lambdarank"
     metric: str = "ndcg"
     eval_at: Tuple[int, ...] = (5, 10, 20)

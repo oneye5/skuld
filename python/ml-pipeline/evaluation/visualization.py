@@ -1695,3 +1695,743 @@ def create_performance_summary_figure(
     _save_figure(fig, save_path)
     
     return fig
+
+
+# =============================================================================
+# EXTENDED VISUALIZATIONS - DECILE ANALYSIS
+# =============================================================================
+
+def plot_decile_returns(
+    decile_returns: Dict[int, float],
+    title: str = "Return by Predicted Decile",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 5),
+) -> "plt.Figure":
+    """Bar chart of average returns by decile (10 groups).
+    
+    More granular than quintiles for detailed analysis.
+    
+    Args:
+        decile_returns: Dictionary mapping decile (1-10) to average return.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    deciles = sorted(decile_returns.keys())
+    returns = [decile_returns.get(d, 0) for d in deciles]
+    labels = [f"D{d}" for d in deciles]
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    colors = plt.cm.RdYlGn(np.linspace(0.15, 0.85, len(deciles)))
+    bars = ax.bar(labels, returns, color=colors, edgecolor='black', linewidth=0.5)
+    
+    # Add value labels
+    for bar, val in zip(bars, returns):
+        height = bar.get_height()
+        ax.annotate(
+            f'{val:.2%}',
+            xy=(bar.get_x() + bar.get_width() / 2, height),
+            xytext=(0, 3 if height >= 0 else -12),
+            textcoords="offset points",
+            ha='center', va='bottom' if height >= 0 else 'top',
+            fontsize=8,
+        )
+    
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.set_xlabel("Decile (D1=Lowest Predicted, D10=Highest Predicted)", fontsize=10)
+    ax.set_ylabel("Average Return", fontsize=10)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    
+    # Add spread annotation
+    spread = returns[-1] - returns[0] if returns else 0
+    ax.annotate(
+        f'D10-D1 Spread: {spread:.2%}',
+        xy=(0.98, 0.98),
+        xycoords='axes fraction',
+        ha='right', va='top',
+        fontsize=10,
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+    )
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# WIN STREAK ANALYSIS
+# =============================================================================
+
+def plot_win_streak_analysis(
+    returns_series: pd.Series,
+    title: str = "Win/Loss Streak Analysis",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (14, 6),
+) -> "plt.Figure":
+    """Visualize consecutive win/loss streaks over time.
+    
+    Args:
+        returns_series: Series of returns.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    
+    returns = returns_series.dropna()
+    
+    # Left: Streak bar chart over time
+    ax1 = axes[0]
+    
+    streaks = []
+    current_streak = 0
+    streak_type = None  # 'win' or 'loss'
+    
+    for ret in returns:
+        if ret > 0:
+            if streak_type == 'win':
+                current_streak += 1
+            else:
+                if current_streak != 0:
+                    streaks.append((streak_type, current_streak))
+                current_streak = 1
+                streak_type = 'win'
+        else:
+            if streak_type == 'loss':
+                current_streak += 1
+            else:
+                if current_streak != 0:
+                    streaks.append((streak_type, current_streak))
+                current_streak = 1
+                streak_type = 'loss'
+    
+    if current_streak != 0:
+        streaks.append((streak_type, current_streak))
+    
+    # Plot streaks
+    win_streaks = [s[1] for s in streaks if s[0] == 'win']
+    loss_streaks = [s[1] for s in streaks if s[0] == 'loss']
+    
+    x_positions = range(len(streaks))
+    colors_streak = [COLORS['positive'] if s[0] == 'win' else COLORS['negative'] for s in streaks]
+    heights = [s[1] if s[0] == 'win' else -s[1] for s in streaks]
+    
+    ax1.bar(x_positions, heights, color=colors_streak, alpha=0.7, width=0.8)
+    ax1.axhline(0, color='black', linewidth=0.5)
+    ax1.set_xlabel("Streak Number")
+    ax1.set_ylabel("Streak Length (+ = wins, - = losses)")
+    ax1.set_title("Win/Loss Streaks Over Time", fontsize=11)
+    
+    # Add max streak annotations
+    if win_streaks:
+        max_win = max(win_streaks)
+        ax1.axhline(max_win, color=COLORS['positive'], linestyle='--', alpha=0.5, 
+                   label=f'Max Win Streak: {max_win}')
+    if loss_streaks:
+        max_loss = max(loss_streaks)
+        ax1.axhline(-max_loss, color=COLORS['negative'], linestyle='--', alpha=0.5,
+                   label=f'Max Loss Streak: {max_loss}')
+    ax1.legend(loc='upper right')
+    
+    # Right: Streak length distribution
+    ax2 = axes[1]
+    
+    if win_streaks and loss_streaks:
+        ax2.hist([win_streaks, loss_streaks], bins=range(1, max(max(win_streaks), max(loss_streaks)) + 2),
+                label=['Win Streaks', 'Loss Streaks'], color=[COLORS['positive'], COLORS['negative']],
+                alpha=0.7, edgecolor='black')
+    elif win_streaks:
+        ax2.hist(win_streaks, bins=range(1, max(win_streaks) + 2), label='Win Streaks',
+                color=COLORS['positive'], alpha=0.7, edgecolor='black')
+    elif loss_streaks:
+        ax2.hist(loss_streaks, bins=range(1, max(loss_streaks) + 2), label='Loss Streaks',
+                color=COLORS['negative'], alpha=0.7, edgecolor='black')
+    
+    ax2.set_xlabel("Streak Length")
+    ax2.set_ylabel("Frequency")
+    ax2.set_title("Streak Length Distribution", fontsize=11)
+    ax2.legend()
+    
+    fig.suptitle(title, fontsize=12, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# IC AUTOCORRELATION ANALYSIS
+# =============================================================================
+
+def plot_ic_autocorrelation(
+    ic_series: pd.Series,
+    max_lag: int = 20,
+    title: str = "IC Autocorrelation",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (10, 5),
+) -> "plt.Figure":
+    """Plot autocorrelation of IC series.
+    
+    High autocorrelation suggests predictable IC patterns.
+    
+    Args:
+        ic_series: Series of IC values.
+        max_lag: Maximum lag to compute.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    ic_clean = ic_series.dropna()
+    
+    if len(ic_clean) < max_lag + 5:
+        max_lag = max(len(ic_clean) - 5, 1)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    lags = range(1, max_lag + 1)
+    autocorrs = [ic_clean.autocorr(lag=lag) for lag in lags]
+    
+    # Bar plot
+    colors = [COLORS['positive'] if ac > 0 else COLORS['negative'] for ac in autocorrs]
+    ax.bar(lags, autocorrs, color=colors, alpha=0.7, edgecolor='black')
+    
+    # Significance bands (approximate 95% CI)
+    n = len(ic_clean)
+    sig_level = 1.96 / np.sqrt(n)
+    ax.axhline(sig_level, color='gray', linestyle='--', alpha=0.7, label='95% CI')
+    ax.axhline(-sig_level, color='gray', linestyle='--', alpha=0.7)
+    ax.axhline(0, color='black', linewidth=0.5)
+    
+    ax.set_xlabel("Lag")
+    ax.set_ylabel("Autocorrelation")
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.legend(loc='upper right')
+    
+    # Annotate first lag
+    if autocorrs:
+        ax.annotate(
+            f'Lag-1: {autocorrs[0]:.3f}',
+            xy=(1, autocorrs[0]),
+            xytext=(5, 20 if autocorrs[0] > 0 else -20),
+            textcoords='offset points',
+            arrowprops=dict(arrowstyle='->', color='black'),
+            fontsize=9,
+        )
+    
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# RISK METRICS VISUALIZATION
+# =============================================================================
+
+def plot_risk_metrics_dashboard(
+    returns_series: pd.Series,
+    metrics: Optional[Dict[str, float]] = None,
+    title: str = "Risk Metrics Dashboard",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (16, 10),
+) -> "plt.Figure":
+    """Comprehensive risk metrics dashboard.
+    
+    Args:
+        returns_series: Series of returns.
+        metrics: Pre-computed metrics dict (optional).
+        title: Dashboard title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig = plt.figure(figsize=figsize)
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+    
+    # 3x2 grid
+    ax1 = fig.add_subplot(2, 3, 1)  # Returns distribution
+    ax2 = fig.add_subplot(2, 3, 2)  # Drawdown
+    ax3 = fig.add_subplot(2, 3, 3)  # Rolling volatility
+    ax4 = fig.add_subplot(2, 3, 4)  # VaR/CVaR
+    ax5 = fig.add_subplot(2, 3, 5)  # Underwater
+    ax6 = fig.add_subplot(2, 3, 6)  # Metrics summary
+    
+    returns = returns_series.dropna()
+    
+    # 1. Returns distribution with VaR markers
+    ax1.hist(returns, bins=50, density=True, alpha=0.7, color=COLORS['primary'], 
+             edgecolor='black', linewidth=0.3)
+    var_95 = np.percentile(returns, 5)
+    var_99 = np.percentile(returns, 1)
+    ax1.axvline(var_95, color=COLORS['secondary'], linewidth=2, linestyle='--', 
+                label=f'VaR 95%: {var_95:.2%}')
+    ax1.axvline(var_99, color=COLORS['negative'], linewidth=2, linestyle='--',
+                label=f'VaR 99%: {var_99:.2%}')
+    ax1.axvline(0, color='black', linewidth=0.5)
+    ax1.set_xlabel("Return")
+    ax1.set_ylabel("Density")
+    ax1.set_title("Returns Distribution with VaR")
+    ax1.legend(fontsize=8)
+    ax1.xaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    
+    # 2. Drawdown series
+    cumulative = (1 + returns).cumprod()
+    running_max = cumulative.cummax()
+    drawdown = (cumulative - running_max) / running_max
+    ax2.fill_between(range(len(drawdown)), 0, drawdown.values, color=COLORS['negative'], alpha=0.5)
+    ax2.plot(drawdown.values, color='darkred', linewidth=0.5)
+    ax2.set_xlabel("Period")
+    ax2.set_ylabel("Drawdown")
+    ax2.set_title(f"Drawdown (Max: {drawdown.min():.1%})")
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    
+    # 3. Rolling volatility
+    rolling_vol = returns.rolling(20).std() * np.sqrt(252)
+    ax3.plot(rolling_vol.values, color=COLORS['primary'], linewidth=1)
+    ax3.axhline(rolling_vol.mean(), color=COLORS['secondary'], linestyle='--', 
+                label=f'Mean: {rolling_vol.mean():.1%}')
+    ax3.fill_between(range(len(rolling_vol)), 0, rolling_vol.values, 
+                     color=COLORS['primary'], alpha=0.2)
+    ax3.set_xlabel("Period")
+    ax3.set_ylabel("Annualized Volatility")
+    ax3.set_title("Rolling 20-Period Volatility")
+    ax3.legend()
+    ax3.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    
+    # 4. VaR/CVaR analysis
+    percentiles = [1, 5, 10, 25, 50, 75, 90, 95, 99]
+    var_values = [np.percentile(returns, p) for p in percentiles]
+    colors_var = [COLORS['negative'] if v < 0 else COLORS['positive'] for v in var_values]
+    ax4.barh([str(p) + "%" for p in percentiles], var_values, color=colors_var, alpha=0.7)
+    ax4.axvline(0, color='black', linewidth=0.5)
+    ax4.set_xlabel("Return")
+    ax4.set_title("Return Percentiles")
+    ax4.xaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    
+    # 5. Underwater equity curve
+    wealth = cumulative
+    ax5.fill_between(range(len(wealth)), 1, wealth.values, 
+                     where=(wealth.values >= 1), color=COLORS['positive'], alpha=0.3)
+    ax5.fill_between(range(len(wealth)), 1, wealth.values,
+                     where=(wealth.values < 1), color=COLORS['negative'], alpha=0.3)
+    ax5.plot(wealth.values, color=COLORS['primary'], linewidth=1.5)
+    ax5.axhline(1, color='black', linewidth=0.5)
+    ax5.set_xlabel("Period")
+    ax5.set_ylabel("Wealth (Starting = 1)")
+    ax5.set_title(f"Equity Curve (Final: {wealth.iloc[-1]:.2f})")
+    
+    # 6. Metrics summary text
+    ax6.axis('off')
+    
+    # Compute metrics if not provided
+    from scipy import stats as scipy_stats
+    mean_ret = returns.mean() * 252
+    std_ret = returns.std() * np.sqrt(252)
+    sharpe = mean_ret / std_ret if std_ret > 0 else 0
+    skewness = scipy_stats.skew(returns)
+    kurtosis = scipy_stats.kurtosis(returns)
+    max_dd = drawdown.min()
+    cvar_95 = returns[returns <= var_95].mean()
+    
+    metrics_text = (
+        f"Annualized Return:  {mean_ret:>10.2%}\n"
+        f"Annualized Vol:     {std_ret:>10.2%}\n"
+        f"Sharpe Ratio:       {sharpe:>10.2f}\n"
+        f"Max Drawdown:       {max_dd:>10.2%}\n"
+        f"VaR (95%):          {var_95:>10.2%}\n"
+        f"CVaR (95%):         {cvar_95:>10.2%}\n"
+        f"Skewness:           {skewness:>10.2f}\n"
+        f"Kurtosis:           {kurtosis:>10.2f}\n"
+        f"Win Rate:           {(returns > 0).mean():>10.2%}\n"
+        f"Periods:            {len(returns):>10d}"
+    )
+    
+    ax6.text(0.1, 0.5, metrics_text, transform=ax6.transAxes, fontsize=11,
+             verticalalignment='center', fontfamily='monospace',
+             bbox=dict(boxstyle='round', facecolor='white', edgecolor='gray', alpha=0.9))
+    ax6.set_title("Summary Statistics")
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
+# EXTENDED COMPREHENSIVE DASHBOARD
+# =============================================================================
+
+def create_extended_dashboard(
+    predictions_df: pd.DataFrame,
+    ic_series: pd.Series,
+    rank_ic_series: pd.Series,
+    quintile_df: pd.DataFrame,
+    returns_series: pd.Series,
+    metrics_dict: Optional[Dict[str, Any]] = None,
+    title: str = "Extended Performance Dashboard",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (20, 16),
+    timestamp_col: str = "timestamp",
+    predicted_col: str = "predicted_score",
+    actual_col: str = "actual_return",
+) -> "plt.Figure":
+    """Create comprehensive extended dashboard with all key visualizations.
+    
+    Args:
+        predictions_df: DataFrame with predictions.
+        ic_series: Pearson IC series.
+        rank_ic_series: Spearman Rank IC series.
+        quintile_df: DataFrame with quintile returns.
+        returns_series: Portfolio returns series.
+        metrics_dict: Pre-computed metrics dictionary.
+        title: Dashboard title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+        timestamp_col: Column name for timestamp.
+        predicted_col: Column name for predictions.
+        actual_col: Column name for actual returns.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    fig = plt.figure(figsize=figsize)
+    fig.suptitle(title, fontsize=16, fontweight='bold', y=0.98)
+    
+    # 4x3 grid layout
+    gs = fig.add_gridspec(4, 3, hspace=0.35, wspace=0.25)
+    
+    # Row 1: Core metrics
+    ax1 = fig.add_subplot(gs[0, 0])  # Quintile returns
+    ax2 = fig.add_subplot(gs[0, 1])  # Cumulative returns
+    ax3 = fig.add_subplot(gs[0, 2])  # IC series
+    
+    # Row 2: IC analysis
+    ax4 = fig.add_subplot(gs[1, 0])  # IC distribution
+    ax5 = fig.add_subplot(gs[1, 1])  # IC vs Rank IC
+    ax6 = fig.add_subplot(gs[1, 2])  # IC rolling
+    
+    # Row 3: Risk/Performance
+    ax7 = fig.add_subplot(gs[2, 0])  # Drawdown
+    ax8 = fig.add_subplot(gs[2, 1])  # Returns distribution
+    ax9 = fig.add_subplot(gs[2, 2])  # Hit rate over time
+    
+    # Row 4: Advanced
+    ax10 = fig.add_subplot(gs[3, 0])  # Prediction vs Actual
+    ax11 = fig.add_subplot(gs[3, 1])  # Quintile cumulative
+    ax12 = fig.add_subplot(gs[3, 2])  # Metrics summary
+    
+    quintile_cols = [col for col in quintile_df.columns if col.startswith("Q")]
+    returns = returns_series.dropna()
+    
+    # 1. Quintile Returns
+    avg_returns = quintile_df[quintile_cols].mean()
+    colors = plt.cm.RdYlGn(np.linspace(0.2, 0.8, len(quintile_cols)))
+    ax1.bar(quintile_cols, avg_returns.values, color=colors, edgecolor='black', linewidth=0.5)
+    ax1.axhline(0, color='black', linewidth=0.5)
+    ax1.set_ylabel("Avg Return")
+    ax1.set_title("Quintile Returns", fontsize=10)
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    spread = avg_returns.iloc[-1] - avg_returns.iloc[0]
+    ax1.annotate(f'Spread: {spread:.2%}', xy=(0.98, 0.98), xycoords='axes fraction',
+                ha='right', va='top', fontsize=8, bbox=dict(facecolor='wheat', alpha=0.5))
+    
+    # 2. Cumulative Returns
+    cum_ret = (1 + returns).cumprod() - 1
+    ax2.fill_between(range(len(cum_ret)), 0, cum_ret.values, 
+                     where=(cum_ret.values >= 0), color=COLORS['positive'], alpha=0.3)
+    ax2.fill_between(range(len(cum_ret)), 0, cum_ret.values,
+                     where=(cum_ret.values < 0), color=COLORS['negative'], alpha=0.3)
+    ax2.plot(cum_ret.values, color=COLORS['primary'], linewidth=1.5)
+    ax2.axhline(0, color='black', linewidth=0.5)
+    ax2.set_ylabel("Cumulative Return")
+    ax2.set_title(f"Strategy Returns (Total: {cum_ret.iloc[-1]:.1%})", fontsize=10)
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    
+    # 3. IC Series
+    ax3.plot(ic_series.values, alpha=0.4, color='steelblue', linewidth=0.5)
+    rolling_ic = ic_series.rolling(20, min_periods=1).mean()
+    ax3.plot(rolling_ic.values, color='darkred', linewidth=1.5)
+    ax3.axhline(0, color='black', linewidth=0.5)
+    ax3.axhline(ic_series.mean(), color='green', linestyle='--', alpha=0.7)
+    ax3.set_ylabel("IC")
+    ax3.set_title(f"IC Over Time (Mean: {ic_series.mean():.4f})", fontsize=10)
+    
+    # 4. IC Distribution
+    ax4.hist(ic_series.dropna(), bins=30, color='steelblue', edgecolor='black', alpha=0.7)
+    ax4.axvline(0, color='black', linewidth=1, linestyle='--')
+    ax4.axvline(ic_series.mean(), color='red', linewidth=2)
+    ax4.set_xlabel("IC")
+    ax4.set_title(f"IC Distribution (Hit: {(ic_series > 0).mean():.1%})", fontsize=10)
+    
+    # 5. IC vs Rank IC comparison
+    if len(rank_ic_series) > 0:
+        rolling_ic = ic_series.rolling(20, min_periods=1).mean()
+        rolling_rank_ic = rank_ic_series.rolling(20, min_periods=1).mean()
+        ax5.plot(rolling_ic.values, color=COLORS['primary'], linewidth=1.5, label='Pearson IC')
+        ax5.plot(rolling_rank_ic.values, color=COLORS['secondary'], linewidth=1.5, label='Rank IC')
+        ax5.axhline(0, color='black', linewidth=0.5)
+        ax5.set_ylabel("Rolling IC")
+        ax5.set_title("IC vs Rank IC (20-period)", fontsize=10)
+        ax5.legend(fontsize=8)
+    
+    # 6. IC rolling with bands
+    rolling_mean = ic_series.rolling(20).mean()
+    rolling_std = ic_series.rolling(20).std()
+    ax6.fill_between(range(len(rolling_mean)), 
+                     (rolling_mean - 2*rolling_std).values, 
+                     (rolling_mean + 2*rolling_std).values,
+                     alpha=0.2, color=COLORS['primary'])
+    ax6.plot(rolling_mean.values, color=COLORS['primary'], linewidth=1.5)
+    ax6.axhline(0, color='black', linewidth=0.5)
+    ax6.set_ylabel("IC")
+    ax6.set_title("Rolling IC with 2σ Bands", fontsize=10)
+    
+    # 7. Drawdown
+    cumulative = (1 + returns).cumprod()
+    running_max = cumulative.cummax()
+    drawdown = (cumulative - running_max) / running_max
+    ax7.fill_between(range(len(drawdown)), 0, drawdown.values, color=COLORS['negative'], alpha=0.5)
+    ax7.set_ylabel("Drawdown")
+    ax7.set_title(f"Drawdown (Max: {drawdown.min():.1%})", fontsize=10)
+    ax7.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    
+    # 8. Returns Distribution
+    ax8.hist(returns, bins=40, density=True, alpha=0.7, color=COLORS['primary'], edgecolor='black')
+    ax8.axvline(returns.mean(), color='red', linewidth=2, label=f'Mean: {returns.mean():.2%}')
+    ax8.axvline(0, color='black', linewidth=0.5)
+    ax8.set_xlabel("Return")
+    ax8.set_title("Returns Distribution", fontsize=10)
+    ax8.legend(fontsize=8)
+    ax8.xaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    
+    # 9. Hit rate over time
+    hit_rates = []
+    for ts, group in predictions_df.groupby(timestamp_col):
+        if len(group) >= 10:
+            top_picks = group.nlargest(10, predicted_col)
+            hit_rate = (top_picks[actual_col] > 0).mean()
+            hit_rates.append(hit_rate)
+    
+    if hit_rates:
+        colors_hr = [COLORS['positive'] if hr > 0.5 else COLORS['negative'] for hr in hit_rates]
+        ax9.bar(range(len(hit_rates)), hit_rates, color=colors_hr, alpha=0.7, width=1.0)
+        rolling_hr = pd.Series(hit_rates).rolling(20, min_periods=1).mean()
+        ax9.plot(rolling_hr.values, color='black', linewidth=2)
+        ax9.axhline(0.5, color='gray', linestyle='--')
+        ax9.set_ylabel("Hit Rate")
+        ax9.set_title(f"Hit Rate Top-10 (Mean: {np.mean(hit_rates):.1%})", fontsize=10)
+        ax9.set_ylim(0, 1)
+    
+    # 10. Prediction vs Actual scatter (sampled)
+    n_sample = min(2000, len(predictions_df))
+    sample_idx = np.random.choice(len(predictions_df), n_sample, replace=False)
+    pred_sample = predictions_df.iloc[sample_idx][predicted_col]
+    actual_sample = predictions_df.iloc[sample_idx][actual_col]
+    ax10.scatter(pred_sample, actual_sample, alpha=0.2, s=5, color=COLORS['primary'])
+    ax10.axhline(0, color='black', linewidth=0.5)
+    ax10.axvline(0, color='black', linewidth=0.5)
+    ax10.set_xlabel("Predicted Score")
+    ax10.set_ylabel("Actual Return")
+    ax10.set_title("Prediction vs Actual", fontsize=10)
+    
+    # 11. Quintile cumulative returns
+    for col, color in zip(quintile_cols, colors):
+        q_cum = (1 + quintile_df[col]).cumprod() - 1
+        ax11.plot(q_cum.values, label=col, color=color, linewidth=1.5)
+    ax11.axhline(0, color='black', linewidth=0.5)
+    ax11.set_ylabel("Cumulative Return")
+    ax11.set_title("Quintile Cumulative Returns", fontsize=10)
+    ax11.legend(fontsize=7, ncol=len(quintile_cols))
+    ax11.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    
+    # 12. Metrics summary
+    ax12.axis('off')
+    
+    # Compute basic metrics if not provided
+    from scipy import stats as scipy_stats
+    mean_return = returns.mean() * 252
+    std_return = returns.std() * np.sqrt(252)
+    sharpe = mean_return / std_return if std_return > 0 else 0
+    max_dd = drawdown.min()
+    
+    if metrics_dict:
+        metrics_text = "\n".join([
+            f"Mean IC:        {metrics_dict.get('mean_ic', 'N/A'):.4f}" if isinstance(metrics_dict.get('mean_ic'), (int, float)) else f"Mean IC: N/A",
+            f"ICIR:           {metrics_dict.get('icir', 'N/A'):.4f}" if isinstance(metrics_dict.get('icir'), (int, float)) else f"ICIR: N/A",
+            f"Q Spread:       {metrics_dict.get('quintile_spread', 'N/A'):.4f}" if isinstance(metrics_dict.get('quintile_spread'), (int, float)) else f"Q Spread: N/A",
+            f"Hit Rate:       {metrics_dict.get('hit_rate_top_n', 'N/A'):.2%}" if isinstance(metrics_dict.get('hit_rate_top_n'), (int, float)) else f"Hit Rate: N/A",
+            "-" * 25,
+            f"Sharpe Ratio:   {sharpe:.2f}",
+            f"Annual Return:  {mean_return:.2%}",
+            f"Annual Vol:     {std_return:.2%}",
+            f"Max Drawdown:   {max_dd:.2%}",
+            f"Win Rate:       {(returns > 0).mean():.2%}",
+            "-" * 25,
+            f"Periods:        {len(returns)}",
+            f"Timestamps:     {metrics_dict.get('num_timestamps', 'N/A')}",
+        ])
+    else:
+        metrics_text = "\n".join([
+            f"Mean IC:        {ic_series.mean():.4f}",
+            f"IC Std:         {ic_series.std():.4f}",
+            f"Q Spread:       {spread:.4f}",
+            "-" * 25,
+            f"Sharpe Ratio:   {sharpe:.2f}",
+            f"Annual Return:  {mean_return:.2%}",
+            f"Annual Vol:     {std_return:.2%}",
+            f"Max Drawdown:   {max_dd:.2%}",
+            f"Win Rate:       {(returns > 0).mean():.2%}",
+            f"Periods:        {len(returns)}",
+        ])
+    
+    ax12.text(0.1, 0.5, metrics_text, transform=ax12.transAxes, fontsize=10,
+             verticalalignment='center', fontfamily='monospace',
+             bbox=dict(boxstyle='round', facecolor='white', edgecolor='gray', alpha=0.9))
+    ax12.set_title("Key Metrics", fontsize=10)
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    _save_figure(fig, save_path, dpi=150)
+    
+    return fig
+
+
+# =============================================================================
+# UPDATED COMPREHENSIVE FIGURE GENERATION
+# =============================================================================
+
+def generate_all_figures_extended(
+    predictions_df: pd.DataFrame,
+    ic_series: pd.Series,
+    rank_ic_series: pd.Series,
+    quintile_df: pd.DataFrame,
+    returns_series: pd.Series,
+    output_dir: str,
+    feature_importances: Optional[Dict[str, float]] = None,
+    metrics_dict: Optional[Dict[str, Any]] = None,
+    decile_returns: Optional[Dict[int, float]] = None,
+    timestamp_col: str = "timestamp",
+    predicted_col: str = "predicted_score",
+    actual_col: str = "actual_return",
+) -> Dict[str, str]:
+    """Generate all visualization figures including new extended visualizations.
+    
+    Args:
+        predictions_df: DataFrame with timestamp, ticker, predicted_score, actual_return.
+        ic_series: Pearson IC series.
+        rank_ic_series: Spearman Rank IC series.
+        quintile_df: DataFrame with quintile returns (Q1-Q5 columns).
+        returns_series: Portfolio returns series.
+        output_dir: Directory to save figures.
+        feature_importances: Optional dictionary of feature importances.
+        metrics_dict: Optional pre-computed metrics dictionary.
+        decile_returns: Optional decile returns dictionary.
+        timestamp_col: Column name for timestamp.
+        predicted_col: Column name for predicted scores.
+        actual_col: Column name for actual returns.
+    
+    Returns:
+        Dictionary mapping figure name to file path.
+    """
+    _check_matplotlib()
+    
+    figures_dir = Path(output_dir) / "figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_figures = {}
+    
+    # Generate all standard figures
+    print("  Generating standard figures...")
+    standard_figures = generate_all_figures(
+        predictions_df, ic_series, rank_ic_series, quintile_df, returns_series,
+        output_dir, feature_importances, timestamp_col, predicted_col, actual_col
+    )
+    saved_figures.update(standard_figures)
+    
+    # Generate extended figures
+    print("  Generating extended figures...")
+    
+    # Extended dashboard
+    try:
+        fig = create_extended_dashboard(
+            predictions_df, ic_series, rank_ic_series, quintile_df, returns_series,
+            metrics_dict=metrics_dict,
+            title="Extended Performance Dashboard",
+            timestamp_col=timestamp_col,
+            predicted_col=predicted_col,
+            actual_col=actual_col,
+        )
+        path = str(figures_dir / "00_extended_dashboard.png")
+        _save_figure(fig, path, dpi=200)
+        plt.close(fig)
+        saved_figures['extended_dashboard'] = path
+    except Exception as e:
+        print(f"    Warning: Could not generate extended dashboard: {e}")
+    
+    # Decile returns
+    if decile_returns:
+        try:
+            fig = plot_decile_returns(decile_returns)
+            path = str(figures_dir / "19_decile_returns.png")
+            _save_figure(fig, path)
+            plt.close(fig)
+            saved_figures['decile_returns'] = path
+        except Exception as e:
+            print(f"    Warning: Could not generate decile returns: {e}")
+    
+    # Win streak analysis
+    try:
+        fig = plot_win_streak_analysis(returns_series)
+        path = str(figures_dir / "20_win_streak_analysis.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['win_streak_analysis'] = path
+    except Exception as e:
+        print(f"    Warning: Could not generate win streak analysis: {e}")
+    
+    # IC autocorrelation
+    try:
+        fig = plot_ic_autocorrelation(ic_series)
+        path = str(figures_dir / "21_ic_autocorrelation.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['ic_autocorrelation'] = path
+    except Exception as e:
+        print(f"    Warning: Could not generate IC autocorrelation: {e}")
+    
+    # Risk metrics dashboard
+    try:
+        fig = plot_risk_metrics_dashboard(returns_series)
+        path = str(figures_dir / "22_risk_dashboard.png")
+        _save_figure(fig, path)
+        plt.close(fig)
+        saved_figures['risk_dashboard'] = path
+    except Exception as e:
+        print(f"    Warning: Could not generate risk dashboard: {e}")
+    
+    print(f"  Generated {len(saved_figures)} figures total in {figures_dir}")
+    
+    return saved_figures

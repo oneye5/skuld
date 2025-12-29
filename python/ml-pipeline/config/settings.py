@@ -42,24 +42,25 @@ TEST_PERIOD_YEARS: float = 0.6666666666
 # =============================================================================
 # RANKING MODEL (LightGBM LGBMRanker)
 # =============================================================================
-RANKER_N_ESTIMATORS: int = 150
+RANKER_N_ESTIMATORS: int = 100
 """Number of boosting iterations for the ranking model.
-Optimized for 365-day horizon (increased from 100 based on grid search)."""
+Reduced from 150 to prevent overfitting with 365-day horizon."""
 
 RANKER_LEARNING_RATE: float = 0.05
 """Learning rate (shrinkage) for the ranking model."""
 
 RANKER_NUM_LEAVES: int = 31
-"""Maximum number of leaves per tree."""
+"""Maximum number of leaves per tree. 31 is LightGBM default."""
 
 RANKER_MAX_DEPTH: int = -1
-"""Maximum tree depth. -1 means no limit."""
+"""Maximum tree depth. -1 means no limit (use num_leaves to control)."""
 
-RANKER_MIN_CHILD_SAMPLES: int = 20
-"""Minimum number of samples required in a leaf."""
+RANKER_MIN_CHILD_SAMPLES: int = 50
+"""Minimum number of samples required in a leaf.
+Increased from default 20 for more robust splits with noisy data."""
 
 RANKER_SUBSAMPLE: float = 0.8
-"""Fraction of samples to use for each boosting iteration."""
+"""Fraction of samples to use for each boosting iteration (bagging)."""
 
 RANKER_COLSAMPLE_BYTREE: float = 0.8
 """Fraction of features to use for each tree."""

@@ -98,6 +98,70 @@ FEATURE_SETS = {
         enabled=False,
         produces=["Mom_x_Vol", "RSI_x_Pos52w", "MA_Trend_Strength"],
     ),
+    
+    # ALPHA FACTORS (research-backed)
+    "alpha_reversal": FeatureSet(
+        name="alpha_reversal",
+        description="Short-term reversal features (Jegadeesh 1990)",
+        enabled=True,  # Enable by default - well-documented effect
+        produces=["Rev_5d", "Rev_10d", "Rev_5d_Skip1"],
+    ),
+    
+    "alpha_momentum_quality": FeatureSet(
+        name="alpha_momentum_quality",
+        description="Momentum quality via trend R-squared",
+        enabled=True,  # Enable by default
+        produces=["Trend_RSq_*", "QualMom_*"],
+    ),
+    
+    "alpha_idio_vol": FeatureSet(
+        name="alpha_idio_vol",
+        description="Idiosyncratic volatility (Ang et al. 2006)",
+        enabled=True,  # Low vol anomaly is well-documented
+        produces=["IdioVol_*", "VolOfVol_60"],
+    ),
+    
+    "alpha_info_disc": FeatureSet(
+        name="alpha_info_disc",
+        description="Information discreteness (Da, Gurun, Warachka 2014)",
+        enabled=True,  # Momentum quality indicator
+        produces=["InfoDisc_*"],
+    ),
+    
+    "alpha_max_effect": FeatureSet(
+        name="alpha_max_effect",
+        description="Maximum returns / lottery effect (Bali et al. 2011)",
+        enabled=True,  # Well-documented anomaly
+        produces=["MAX_21d", "MIN_21d", "MAX5_21d", "MaxMinSpread_21d"],
+    ),
+    
+    "alpha_higher_moments": FeatureSet(
+        name="alpha_higher_moments",
+        description="Skewness, kurtosis, downside risk",
+        enabled=True,  # Risk-based features
+        produces=["Skew_*", "Kurt_*", "DownVol_*", "UpDownRatio_*"],
+    ),
+    
+    "alpha_volume": FeatureSet(
+        name="alpha_volume",
+        description="Volume patterns, Amihud illiquidity, turnover",
+        enabled=True,  # Liquidity premium is well-documented
+        produces=["RelVol_*", "VolMom_*", "Amihud_*", "VolRetCorr_*"],
+    ),
+    
+    "alpha_momentum_accel": FeatureSet(
+        name="alpha_momentum_accel",
+        description="Momentum acceleration and 52-week high effect",
+        enabled=True,  # Acceleration predicts continuation
+        produces=["MomAccel_*", "MomConsist_*", "Near52wHigh"],
+    ),
+    
+    "alpha_seasonality": FeatureSet(
+        name="alpha_seasonality",
+        description="Calendar/seasonality effects (January, turn of month)",
+        enabled=False,  # Disabled by default - test manually
+        produces=["Month", "DayOfMonth", "TurnOfMonth", "Quarter", "DayOfWeek"],
+    ),
 }
 
 
@@ -247,13 +311,32 @@ def add_interaction_features(df: pd.DataFrame) -> pd.DataFrame:
 # FEATURE REGISTRY
 # =============================================================================
 
+# Import alpha factor functions
+from features.alpha_factors import (
+    add_alpha_factors,
+    add_seasonality_features,
+)
+
 # Map feature set names to their implementation functions
 FEATURE_FUNCTIONS = {
     "extended_momentum": add_extended_momentum_features,
     "volatility_adjusted_momentum": add_volatility_adjusted_momentum,
     "value_features": add_value_features,
     "interaction_features": add_interaction_features,
+    # Alpha factors (research-backed) - these are combined in add_alpha_factors
+    "alpha_reversal": add_alpha_factors,
+    "alpha_momentum_quality": add_alpha_factors,
+    "alpha_idio_vol": add_alpha_factors,
+    "alpha_info_disc": add_alpha_factors,
+    "alpha_max_effect": add_alpha_factors,
+    "alpha_higher_moments": add_alpha_factors,
+    "alpha_volume": add_alpha_factors,
+    "alpha_momentum_accel": add_alpha_factors,
+    "alpha_seasonality": add_seasonality_features,
 }
+
+# Track which functions have been applied (to avoid duplicate application)
+_ALPHA_FACTORS_APPLIED = set()
 
 
 def get_enabled_features() -> list[str]:
@@ -287,9 +370,17 @@ def apply_experimental_features(df: pd.DataFrame, feature_sets: list[str]) -> pd
     Returns:
         DataFrame with experimental features added.
     """
+    # Track which functions have been applied to avoid duplicates
+    applied_functions = set()
+    
     for name in feature_sets:
         if name in FEATURE_FUNCTIONS:
-            print(f"  Adding feature set: {name}")
-            df = FEATURE_FUNCTIONS[name](df)
+            func = FEATURE_FUNCTIONS[name]
+            # Only apply each function once (alpha_factors maps multiple sets to same func)
+            func_id = id(func)
+            if func_id not in applied_functions:
+                print(f"  Adding feature set: {name}")
+                df = func(df)
+                applied_functions.add(func_id)
     
     return df

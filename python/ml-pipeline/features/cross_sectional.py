@@ -19,9 +19,9 @@ def add_cross_sectional_features(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with Rank_* features added.
     """
-    # Features to rank
-    # We focus on the most important technical indicators
+    # Features to rank - includes base technical and alpha factors
     features_to_rank = [
+        # Base technical
         "RSI_14",
         "ROC_252",
         "Vol_252",
@@ -29,6 +29,31 @@ def add_cross_sectional_features(df: pd.DataFrame) -> pd.DataFrame:
         "Pos_52w_Range",
         "NATR_14",
         "BB_Width_20",
+        # Alpha factors - reversal
+        "Rev_5d",
+        "Rev_10d",
+        # Alpha factors - momentum quality
+        "Trend_RSq_60",
+        "QualMom_60",
+        # Alpha factors - idiosyncratic volatility
+        "IdioVol_20",
+        "IdioVol_60",
+        # Alpha factors - information discreteness
+        "InfoDisc_21",
+        "InfoDisc_63",
+        # Alpha factors - max effect
+        "MAX_21d",
+        "MaxMinSpread_21d",
+        # Alpha factors - higher moments
+        "Skew_60d",
+        "Kurt_60d",
+        "DownVol_60d",
+        # Alpha factors - volume
+        "RelVol_20d",
+        "Amihud_21d",
+        # Alpha factors - momentum acceleration
+        "MomAccel_21_63",
+        "Near52wHigh",
     ]
     
     # Only rank features that exist in the dataframe

@@ -20,7 +20,6 @@ from config.settings import (
     RANKER_SUBSAMPLE,
     RANKER_COLSAMPLE_BYTREE,
     RANKER_EVAL_AT,
-    LABEL_GAIN,
     MIN_STOCKS_PER_TIMESTAMP,
     # Portfolio settings
     PORTFOLIO_TOP_N,
@@ -37,8 +36,6 @@ from config.settings import (
     YEAR_2000_MS,
     EPSILON,
     CLIP_THRESHOLD,
-    # Functions
-    get_config_dict,
 )
 
 from config.columns import (
@@ -90,7 +87,6 @@ __all__ = [
     "RANKER_SUBSAMPLE",
     "RANKER_COLSAMPLE_BYTREE",
     "RANKER_EVAL_AT",
-    "LABEL_GAIN",
     "MIN_STOCKS_PER_TIMESTAMP",
     # Portfolio settings
     "PORTFOLIO_TOP_N",
@@ -107,7 +103,6 @@ __all__ = [
     "YEAR_2000_MS",
     "EPSILON",
     "CLIP_THRESHOLD",
-    "get_config_dict",
     # Columns
     "TIMESTAMP",
     "TICKER",

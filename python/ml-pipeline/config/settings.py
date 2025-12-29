@@ -42,8 +42,9 @@ TEST_PERIOD_YEARS: float = 0.6666666666
 # =============================================================================
 # RANKING MODEL (LightGBM LGBMRanker)
 # =============================================================================
-RANKER_N_ESTIMATORS: int = 100
-"""Number of boosting iterations for the ranking model."""
+RANKER_N_ESTIMATORS: int = 150
+"""Number of boosting iterations for the ranking model.
+Optimized for 365-day horizon (increased from 100 based on grid search)."""
 
 RANKER_LEARNING_RATE: float = 0.05
 """Learning rate (shrinkage) for the ranking model."""
@@ -65,9 +66,6 @@ RANKER_COLSAMPLE_BYTREE: float = 0.8
 
 RANKER_EVAL_AT: tuple[int, ...] = (5, 10, 20)
 """Evaluation positions for NDCG metric."""
-
-LABEL_GAIN: list[float] | None = None
-"""Custom label gains for NDCG. None = use default (2^label - 1)."""
 
 MIN_STOCKS_PER_TIMESTAMP: int = 10
 """Minimum stocks required per timestamp for valid ranking. 
@@ -114,16 +112,6 @@ PERIODS_PER_YEAR: int = 252
 
 
 # =============================================================================
-# DEBUG
-# =============================================================================
-SAVE_DEBUG_SAMPLES: bool = True
-"""Save preprocessed data samples to output/debug/ for inspection."""
-
-DEBUG_SAMPLE_SIZE: int = 500
-"""Number of rows to sample for debug output."""
-
-
-# =============================================================================
 # CONSTANTS
 # =============================================================================
 MS_PER_DAY: int = 86_400_000
@@ -137,45 +125,4 @@ EPSILON: float = 1e-6
 
 CLIP_THRESHOLD: float = 10.0
 """Clip scaled feature values to [-CLIP_THRESHOLD, CLIP_THRESHOLD] after scaling."""
-
-
-# =============================================================================
-# CONFIG EXPORT
-# =============================================================================
-def get_config_dict() -> dict:
-    """Export current configuration as dictionary for logging.
-    
-    Returns:
-        Dictionary with all configuration values.
-    """
-    return {
-        "target": {
-            "forward_return_days": FORWARD_RETURN_DAYS,
-            "return_type": RETURN_TYPE.value,
-            "winsorize_limits": WINSORIZE_LIMITS,
-        },
-        "rolling_window": {
-            "num_windows": NUM_ROLLING_WINDOWS,
-            "movement_years": ROLLING_WINDOW_MOVEMENT_YEARS,
-            "test_period_years": TEST_PERIOD_YEARS,
-        },
-        "ranking_model": {
-            "n_estimators": RANKER_N_ESTIMATORS,
-            "learning_rate": RANKER_LEARNING_RATE,
-            "num_leaves": RANKER_NUM_LEAVES,
-            "max_depth": RANKER_MAX_DEPTH,
-        },
-        "portfolio": {
-            "top_n": PORTFOLIO_TOP_N,
-            "bottom_n": PORTFOLIO_BOTTOM_N,
-            "transaction_cost_bps": TRANSACTION_COST_BPS,
-            "slippage_bps": SLIPPAGE_BPS,
-            "initial_capital": INITIAL_CAPITAL,
-            "long_only": LONG_ONLY,
-        },
-        "evaluation": {
-            "min_stocks_for_ic": MIN_STOCKS_FOR_IC,
-            "min_stocks_per_timestamp": MIN_STOCKS_PER_TIMESTAMP,
-        },
-    }
 

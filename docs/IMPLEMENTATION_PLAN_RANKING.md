@@ -249,9 +249,6 @@ RANKING_MODEL: str = "lightgbm"
 RANKING_OBJECTIVE: str = "lambdarank"
 """Objective function: 'lambdarank' (listwise), 'rank_xendcg', or 'pairwise'."""
 
-LABEL_GAIN: list[float] | None = None
-"""Custom label gains for NDCG. None = use default (2^label - 1)."""
-
 MIN_STOCKS_PER_TIMESTAMP: int = 10
 """Minimum stocks required per timestamp for valid ranking. LGBMRanker needs sufficient group size."""
 

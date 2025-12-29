@@ -413,7 +413,9 @@ class RankingMetrics:
         """
         # Compute periods_per_year from forward return horizon
         # E.g., 5-day returns = 252/5 ≈ 50 independent periods per year
-        periods_per_year = int(252 / forward_return_days)
+        # NOTE: Use max(1, ...) to avoid periods_per_year < 1 for long horizons
+        # which would cause ICIR to be incorrectly scaled down
+        periods_per_year = max(1, 252 / forward_return_days)
         # Compute IC series
         ic_series = compute_cross_sectional_ic_series(
             df, timestamp_col, predicted_col, actual_col, 
@@ -440,10 +442,17 @@ class RankingMetrics:
         )
         quintile_spread = compute_quintile_spread(quintile_returns)
         
-        # Compute hit rate (aggregate)
-        hit_rate = compute_hit_rate(
-            df[predicted_col], df[actual_col], top_n=top_n_for_hit_rate
-        )
+        # Compute hit rate (per-timestamp, then average)
+        # This is the correct approach for cross-sectional evaluation
+        hit_rates_per_ts = []
+        for ts, group in df.groupby(timestamp_col):
+            if len(group) >= top_n_for_hit_rate:
+                hr = compute_hit_rate(
+                    group[predicted_col], group[actual_col], top_n=top_n_for_hit_rate
+                )
+                if not np.isnan(hr):
+                    hit_rates_per_ts.append(hr)
+        hit_rate = np.mean(hit_rates_per_ts) if hit_rates_per_ts else np.nan
         
         # Count timestamps and stocks
         timestamp_counts = df.groupby(timestamp_col).size()

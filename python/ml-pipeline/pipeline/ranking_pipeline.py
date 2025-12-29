@@ -49,6 +49,7 @@ from features.ratios import add_financial_ratios
 from features.technical import add_technical_features
 from features.cross_sectional import add_cross_sectional_features
 from features.time_features import add_time_features
+from features.feature_config import apply_experimental_features
 
 from learner.ranking import (
     LightGBMRankerWrapper,
@@ -139,14 +140,30 @@ def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
     return wide_df
 
 
-def add_all_features(df: pd.DataFrame, global_time_min: int, global_time_max: int) -> pd.DataFrame:
+def add_all_features(
+    df: pd.DataFrame, 
+    global_time_min: int, 
+    global_time_max: int,
+    experimental_features: Optional[List[str]] = None,
+) -> pd.DataFrame:
     """Add all features to the DataFrame.
     
     Reuses existing feature engineering modules.
+    
+    Args:
+        df: Input DataFrame.
+        global_time_min: Minimum timestamp for time features.
+        global_time_max: Maximum timestamp for time features.
+        experimental_features: List of experimental feature sets to apply.
     """
     df = add_financial_ratios(df)
     df = add_technical_features(df)
     df = add_time_features(df, global_time_min, global_time_max)
+    
+    # Apply experimental features if specified
+    if experimental_features:
+        df = apply_experimental_features(df, experimental_features)
+    
     # Note: cross_sectional features are computed per-timestamp in training
     return df
 
@@ -185,6 +202,7 @@ def run_single_ranking_window(
     ranker_config: RankerConfig,
     global_time_min: int,
     global_time_max: int,
+    experimental_features: Optional[List[str]] = None,
 ) -> Optional[RankingWindowResult]:
     """Run ranking pipeline for a single train/test window.
     
@@ -200,6 +218,7 @@ def run_single_ranking_window(
         ranker_config: Configuration for LGBMRanker.
         global_time_min: Min timestamp for time scaling.
         global_time_max: Max timestamp for time scaling.
+        experimental_features: List of experimental feature sets to apply.
     
     Returns:
         RankingWindowResult or None if insufficient data.
@@ -253,9 +272,13 @@ def run_single_ranking_window(
     if train_with_returns.empty or test_with_returns.empty:
         return None
     
-    # Add features
-    train_features = add_all_features(train_with_returns, global_time_min, global_time_max)
-    test_features = add_all_features(test_with_returns, global_time_min, global_time_max)
+    # Add features (including experimental if specified)
+    train_features = add_all_features(
+        train_with_returns, global_time_min, global_time_max, experimental_features
+    )
+    test_features = add_all_features(
+        test_with_returns, global_time_min, global_time_max, experimental_features
+    )
     del train_with_returns, test_with_returns
     
     # Preprocess (handle NaN, infinities)
@@ -343,7 +366,14 @@ def run_ranking_pipeline(
     portfolio_bottom_n: int = PORTFOLIO_BOTTOM_N,
     transaction_cost_bps: float = TRANSACTION_COST_BPS,
     slippage_bps: float = SLIPPAGE_BPS,
+    ranker_n_estimators: int = RANKER_N_ESTIMATORS,
+    ranker_learning_rate: float = RANKER_LEARNING_RATE,
+    ranker_num_leaves: int = 31,
     save_results: bool = True,
+    experimental_features: Optional[List[str]] = None,
+    ranker_config: Optional[dict] = None,
+    top_n: Optional[int] = None,
+    bottom_n: Optional[int] = None,
 ) -> RankingPipelineResult:
     """Run the full ranking pipeline across rolling windows.
     
@@ -360,11 +390,30 @@ def run_ranking_pipeline(
         portfolio_bottom_n: Stocks for short portfolio.
         transaction_cost_bps: Transaction cost in basis points.
         slippage_bps: Slippage in basis points per trade.
+        ranker_n_estimators: Number of boosting iterations.
+        ranker_learning_rate: Learning rate for the ranker.
+        ranker_num_leaves: Maximum number of leaves per tree.
         save_results: If True, save results to output directory.
+        experimental_features: List of experimental feature sets to apply.
+        ranker_config: Optional dict to override ranker parameters.
+        top_n: Alias for portfolio_top_n (for convenience).
+        bottom_n: Alias for portfolio_bottom_n (for convenience).
     
     Returns:
         RankingPipelineResult with metrics, backtest, and predictions.
     """
+    # Handle convenience aliases
+    if top_n is not None:
+        portfolio_top_n = top_n
+    if bottom_n is not None:
+        portfolio_bottom_n = bottom_n
+    
+    # Handle ranker_config dict override
+    if ranker_config is not None:
+        ranker_n_estimators = ranker_config.get("n_estimators", ranker_n_estimators)
+        ranker_learning_rate = ranker_config.get("learning_rate", ranker_learning_rate)
+        ranker_num_leaves = ranker_config.get("num_leaves", ranker_num_leaves)
+    
     # Load data
     if long_df is None:
         print("Loading data...")
@@ -395,10 +444,11 @@ def run_ranking_pipeline(
         test_period_years,
     )
     
-    # Ranker configuration
+    # Ranker configuration (use passed parameters)
     ranker_config = RankerConfig(
-        n_estimators=RANKER_N_ESTIMATORS,
-        learning_rate=RANKER_LEARNING_RATE,
+        n_estimators=ranker_n_estimators,
+        learning_rate=ranker_learning_rate,
+        num_leaves=ranker_num_leaves,
     )
     
     # Run each window
@@ -422,6 +472,7 @@ def run_ranking_pipeline(
             ranker_config=ranker_config,
             global_time_min=data_min_ts,
             global_time_max=data_max_ts,
+            experimental_features=experimental_features,
         )
         
         if result is None:
@@ -460,6 +511,7 @@ def run_ranking_pipeline(
         predicted_col="predicted_score",
         actual_col="actual_return",
         min_stocks=MIN_STOCKS_FOR_IC,
+        forward_return_days=forward_return_days,
     )
     
     # Compute quintile returns
@@ -499,8 +551,10 @@ def run_ranking_pipeline(
         "portfolio_top_n": portfolio_top_n,
         "portfolio_bottom_n": portfolio_bottom_n,
         "transaction_cost_bps": transaction_cost_bps,
+        "slippage_bps": slippage_bps,
         "ranker_n_estimators": ranker_config.n_estimators,
         "ranker_learning_rate": ranker_config.learning_rate,
+        "ranker_num_leaves": ranker_config.num_leaves,
     }
     
     result = RankingPipelineResult(

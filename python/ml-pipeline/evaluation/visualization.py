@@ -117,8 +117,9 @@ def _format_timestamp_axis(ax: "plt.Axes", timestamps: pd.Index) -> None:
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
             ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
             plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
-    except Exception:
-        pass  # Keep default formatting if timestamps are not datetime
+    except Exception as e:
+        import warnings
+        warnings.warn(f"Could not format timestamp axis, using default: {e}")
 
 
 def _save_figure(fig: "plt.Figure", save_path: Optional[str], dpi: int = 150) -> None:
@@ -1386,8 +1387,9 @@ def plot_prediction_vs_actual(
         ax.scatter(q_summary['pred'], q_summary['actual'], color=COLORS['secondary'],
                   s=200, marker='D', edgecolor='black', linewidth=2, zorder=5,
                   label='Quintile Means')
-    except Exception:
-        pass
+    except Exception as e:
+        import warnings
+        warnings.warn(f"Could not compute quintile means for scatter plot: {e}")
     
     ax.axhline(0, color='black', linewidth=0.5)
     ax.axvline(0, color='black', linewidth=0.5)

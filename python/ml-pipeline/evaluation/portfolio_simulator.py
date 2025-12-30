@@ -63,6 +63,16 @@ class BacktestResult:
         pre_fee_sharpe_ratio: Annualized Sharpe ratio before transaction costs.
         pre_fee_daily_returns: Series of daily portfolio returns before fees.
         pre_fee_total_return: Total return over the period (pre-fee).
+        # Implementation metrics
+        annualized_return_post_fee: Annualized return (post-fee).
+        annualized_return_pre_fee: Annualized return (pre-fee).
+        annualized_volatility: Annualized volatility of returns.
+        total_cost_drag: Total cost impact as negative percentage of gross return.
+        avg_cost_per_rebalance: Average cost per rebalance (percentage).
+        num_rebalances: Number of rebalance periods.
+        avg_holding_period_years: Average holding period in years.
+        return_per_unit_turnover: Return / turnover ratio.
+        calmar_ratio: Return / max drawdown.
     """
     daily_returns: pd.Series
     cumulative_returns: pd.Series
@@ -76,18 +86,43 @@ class BacktestResult:
     pre_fee_daily_returns: Optional[pd.Series] = None
     pre_fee_total_return: float = np.nan
     turnover_series: Optional[pd.Series] = None
+    # Implementation metrics
+    annualized_return_post_fee: float = np.nan
+    annualized_return_pre_fee: float = np.nan
+    annualized_volatility: float = np.nan
+    total_cost_drag: float = np.nan
+    avg_cost_per_rebalance: float = np.nan
+    num_rebalances: int = 0
+    avg_holding_period_years: float = np.nan
+    return_per_unit_turnover: float = np.nan
+    calmar_ratio: float = np.nan
     
     def summary(self) -> str:
         """Generate human-readable summary."""
         lines = [
             "=== Backtest Results ===",
-            f"Total Return (post-fee): {self.total_return:.2%}",
-            f"Total Return (pre-fee):  {self.pre_fee_total_return:.2%}" if not np.isnan(self.pre_fee_total_return) else "Total Return (pre-fee):  N/A",
-            f"Sharpe Ratio (post-fee): {self.sharpe_ratio:.2f}",
-            f"Sharpe Ratio (pre-fee):  {self.pre_fee_sharpe_ratio:.2f}" if not np.isnan(self.pre_fee_sharpe_ratio) else "Sharpe Ratio (pre-fee):  N/A",
-            f"Max Drawdown:   {self.max_drawdown:.2%}",
-            f"Avg Turnover:   {self.avg_turnover:.2%}",
-            f"Num Periods:    {len(self.daily_returns)}",
+            "",
+            "--- Returns ---",
+            f"Total Return (post-fee):      {self.total_return:.2%}",
+            f"Total Return (pre-fee):       {self.pre_fee_total_return:.2%}" if not np.isnan(self.pre_fee_total_return) else "Total Return (pre-fee):       N/A",
+            f"Annualized Return (post-fee): {self.annualized_return_post_fee:.2%}" if not np.isnan(self.annualized_return_post_fee) else "Annualized Return (post-fee): N/A",
+            f"Annualized Return (pre-fee):  {self.annualized_return_pre_fee:.2%}" if not np.isnan(self.annualized_return_pre_fee) else "Annualized Return (pre-fee):  N/A",
+            f"Annualized Volatility:        {self.annualized_volatility:.2%}" if not np.isnan(self.annualized_volatility) else "Annualized Volatility:        N/A",
+            "",
+            "--- Risk Metrics ---",
+            f"Sharpe Ratio (post-fee):      {self.sharpe_ratio:.2f}",
+            f"Sharpe Ratio (pre-fee):       {self.pre_fee_sharpe_ratio:.2f}" if not np.isnan(self.pre_fee_sharpe_ratio) else "Sharpe Ratio (pre-fee):       N/A",
+            f"Calmar Ratio (ret/drawdown):  {self.calmar_ratio:.2f}" if not np.isnan(self.calmar_ratio) else "Calmar Ratio:                 N/A",
+            f"Max Drawdown:                 {self.max_drawdown:.2%}",
+            "",
+            "--- Implementation Metrics ---",
+            f"Avg Turnover per Rebalance:   {self.avg_turnover:.2%}",
+            f"Avg Cost per Rebalance:       {self.avg_cost_per_rebalance:.2%}" if not np.isnan(self.avg_cost_per_rebalance) else "Avg Cost per Rebalance:       N/A",
+            f"Total Cost Drag:              {self.total_cost_drag:.2%}" if not np.isnan(self.total_cost_drag) else "Total Cost Drag:              N/A",
+            f"Return per Unit Turnover:     {self.return_per_unit_turnover:.2f}" if not np.isnan(self.return_per_unit_turnover) else "Return per Unit Turnover:     N/A",
+            f"Avg Holding Period:           {self.avg_holding_period_years:.2f} years" if not np.isnan(self.avg_holding_period_years) else "Avg Holding Period:           N/A",
+            f"Num Rebalances:               {self.num_rebalances}",
+            f"Num Periods:                  {len(self.daily_returns)}",
         ]
         return "\n".join(lines)
 
@@ -328,7 +363,9 @@ def compute_sharpe_ratio(
     if periods_per_year is None:
         try:
             periods_per_year = infer_periods_per_year(pd.Series(returns.index))
-        except:
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Could not infer periods_per_year, defaulting to 252: {e}")
             periods_per_year = 252  # Fallback to daily
     
     excess_returns = returns - risk_free_rate / periods_per_year
@@ -513,6 +550,55 @@ def run_portfolio_backtest(
     total_return_pre_fee = cumulative_pre_fee.iloc[-1] if len(cumulative_pre_fee) > 0 else 0.0
     avg_turnover = np.mean(turnovers) if turnovers else 0.0
     
+    # Compute implementation metrics
+    num_rebalances = len(returns_series)
+    
+    # Calculate annualized returns
+    # Annualized Return = (1 + Total Return)^(365 / Total Days) - 1
+    if num_rebalances >= 2 and len(returns_series.index) >= 2:
+        # Calculate total time span in years
+        # Timestamps are in milliseconds
+        MS_PER_DAY_LOCAL = 86_400_000
+        first_ts = returns_series.index[0]
+        last_ts = returns_series.index[-1]
+        total_days = (last_ts - first_ts) / MS_PER_DAY_LOCAL
+        total_years = total_days / 365.0
+        
+        # Calculate annualized returns
+        if total_years > 0:
+            annualized_return_post_fee = (1 + total_return) ** (1 / total_years) - 1
+            annualized_return_pre_fee = (1 + total_return_pre_fee) ** (1 / total_years) - 1
+        else:
+            annualized_return_post_fee = np.nan
+            annualized_return_pre_fee = np.nan
+            
+        # Calculate annualized volatility
+        annualized_volatility = returns_series.std() * np.sqrt(periods_per_year)
+        
+        # Cost analysis
+        total_cost_impact = (returns_pre_fee_series - returns_series).sum()
+        # Cost drag as percentage of gross return (should be negative, representing loss)
+        total_cost_drag = -total_cost_impact / (1 + total_return_pre_fee) if total_return_pre_fee > 0 else np.nan
+        avg_cost_per_rebalance = total_cost_impact / num_rebalances if num_rebalances > 0 else np.nan
+        
+        # Average holding period in years
+        avg_holding_period_years = total_years / num_rebalances if num_rebalances > 0 else np.nan
+        
+        # Return per unit turnover
+        return_per_unit_turnover = total_return / avg_turnover if avg_turnover > 0 else np.nan
+        
+        # Calmar ratio (handle edge case where drawdown is 0)
+        calmar_ratio = annualized_return_post_fee / max_dd if max_dd > 0.0001 else np.nan
+    else:
+        annualized_return_post_fee = np.nan
+        annualized_return_pre_fee = np.nan
+        annualized_volatility = np.nan
+        total_cost_drag = np.nan
+        avg_cost_per_rebalance = np.nan
+        avg_holding_period_years = np.nan
+        return_per_unit_turnover = np.nan
+        calmar_ratio = np.nan
+    
     # Build holdings history
     holdings_df = pd.DataFrame(holdings_records) if holdings_records else None
     
@@ -528,6 +614,16 @@ def run_portfolio_backtest(
         pre_fee_daily_returns=returns_pre_fee_series,
         pre_fee_total_return=total_return_pre_fee,
         turnover_series=turnover_series,
+        # Implementation metrics
+        annualized_return_post_fee=annualized_return_post_fee,
+        annualized_return_pre_fee=annualized_return_pre_fee,
+        annualized_volatility=annualized_volatility,
+        total_cost_drag=total_cost_drag,
+        avg_cost_per_rebalance=avg_cost_per_rebalance,
+        num_rebalances=num_rebalances,
+        avg_holding_period_years=avg_holding_period_years,
+        return_per_unit_turnover=return_per_unit_turnover,
+        calmar_ratio=calmar_ratio,
     )
 
 

@@ -73,7 +73,10 @@ from core.logging_config import (
     log_window_start,
     log_window_result,
     log_pipeline_summary,
+    log_config,
 )
+import traceback
+import uuid
 
 from features.ratios import add_financial_ratios
 from features.technical import add_technical_features
@@ -145,12 +148,27 @@ class RankingPipelineResult:
 # OUTPUT DIRECTORY
 # =============================================================================
 
-def get_output_dir() -> Path:
-    """Get output directory for ranking pipeline results."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(__file__).parent.parent / "output" / "runs" / f"ranking_{timestamp}"
+def get_output_dir(run_id: Optional[str] = None) -> Path:
+    """Get output directory for ranking pipeline results.
+    
+    Args:
+        run_id: Optional run identifier. If None, generates timestamp-based ID.
+    
+    Returns:
+        Path to output directory.
+    """
+    if run_id is None:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(__file__).parent.parent / "output" / "runs" / f"ranking_{run_id}"
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
+
+
+def _generate_run_id() -> str:
+    """Generate a unique run identifier."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    short_uuid = str(uuid.uuid4())[:8]
+    return f"{timestamp}_{short_uuid}"
 
 
 # =============================================================================
@@ -292,9 +310,13 @@ def run_single_ranking_window(
     """
     lookahead_ms = forward_return_days * MS_PER_DAY
     
+    logger.info(f"Window {window_id}: Starting processing")
+    logger.debug(f"Window {window_id}: train_end_ts={train_end_ts}, test_end_ts={test_end_ts}")
+    
     # Slice data with buffer for forward returns
     buffer_end = test_end_ts + lookahead_ms
     wide_slice = wide_df[wide_df[TIMESTAMP] < buffer_end].copy()
+    logger.debug(f"Window {window_id}: Data slice has {len(wide_slice):,} rows")
     
     # Split data
     split = split_by_timestamp(wide_slice, train_end_ts, test_end_ts)
@@ -437,10 +459,13 @@ def run_single_ranking_window(
         )
     
     # Train ranking model
+    logger.info(f"Window {window_id}: Training ranker with {len(X_train):,} samples, {len(feature_cols)} features")
     ranker = LightGBMRankerWrapper(ranker_config)
-    ranker.fit(X_train, y_train, groups_train, X_val, y_val, groups_val)
+    with log_timing(f"Window {window_id}: model training", logger):
+        ranker.fit(X_train, y_train, groups_train, X_val, y_val, groups_val)
     
     # Predict
+    logger.debug(f"Window {window_id}: Generating predictions for {len(X_test):,} test samples")
     predictions = ranker.predict(X_test)
     
     # Build predictions DataFrame
@@ -457,8 +482,8 @@ def run_single_ranking_window(
         try:
             importances = ranker.model.feature_importances_
             feature_importances = dict(zip(feature_cols, importances))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Window {window_id}: Could not extract feature importances: {e}")
     
     # Compute summary stats
     train_ts_counts = train_scaled.groupby(TIMESTAMP).size()
@@ -532,6 +557,15 @@ def run_ranking_pipeline(
     Returns:
         RankingPipelineResult with metrics, backtest, and predictions.
     """
+    # Generate unique run ID for traceability
+    run_id = _generate_run_id()
+    pipeline_start_time = datetime.now()
+    
+    logger.info("=" * 60)
+    logger.info(f"PIPELINE RUN: {run_id}")
+    logger.info(f"Started at: {pipeline_start_time.isoformat()}")
+    logger.info("=" * 60)
+    
     # Handle convenience aliases
     if top_n is not None:
         portfolio_top_n = top_n
@@ -548,22 +582,49 @@ def run_ranking_pipeline(
         ranker_subsample = ranker_config.get("subsample", ranker_subsample)
         ranker_colsample_bytree = ranker_config.get("colsample_bytree", ranker_colsample_bytree)
     
+    # Log configuration for traceability
+    run_config = {
+        "run_id": run_id,
+        "num_windows": num_windows,
+        "window_movement_years": window_movement_years,
+        "test_period_years": test_period_years,
+        "forward_return_days": forward_return_days,
+        "return_type": return_type,
+        "winsorize_limits": winsorize_limits,
+        "min_stocks": min_stocks,
+        "portfolio_top_n": portfolio_top_n,
+        "portfolio_bottom_n": portfolio_bottom_n,
+        "transaction_cost_bps": transaction_cost_bps,
+        "slippage_bps": slippage_bps,
+        "ranker_n_estimators": ranker_n_estimators,
+        "ranker_learning_rate": ranker_learning_rate,
+    }
+    log_config(run_config, logger)
+    
     # Convert to wide format (uses cache for 20x speedup)
+    logger.info("Phase 1: Loading and converting to wide format...")
     print("Loading and converting to wide format (using cache if available)...")
-    wide_df = prepare_wide_data(long_df, use_cache=(long_df is None))
+    with log_timing("data loading and wide conversion", logger):
+        wide_df = prepare_wide_data(long_df, use_cache=(long_df is None))
+    log_dataframe_info(wide_df, "Wide format data", logger)
     print(f"Wide format: {len(wide_df):,} rows, {len(wide_df.columns)} columns")
     
     if wide_df.empty:
+        logger.error("No data after converting to wide format")
         raise ValueError("No data after converting to wide format")
     
     # Get max timestamp for window calculation
     data_max_ts = wide_df[TIMESTAMP].max()
+    logger.debug(f"Data max timestamp: {data_max_ts} ({datetime.fromtimestamp(data_max_ts/1000).isoformat()})")
     
     # OPTIMIZATION: Compute expensive features ONCE on full dataset
     # This is safe because these features are per-ticker time-series features
     # that don't leak information across tickers or into the future
+    logger.info("Phase 2: Computing features on full dataset...")
     print("Computing features on full dataset (one-time cost)...")
-    wide_df = add_all_features(wide_df, experimental_features)
+    with log_timing("feature engineering", logger):
+        wide_df = add_all_features(wide_df, experimental_features)
+    logger.info(f"Feature engineering complete: {len(wide_df.columns)} columns")
     print(f"After features: {len(wide_df.columns)} columns")
     
     # Calculate window timestamps
@@ -574,6 +635,7 @@ def run_ranking_pipeline(
         forward_return_days,
         test_period_years,
     )
+    logger.info(f"Calculated {len(window_timestamps)} rolling windows")
     
     # Ranker configuration (use passed parameters)
     ranker_config = RankerConfig(
@@ -589,29 +651,43 @@ def run_ranking_pipeline(
     )
     
     # Run each window
+    logger.info(f"Phase 3: Running {num_windows} ranking windows...")
     print(f"\nRunning {num_windows} ranking windows...")
     
     all_predictions: List[pd.DataFrame] = []
     window_summaries: List[dict] = []
+    windows_completed = 0
+    windows_skipped = 0
     
     for window_id, (train_end_ts, test_end_ts) in enumerate(window_timestamps):
+        log_window_start(window_id, num_windows)
         print(f"\n--- Window {window_id + 1}/{num_windows} ---")
         
-        result = run_single_ranking_window(
-            wide_df=wide_df,
-            train_end_ts=train_end_ts,
-            test_end_ts=test_end_ts,
-            window_id=window_id,
-            forward_return_days=forward_return_days,
-            return_type=return_type,
-            winsorize_limits=winsorize_limits,
-            min_stocks=min_stocks,
-            ranker_config=ranker_config,
-        )
+        try:
+            result = run_single_ranking_window(
+                wide_df=wide_df,
+                train_end_ts=train_end_ts,
+                test_end_ts=test_end_ts,
+                window_id=window_id,
+                forward_return_days=forward_return_days,
+                return_type=return_type,
+                winsorize_limits=winsorize_limits,
+                min_stocks=min_stocks,
+                ranker_config=ranker_config,
+            )
+        except Exception as e:
+            logger.error(f"Window {window_id}: Failed with error: {e}")
+            logger.debug(f"Window {window_id}: Traceback:\n{traceback.format_exc()}")
+            windows_skipped += 1
+            continue
         
         if result is None:
+            logger.warning(f"Window {window_id}: Skipped due to insufficient data")
             print(f"  Skipping: insufficient data")
+            windows_skipped += 1
             continue
+        
+        windows_completed += 1
         
         # Add window_id to predictions
         result.predictions_df["window_id"] = window_id
@@ -628,15 +704,27 @@ def run_ranking_pipeline(
         }
         window_summaries.append(summary)
         
+        # Log window result
+        log_window_result(
+            window_id, 
+            result.train_timestamps, 
+            result.test_timestamps, 
+            ic=0.0  # Will be computed later
+        )
         print(f"  Train: {result.train_timestamps} timestamps, {result.train_stocks_per_ts:.1f} stocks/ts")
         print(f"  Test:  {result.test_timestamps} timestamps, {result.test_stocks_per_ts:.1f} stocks/ts")
     
+    logger.info(f"Windows completed: {windows_completed}/{num_windows}, skipped: {windows_skipped}")
+    
     if not all_predictions:
+        logger.error("No windows completed successfully")
         raise ValueError("No windows completed successfully")
     
     # Combine all predictions
+    logger.info("Phase 4: Combining results and computing metrics...")
     print("\nCombining results...")
     combined_predictions = pd.concat(all_predictions, ignore_index=True)
+    logger.info(f"Combined predictions: {len(combined_predictions):,} rows")
     
     # Aggregate feature importances across windows
     aggregated_importances = {}
@@ -654,10 +742,12 @@ def run_ranking_pipeline(
         feature_importances = {
             f: np.mean(vals) for f, vals in aggregated_importances.items()
         }
+        logger.debug(f"Aggregated feature importances from {importance_count} windows")
     else:
         feature_importances = None
     
     # Compute ranking metrics
+    logger.info("Computing ranking metrics...")
     print("Computing ranking metrics...")
     metrics = RankingMetrics.from_predictions(
         combined_predictions,
@@ -667,6 +757,7 @@ def run_ranking_pipeline(
         min_stocks=MIN_STOCKS_FOR_IC,
         forward_return_days=forward_return_days,
     )
+    logger.info(f"Ranking metrics: IC={metrics.mean_ic:.4f}, ICIR={metrics.icir:.4f}")
     
     # Compute quintile returns
     quintile_returns = compute_quintile_portfolio_returns(
@@ -677,6 +768,7 @@ def run_ranking_pipeline(
     )
     
     # Run portfolio backtest
+    logger.info("Phase 5: Running portfolio backtest...")
     print("Running portfolio backtest...")
     portfolio_config = PortfolioConfig(
         top_n=portfolio_top_n,
@@ -723,18 +815,23 @@ def run_ranking_pipeline(
         decile_returns = comprehensive_metrics.decile_returns
     except Exception as e:
         print(f"  Warning: Could not compute comprehensive metrics: {e}")
+        logger.warning(f"Could not compute comprehensive metrics: {e}")
         # Fall back to just decile returns
         try:
             decile_returns = compute_decile_returns(
                 combined_predictions["predicted_score"],
                 combined_predictions["actual_return"]
             )
-        except Exception:
-            pass
+        except Exception as e2:
+            logger.warning(f"Could not compute decile returns fallback: {e2}")
     
-    # Build config dict
+    # Build config dict (includes run_id for traceability)
     config = {
+        "run_id": run_id,
+        "started_at": pipeline_start_time.isoformat(),
         "num_windows": num_windows,
+        "windows_completed": windows_completed,
+        "windows_skipped": windows_skipped,
         "window_movement_years": window_movement_years,
         "test_period_years": test_period_years,
         "forward_return_days": forward_return_days,
@@ -753,6 +850,21 @@ def run_ranking_pipeline(
         "ranker_subsample": ranker_config.subsample,
         "ranker_colsample_bytree": ranker_config.colsample_bytree,
     }
+    
+    # Calculate pipeline duration
+    pipeline_end_time = datetime.now()
+    pipeline_duration = (pipeline_end_time - pipeline_start_time).total_seconds()
+    config["completed_at"] = pipeline_end_time.isoformat()
+    config["duration_seconds"] = pipeline_duration
+    
+    # Log final summary
+    log_pipeline_summary(
+        mean_ic=metrics.mean_ic,
+        icir=metrics.icir,
+        sharpe=backtest.sharpe_ratio,
+        n_windows=windows_completed,
+    )
+    logger.info(f"Pipeline completed in {pipeline_duration:.1f}s")
     
     result = RankingPipelineResult(
         metrics=metrics,
@@ -782,7 +894,11 @@ def run_ranking_pipeline(
 
 def save_ranking_results(result: RankingPipelineResult) -> Path:
     """Save ranking pipeline results to output directory."""
-    output_dir = get_output_dir()
+    # Use run_id from config if available, otherwise generate new
+    run_id = result.config.get("run_id")
+    output_dir = get_output_dir(run_id)
+    
+    logger.info(f"Saving results to: {output_dir}")
     
     # Save config
     with open(output_dir / "config.json", "w") as f:
@@ -818,6 +934,39 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
         result.backtest.pre_fee_daily_returns.to_csv(output_dir / "daily_returns_pre_fee.csv")
     if result.backtest.turnover_series is not None:
         result.backtest.turnover_series.to_csv(output_dir / "turnover.csv")
+    
+    # Save detailed backtest metrics (implementation-focused)
+    backtest_metrics = {
+        "returns": {
+            "total_return_post_fee": result.backtest.total_return,
+            "total_return_pre_fee": result.backtest.pre_fee_total_return,
+            "annualized_return_post_fee": result.backtest.annualized_return_post_fee,
+            "annualized_return_pre_fee": result.backtest.annualized_return_pre_fee,
+            "annualized_volatility": result.backtest.annualized_volatility,
+        },
+        "risk": {
+            "sharpe_ratio_post_fee": result.backtest.sharpe_ratio,
+            "sharpe_ratio_pre_fee": result.backtest.pre_fee_sharpe_ratio,
+            "calmar_ratio": result.backtest.calmar_ratio,
+            "max_drawdown": result.backtest.max_drawdown,
+        },
+        "implementation": {
+            "avg_turnover_per_rebalance": result.backtest.avg_turnover,
+            "avg_cost_per_rebalance": result.backtest.avg_cost_per_rebalance,
+            "total_cost_drag": result.backtest.total_cost_drag,
+            "return_per_unit_turnover": result.backtest.return_per_unit_turnover,
+            "num_rebalances": result.backtest.num_rebalances,
+            "avg_holding_period_years": result.backtest.avg_holding_period_years,
+        },
+        "portfolio": {
+            "long_positions": result.config["portfolio_top_n"],
+            "short_positions": result.config["portfolio_bottom_n"],
+            "transaction_cost_bps": result.config["transaction_cost_bps"],
+            "slippage_bps": result.config.get("slippage_bps", 0),
+        },
+    }
+    with open(output_dir / "backtest_metrics.json", "w") as f:
+        json.dump(backtest_metrics, f, indent=2)
     
     # Save random baseline results if available
     if result.random_baseline is not None:
@@ -868,7 +1017,8 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
         import matplotlib.pyplot as plt
         plt.close('all')
         
-    except ImportError:
+    except ImportError as e:
+        logger.warning(f"matplotlib not available, skipping visualizations: {e}")
         print("Warning: matplotlib not available, skipping visualizations")
     except Exception as e:
         print(f"Warning: Error generating visualizations: {e}")
@@ -910,8 +1060,8 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
             import matplotlib.pyplot as plt
             plt.close('all')
             
-        except Exception:
-            pass
+        except Exception as e2:
+            logger.warning(f"Could not generate fallback visualizations: {e2}")
     
     return output_dir
 

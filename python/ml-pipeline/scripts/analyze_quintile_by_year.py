@@ -18,7 +18,9 @@ def assign_quintiles(group):
     group = group.copy()
     try:
         group['predicted_quintile'] = pd.qcut(group['predicted_score'].rank(method='first'), q=5, labels=[1,2,3,4,5])
-    except:
+    except Exception as e:
+        import warnings
+        warnings.warn(f"Could not assign quintiles for group: {e}")
         group['predicted_quintile'] = np.nan
     return group
 

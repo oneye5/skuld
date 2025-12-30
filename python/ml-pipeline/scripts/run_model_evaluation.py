@@ -10,12 +10,14 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.logging_config import setup_logging
 from pipeline.ranking_pipeline import (
     run_ranking_pipeline, 
     print_ranking_summary,
@@ -35,6 +37,9 @@ from config.settings import (
 
 
 def main():
+    # Initialize logging - outputs to console by default
+    setup_logging(level=logging.INFO, console=True)
+    
     parser = argparse.ArgumentParser(
         description="Run ranking-based stock prediction pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

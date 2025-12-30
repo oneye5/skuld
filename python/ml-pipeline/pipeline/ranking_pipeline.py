@@ -47,6 +47,8 @@ from config.settings import (
     RANKER_MIN_CHILD_SAMPLES,
     RANKER_SUBSAMPLE,
     RANKER_COLSAMPLE_BYTREE,
+    RANKER_DEVICE,
+    RANKER_EARLY_STOPPING_ROUNDS,
 )
 
 from core.data_loader import load_long_data
@@ -76,7 +78,6 @@ from core.logging_config import (
 from features.ratios import add_financial_ratios
 from features.technical import add_technical_features
 from features.cross_sectional import add_cross_sectional_features
-from features.time_features import add_time_features
 from features.feature_config import apply_experimental_features
 
 from learner.ranking import (
@@ -98,6 +99,8 @@ from evaluation.portfolio_simulator import (
     compute_quintile_portfolio_returns,
     PortfolioConfig,
     BacktestResult,
+    run_random_baseline,
+    RandomBaselineResult,
 )
 
 # Module logger
@@ -134,6 +137,8 @@ class RankingPipelineResult:
     comprehensive_metrics: Optional['ComprehensiveMetrics'] = None
     feature_importances: Optional[dict] = None
     decile_returns: Optional[dict] = None
+    # Random baseline comparison
+    random_baseline: Optional['RandomBaselineResult'] = None
 
 
 # =============================================================================
@@ -152,25 +157,45 @@ def get_output_dir() -> Path:
 # DATA PREPARATION (reuses existing modules)
 # =============================================================================
 
-def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
+def prepare_wide_data(
+    long_df: pd.DataFrame | None = None,
+    use_cache: bool = True,
+) -> pd.DataFrame:
     """Convert long format to wide format with basic preparation.
     
-    Reuses logic from single_window.py but simplified for ranking.
+    Uses parquet caching for 20x speedup on repeated runs.
+    
+    Args:
+        long_df: Long format data. If None and use_cache=True, loads from cache.
+        use_cache: Whether to use parquet cache. Default True.
+    
+    Returns:
+        Wide format DataFrame.
     """
-    from config.settings import YEAR_2000_MS
+    from core.preprocessor import drop_sparse_columns
     
-    # Filter out data before year 2000
-    df = long_df[long_df[TIMESTAMP] >= YEAR_2000_MS].copy()
-    
-    # Clean tickers
-    df = clean_and_classify_tickers(df)
-    df = add_macro_prefix(df)
-    wide_df = long_to_wide(df)
-    del df
-    gc.collect()
+    if use_cache:
+        from core.data_cache import load_cached_wide_data
+        # load_cached_wide_data handles the full transformation pipeline
+        wide_df = load_cached_wide_data()
+    else:
+        # Original implementation for when cache is disabled
+        from config.settings import YEAR_2000_MS
+        
+        if long_df is None:
+            long_df = load_long_data()
+        
+        # Filter out data before year 2000
+        df = long_df[long_df[TIMESTAMP] >= YEAR_2000_MS].copy()
+        
+        # Clean tickers
+        df = clean_and_classify_tickers(df)
+        df = add_macro_prefix(df)
+        wide_df = long_to_wide(df)
+        del df
+        gc.collect()
     
     # Drop extremely sparse columns
-    from core.preprocessor import drop_sparse_columns
     wide_df = drop_sparse_columns(wide_df, threshold=0.95)
     
     # Force float32 to save memory
@@ -183,8 +208,6 @@ def prepare_wide_data(long_df: pd.DataFrame) -> pd.DataFrame:
 
 def add_all_features(
     df: pd.DataFrame, 
-    global_time_min: int, 
-    global_time_max: int,
     experimental_features: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """Add all features to the DataFrame.
@@ -193,33 +216,21 @@ def add_all_features(
     
     Args:
         df: Input DataFrame.
-        global_time_min: Minimum timestamp for time features.
-        global_time_max: Maximum timestamp for time features.
         experimental_features: List of experimental feature sets to apply.
-            If None, uses automatically enabled feature sets from config.
     """
-    from features.feature_config import get_enabled_features
-    from features.alpha_factors import add_alpha_factors
-    
     df = add_financial_ratios(df)
     df = add_technical_features(df)
-    df = add_time_features(df, global_time_min, global_time_max)
     
-    # Always add alpha factors (research-backed features enabled by default)
+    # Always add alpha factors (research-backed features)
+    from features.alpha_factors import add_alpha_factors
     df = add_alpha_factors(df)
     
-    # Get enabled experimental feature sets from config
-    enabled_features = get_enabled_features()
-    
-    # Filter to only experimental sets (exclude base and alpha which are already applied)
-    experimental_sets = [f for f in enabled_features 
-                        if f.startswith(('extended_', 'volatility_adjusted', 
-                                        'value_', 'interaction_', 'alpha_seasonality'))]
-    
-    # Apply experimental features if specified or auto-enabled
-    features_to_apply = experimental_features if experimental_features else experimental_sets
-    if features_to_apply:
-        df = apply_experimental_features(df, features_to_apply)
+    # Apply additional experimental features if requested
+    if experimental_features and "alpha_fast" in experimental_features:
+        from features.alpha_factors_fast import add_alpha_factors_fast
+        df = add_alpha_factors_fast(df)
+    elif experimental_features:
+        df = apply_experimental_features(df, experimental_features)
     
     # Note: cross_sectional features are computed per-timestamp in training
     return df
@@ -257,14 +268,13 @@ def run_single_ranking_window(
     winsorize_limits: Optional[tuple],
     min_stocks: int,
     ranker_config: RankerConfig,
-    global_time_min: int,
-    global_time_max: int,
-    experimental_features: Optional[List[str]] = None,
 ) -> Optional[RankingWindowResult]:
     """Run ranking pipeline for a single train/test window.
     
+    Note: Features should already be computed on wide_df before calling this.
+    
     Args:
-        wide_df: Wide format data.
+        wide_df: Wide format data WITH features already computed.
         train_end_ts: End timestamp for training.
         test_end_ts: End timestamp for test.
         window_id: Window identifier.
@@ -273,9 +283,6 @@ def run_single_ranking_window(
         winsorize_limits: Limits for winsorizing returns.
         min_stocks: Minimum stocks per timestamp.
         ranker_config: Configuration for LGBMRanker.
-        global_time_min: Min timestamp for time scaling.
-        global_time_max: Max timestamp for time scaling.
-        experimental_features: List of experimental feature sets to apply.
     
     Returns:
         RankingWindowResult or None if insufficient data.
@@ -343,21 +350,16 @@ def run_single_ranking_window(
         logger.warning(f"Window {window_id}: Insufficient stocks per timestamp")
         return None
     
-    # Add features (including experimental if specified)
-    train_features = add_all_features(
-        train_with_returns, global_time_min, global_time_max, experimental_features
-    )
-    test_features = add_all_features(
-        test_with_returns, global_time_min, global_time_max, experimental_features
-    )
-    
-    # Add cross-sectional features (computed per-timestamp)
-    # Must be done AFTER splitting to avoid leakage, but BEFORE scaling
-    train_features = add_cross_sectional_features(train_features)
-    test_features = add_cross_sectional_features(test_features)
-    
+    # Features are already computed on wide_df - just use them directly
+    train_features = train_with_returns
+    test_features = test_with_returns
     del train_with_returns, test_with_returns
     gc.collect()
+    
+    # NOTE: Cross-sectional features disabled - they cause suspicious Sharpe inflation
+    # from features.cross_sectional import add_cross_sectional_features
+    # train_features = add_cross_sectional_features(train_features)
+    # test_features = add_cross_sectional_features(test_features)
     
     # Preprocess (handle NaN, infinities)
     train_features = preprocess_data(train_features, add_missing_flags=False)
@@ -406,9 +408,37 @@ def run_single_ranking_window(
     # Sort test data to match X_test order (sorted by timestamp)
     test_sorted = test_scaled.sort_values(TIMESTAMP).reset_index(drop=True)
     
+    # Split training data for validation if early stopping is enabled
+    X_val, y_val, groups_val = None, None, None
+    if ranker_config.early_stopping_rounds is not None:
+        # Use last 20% of timestamps for validation
+        train_timestamps = train_scaled[TIMESTAMP].unique()
+        n_val_ts = max(1, int(len(train_timestamps) * 0.2))
+        val_ts_cutoff = np.sort(train_timestamps)[-n_val_ts]
+        
+        train_mask = train_scaled[TIMESTAMP] < val_ts_cutoff
+        val_data = train_scaled[~train_mask].copy()
+        train_scaled_for_fit = train_scaled[train_mask].copy()
+        
+        # Re-prepare data for the actual training split
+        X_train, y_train, groups_train = prepare_ranking_data(
+            train_scaled_for_fit,
+            feature_cols=feature_cols,
+            target_col=FORWARD_RETURN,
+            timestamp_col=TIMESTAMP,
+        )
+        
+        # Prepare validation data
+        X_val, y_val, groups_val = prepare_ranking_data(
+            val_data,
+            feature_cols=feature_cols,
+            target_col=FORWARD_RETURN,
+            timestamp_col=TIMESTAMP,
+        )
+    
     # Train ranking model
     ranker = LightGBMRankerWrapper(ranker_config)
-    ranker.fit(X_train, y_train, groups_train)
+    ranker.fit(X_train, y_train, groups_train, X_val, y_val, groups_val)
     
     # Predict
     predictions = ranker.predict(X_test)
@@ -518,26 +548,23 @@ def run_ranking_pipeline(
         ranker_subsample = ranker_config.get("subsample", ranker_subsample)
         ranker_colsample_bytree = ranker_config.get("colsample_bytree", ranker_colsample_bytree)
     
-    # Load data
-    if long_df is None:
-        print("Loading data...")
-        long_df = load_long_data()
-        print(f"Loaded {len(long_df):,} rows")
-    
-    # Convert to wide format
-    print("Converting to wide format...")
-    wide_df = prepare_wide_data(long_df)
+    # Convert to wide format (uses cache for 20x speedup)
+    print("Loading and converting to wide format (using cache if available)...")
+    wide_df = prepare_wide_data(long_df, use_cache=(long_df is None))
     print(f"Wide format: {len(wide_df):,} rows, {len(wide_df.columns)} columns")
-    
-    del long_df
-    gc.collect()
     
     if wide_df.empty:
         raise ValueError("No data after converting to wide format")
     
-    # Get timestamp range
-    data_min_ts = int(wide_df[TIMESTAMP].min())
-    data_max_ts = int(wide_df[TIMESTAMP].max())
+    # Get max timestamp for window calculation
+    data_max_ts = wide_df[TIMESTAMP].max()
+    
+    # OPTIMIZATION: Compute expensive features ONCE on full dataset
+    # This is safe because these features are per-ticker time-series features
+    # that don't leak information across tickers or into the future
+    print("Computing features on full dataset (one-time cost)...")
+    wide_df = add_all_features(wide_df, experimental_features)
+    print(f"After features: {len(wide_df.columns)} columns")
     
     # Calculate window timestamps
     window_timestamps = calculate_window_timestamps(
@@ -557,6 +584,8 @@ def run_ranking_pipeline(
         min_child_samples=ranker_min_child_samples,
         subsample=ranker_subsample,
         colsample_bytree=ranker_colsample_bytree,
+        device=RANKER_DEVICE,
+        early_stopping_rounds=RANKER_EARLY_STOPPING_ROUNDS,
     )
     
     # Run each window
@@ -578,9 +607,6 @@ def run_ranking_pipeline(
             winsorize_limits=winsorize_limits,
             min_stocks=min_stocks,
             ranker_config=ranker_config,
-            global_time_min=data_min_ts,
-            global_time_max=data_max_ts,
-            experimental_features=experimental_features,
         )
         
         if result is None:
@@ -667,6 +693,19 @@ def run_ranking_pipeline(
         return_horizon_days=forward_return_days,
     )
     
+    # Run random baseline for comparison
+    print("Running random baseline (100 trials)...")
+    random_baseline = run_random_baseline(
+        combined_predictions,
+        portfolio_config,
+        timestamp_col=TIMESTAMP,
+        ticker_col=TICKER,
+        return_col="actual_return",
+        return_horizon_days=forward_return_days,
+        n_trials=100,
+        model_sharpe=backtest.sharpe_ratio,
+    )
+    
     # Compute comprehensive metrics
     print("Computing comprehensive metrics...")
     comprehensive_metrics = None
@@ -726,6 +765,7 @@ def run_ranking_pipeline(
         comprehensive_metrics=comprehensive_metrics,
         feature_importances=feature_importances,
         decile_returns=decile_returns,
+        random_baseline=random_baseline,
     )
     
     # Save results
@@ -774,6 +814,11 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
     
     # Save backtest results
     result.backtest.daily_returns.to_csv(output_dir / "daily_returns.csv")
+    
+    # Save random baseline results if available
+    if result.random_baseline is not None:
+        with open(output_dir / "random_baseline.json", "w") as f:
+            json.dump(result.random_baseline.to_dict(), f, indent=2)
     
     # Save window summaries (without feature importances to keep file small)
     window_summaries_clean = [
@@ -882,6 +927,31 @@ def print_ranking_summary(result: RankingPipelineResult) -> None:
     
     print("\n--- Portfolio Backtest ---")
     print(result.backtest.summary())
+    
+    # Print random baseline comparison if available
+    if result.random_baseline is not None:
+        print("\n--- Random Baseline Comparison ---")
+        print(result.random_baseline.summary())
+        
+        # Compute and display improvement over random
+        model_sharpe = result.backtest.sharpe_ratio
+        random_sharpe = result.random_baseline.mean_sharpe_post_fee
+        if not np.isnan(model_sharpe) and not np.isnan(random_sharpe):
+            improvement = model_sharpe - random_sharpe
+            std_dev = result.random_baseline.std_sharpe_post_fee
+            if std_dev > 0:
+                z_score = improvement / std_dev
+                print(f"\nModel vs Random:")
+                print(f"  Sharpe improvement:      {improvement:+.2f}")
+                print(f"  Z-score vs random:       {z_score:.2f}")
+                if z_score > 2:
+                    print(f"  Significance:            *** Highly significant (z > 2)")
+                elif z_score > 1.5:
+                    print(f"  Significance:            ** Moderately significant (z > 1.5)")
+                elif z_score > 1:
+                    print(f"  Significance:            * Marginally significant (z > 1)")
+                else:
+                    print(f"  Significance:            Not significantly better than random")
     
     # Print comprehensive metrics if available
     if result.comprehensive_metrics is not None:

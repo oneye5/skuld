@@ -91,6 +91,8 @@ class RankerConfig:
         metric: Evaluation metric ('ndcg', 'map').
         eval_at: Positions to evaluate NDCG at.
         random_state: Random seed for reproducibility.
+        device: Device for training ('cpu' or 'gpu').
+        early_stopping_rounds: Early stopping rounds. None to disable.
     """
     n_estimators: int = 100
     learning_rate: float = 0.05
@@ -106,6 +108,8 @@ class RankerConfig:
     eval_at: Tuple[int, ...] = (5, 10, 20)
     random_state: int = 42
     verbose: int = -1
+    device: str = "cpu"
+    early_stopping_rounds: Optional[int] = None
 
 
 # =============================================================================
@@ -246,24 +250,32 @@ class LightGBMRankerWrapper(BaseRanker):
         y_grades = self._convert_to_relevance_grades(y, group, n_relevance_grades)
         
         # Create model
-        self.model = LGBMRanker(
-            n_estimators=self.config.n_estimators,
-            learning_rate=self.config.learning_rate,
-            num_leaves=self.config.num_leaves,
-            max_depth=self.config.max_depth,
-            min_child_samples=self.config.min_child_samples,
-            subsample=self.config.subsample,
-            colsample_bytree=self.config.colsample_bytree,
-            objective=self.config.objective,
-            metric=self.config.metric,
-            random_state=self.config.random_state,
-            n_jobs=-1,
-            verbose=self.config.verbose,
-        )
+        model_params = {
+            "n_estimators": self.config.n_estimators,
+            "learning_rate": self.config.learning_rate,
+            "num_leaves": self.config.num_leaves,
+            "max_depth": self.config.max_depth,
+            "min_child_samples": self.config.min_child_samples,
+            "subsample": self.config.subsample,
+            "colsample_bytree": self.config.colsample_bytree,
+            "objective": self.config.objective,
+            "metric": self.config.metric,
+            "random_state": self.config.random_state,
+            "n_jobs": -1,
+            "verbose": self.config.verbose,
+        }
+        
+        # Add device (GPU support)
+        if self.config.device == "gpu":
+            model_params["device"] = "gpu"
+        
+        self.model = LGBMRanker(**model_params)
         
         # Prepare validation data if provided
         eval_set = None
         eval_group = None
+        callbacks = None
+        
         if X_val is not None and y_val is not None and group_val is not None:
             if sum(group_val) != len(X_val):
                 raise ValueError(
@@ -272,15 +284,25 @@ class LightGBMRankerWrapper(BaseRanker):
             y_val_grades = self._convert_to_relevance_grades(y_val, group_val, n_relevance_grades)
             eval_set = [(X_val, y_val_grades)]
             eval_group = [group_val]
+            
+            # Add early stopping callback if configured
+            if self.config.early_stopping_rounds is not None:
+                from lightgbm import early_stopping
+                callbacks = [early_stopping(self.config.early_stopping_rounds, verbose=False)]
         
         # Fit model
-        self.model.fit(
-            X, y_grades,
-            group=group,
-            eval_set=eval_set,
-            eval_group=eval_group,
-            eval_at=self.config.eval_at,
-        )
+        fit_params = {
+            "X": X,
+            "y": y_grades,
+            "group": group,
+            "eval_set": eval_set,
+            "eval_group": eval_group,
+            "eval_at": self.config.eval_at,
+        }
+        if callbacks:
+            fit_params["callbacks"] = callbacks
+        
+        self.model.fit(**fit_params)
         
         return self
     

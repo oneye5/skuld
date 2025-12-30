@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import RobustScaler
 
-from config.columns import TIMESTAMP, TICKER, TARGET, TIME_SCALED
+from config.columns import TIMESTAMP, TICKER, TARGET
 from core.target_builder import FORWARD_RETURN
 
 
@@ -33,9 +33,8 @@ def fit_scaler(df: pd.DataFrame) -> ScalerSet:
         ScalerSet with fitted scaler and column information.
     """
     # Columns to exclude from scaling
-    # TIME_SCALED is already 0-1 normalized, don't scale it again
     # FORWARD_RETURN is the target for ranking - must not be scaled
-    excluded_cols = [TIMESTAMP, TICKER, TARGET, TIME_SCALED, FORWARD_RETURN]
+    excluded_cols = [TIMESTAMP, TICKER, TARGET, FORWARD_RETURN]
     excluded_cols = [c for c in excluded_cols if c in df.columns]
     
     # Identify binary columns (exactly 2 unique values or all 0/1)

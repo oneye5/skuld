@@ -38,6 +38,7 @@ DATA_LONG_CSV: Path = DATA_DIR / "data_long.csv"
 # =============================================================================
 OUTPUT_DIR: Path = PIPELINE_ROOT / "output"
 RUNS_DIR: Path = OUTPUT_DIR / "runs"
+CACHE_DIR: Path = OUTPUT_DIR / "cache"
 
 
 # =============================================================================

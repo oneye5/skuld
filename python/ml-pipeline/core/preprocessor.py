@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import warnings
 
-from config.columns import TIMESTAMP, TICKER, TARGET, TIME_SCALED
+from config.columns import TIMESTAMP, TICKER, TARGET
 from config.settings import CLIP_THRESHOLD
 
 
@@ -115,7 +115,7 @@ def clip_extreme_values(
     result = df.copy()
     
     # Columns to exclude from clipping
-    excluded = [TIMESTAMP, TICKER, TARGET, TIME_SCALED]
+    excluded = [TIMESTAMP, TICKER, TARGET]
     
     for col in result.columns:
         if col in excluded:

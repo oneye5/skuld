@@ -305,12 +305,8 @@ from core.data_loader import load_long_data
 long_df = load_long_data()
 wide_df = prepare_wide_data(long_df)
 
-# Get global time range for time features
-global_time_min = wide_df[TIMESTAMP].min()
-global_time_max = wide_df[TIMESTAMP].max()
-
 # Add features
-wide_df = add_all_features(wide_df, global_time_min, global_time_max)
+wide_df = add_all_features(wide_df)
 
 # Get feature columns
 feature_cols = get_feature_columns_for_ranking(wide_df)

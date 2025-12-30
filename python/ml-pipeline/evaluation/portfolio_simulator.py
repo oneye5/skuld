@@ -52,14 +52,17 @@ class BacktestResult:
     """Results from portfolio backtest.
     
     Attributes:
-        daily_returns: Series of daily portfolio returns (index = timestamp).
-        cumulative_returns: Series of cumulative returns.
-        sharpe_ratio: Annualized Sharpe ratio.
+        daily_returns: Series of daily portfolio returns after fees (index = timestamp).
+        cumulative_returns: Series of cumulative returns after fees.
+        sharpe_ratio: Annualized Sharpe ratio (post-fee).
         max_drawdown: Maximum drawdown as a fraction.
-        total_return: Total return over the period.
+        total_return: Total return over the period (post-fee).
         avg_turnover: Average portfolio turnover per rebalance.
         quintile_returns: DataFrame with returns by quintile.
         holdings_history: DataFrame with timestamp, ticker, weight history.
+        pre_fee_sharpe_ratio: Annualized Sharpe ratio before transaction costs.
+        pre_fee_daily_returns: Series of daily portfolio returns before fees.
+        pre_fee_total_return: Total return over the period (pre-fee).
     """
     daily_returns: pd.Series
     cumulative_returns: pd.Series
@@ -69,13 +72,18 @@ class BacktestResult:
     avg_turnover: float
     quintile_returns: Optional[pd.DataFrame] = None
     holdings_history: Optional[pd.DataFrame] = None
+    pre_fee_sharpe_ratio: float = np.nan
+    pre_fee_daily_returns: Optional[pd.Series] = None
+    pre_fee_total_return: float = np.nan
     
     def summary(self) -> str:
         """Generate human-readable summary."""
         lines = [
             "=== Backtest Results ===",
-            f"Total Return:   {self.total_return:.2%}",
-            f"Sharpe Ratio:   {self.sharpe_ratio:.2f}",
+            f"Total Return (post-fee): {self.total_return:.2%}",
+            f"Total Return (pre-fee):  {self.pre_fee_total_return:.2%}" if not np.isnan(self.pre_fee_total_return) else "Total Return (pre-fee):  N/A",
+            f"Sharpe Ratio (post-fee): {self.sharpe_ratio:.2f}",
+            f"Sharpe Ratio (pre-fee):  {self.pre_fee_sharpe_ratio:.2f}" if not np.isnan(self.pre_fee_sharpe_ratio) else "Sharpe Ratio (pre-fee):  N/A",
             f"Max Drawdown:   {self.max_drawdown:.2%}",
             f"Avg Turnover:   {self.avg_turnover:.2%}",
             f"Num Periods:    {len(self.daily_returns)}",
@@ -408,7 +416,8 @@ def run_portfolio_backtest(
         print(f"  Total timestamps: {len(df[timestamp_col].unique())}")
         print("  Sharpe ratio will be NaN.")
     
-    daily_returns = []
+    daily_returns = []  # post-fee returns
+    daily_returns_pre_fee = []  # gross returns (before fees)
     turnovers = []
     prev_holdings: Dict[str, float] = {}
     holdings_records = []
@@ -447,10 +456,11 @@ def run_portfolio_backtest(
         turnover = compute_turnover(prev_holdings, curr_holdings)
         turnovers.append(turnover)
         
-        # Compute gross return
+        # Compute gross return (pre-fee)
         gross_return = compute_portfolio_return(
             long_returns, short_returns, config.weighting
         )
+        daily_returns_pre_fee.append({"timestamp": ts, "return": gross_return})
         
         # Apply transaction costs (including slippage)
         net_return = apply_transaction_costs(
@@ -468,14 +478,24 @@ def run_portfolio_backtest(
             max_drawdown=np.nan,
             total_return=np.nan,
             avg_turnover=np.nan,
+            pre_fee_sharpe_ratio=np.nan,
+            pre_fee_daily_returns=pd.Series(dtype=float),
+            pre_fee_total_return=np.nan,
         )
     
-    # Convert to Series
+    # Convert to Series - post-fee (net) returns
     returns_df = pd.DataFrame(daily_returns)
     returns_series = returns_df.set_index("timestamp")["return"]
     
-    # Compute cumulative returns
+    # Convert to Series - pre-fee (gross) returns
+    returns_pre_fee_df = pd.DataFrame(daily_returns_pre_fee)
+    returns_pre_fee_series = returns_pre_fee_df.set_index("timestamp")["return"]
+    
+    # Compute cumulative returns (post-fee)
     cumulative = (1 + returns_series).cumprod() - 1
+    
+    # Compute cumulative returns (pre-fee)
+    cumulative_pre_fee = (1 + returns_pre_fee_series).cumprod() - 1
     
     # Compute metrics
     # For proper annualization, use the return horizon to determine periods per year
@@ -483,8 +503,10 @@ def run_portfolio_backtest(
     # Ensure at least 1 period per year to avoid division by zero
     periods_per_year = max(1, 252 // return_horizon_days)
     sharpe = compute_sharpe_ratio(returns_series, periods_per_year=periods_per_year)
+    sharpe_pre_fee = compute_sharpe_ratio(returns_pre_fee_series, periods_per_year=periods_per_year)
     max_dd = compute_max_drawdown(cumulative)
     total_return = cumulative.iloc[-1] if len(cumulative) > 0 else 0.0
+    total_return_pre_fee = cumulative_pre_fee.iloc[-1] if len(cumulative_pre_fee) > 0 else 0.0
     avg_turnover = np.mean(turnovers) if turnovers else 0.0
     
     # Build holdings history
@@ -498,6 +520,9 @@ def run_portfolio_backtest(
         total_return=total_return,
         avg_turnover=avg_turnover,
         holdings_history=holdings_df,
+        pre_fee_sharpe_ratio=sharpe_pre_fee,
+        pre_fee_daily_returns=returns_pre_fee_series,
+        pre_fee_total_return=total_return_pre_fee,
     )
 
 
@@ -564,3 +589,166 @@ def compute_quintile_portfolio_returns(
     result_df = result_df.set_index(timestamp_col)
     
     return result_df
+
+
+# =============================================================================
+# RANDOM BASELINE
+# =============================================================================
+
+@dataclass
+class RandomBaselineResult:
+    """Results from random baseline comparison.
+    
+    Attributes:
+        mean_sharpe_post_fee: Mean Sharpe ratio across random trials (post-fee).
+        std_sharpe_post_fee: Std dev of Sharpe ratio across random trials (post-fee).
+        mean_sharpe_pre_fee: Mean Sharpe ratio across random trials (pre-fee).
+        std_sharpe_pre_fee: Std dev of Sharpe ratio across random trials (pre-fee).
+        mean_total_return: Mean total return across random trials (post-fee).
+        std_total_return: Std dev of total return across random trials (post-fee).
+        n_trials: Number of random trials performed.
+        all_sharpes_post_fee: List of all individual trial Sharpe ratios (post-fee).
+        all_sharpes_pre_fee: List of all individual trial Sharpe ratios (pre-fee).
+        percentile_of_model: Percentile rank of model Sharpe among random trials (if provided).
+    """
+    mean_sharpe_post_fee: float
+    std_sharpe_post_fee: float
+    mean_sharpe_pre_fee: float
+    std_sharpe_pre_fee: float
+    mean_total_return: float
+    std_total_return: float
+    n_trials: int
+    all_sharpes_post_fee: List[float]
+    all_sharpes_pre_fee: List[float]
+    percentile_of_model: Optional[float] = None
+    
+    def summary(self) -> str:
+        """Generate human-readable summary."""
+        lines = [
+            "=== Random Baseline Results ===",
+            f"Number of trials:          {self.n_trials}",
+            f"Mean Sharpe (post-fee):    {self.mean_sharpe_post_fee:.2f} ± {self.std_sharpe_post_fee:.2f}",
+            f"Mean Sharpe (pre-fee):     {self.mean_sharpe_pre_fee:.2f} ± {self.std_sharpe_pre_fee:.2f}",
+            f"Mean Total Return:         {self.mean_total_return:.2%} ± {self.std_total_return:.2%}",
+        ]
+        if self.percentile_of_model is not None:
+            lines.append(f"Model percentile vs random: {self.percentile_of_model:.1f}%")
+        return "\n".join(lines)
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        def to_native(x):
+            """Convert numpy types to native Python types."""
+            if x is None:
+                return None
+            if isinstance(x, (np.floating, np.integer)):
+                return float(x)
+            return x
+        
+        return {
+            "mean_sharpe_post_fee": to_native(self.mean_sharpe_post_fee),
+            "std_sharpe_post_fee": to_native(self.std_sharpe_post_fee),
+            "mean_sharpe_pre_fee": to_native(self.mean_sharpe_pre_fee),
+            "std_sharpe_pre_fee": to_native(self.std_sharpe_pre_fee),
+            "mean_total_return": to_native(self.mean_total_return),
+            "std_total_return": to_native(self.std_total_return),
+            "n_trials": self.n_trials,
+            "percentile_of_model": to_native(self.percentile_of_model),
+        }
+
+
+def run_random_baseline(
+    df: pd.DataFrame,
+    config: PortfolioConfig,
+    timestamp_col: str = TIMESTAMP,
+    ticker_col: str = TICKER,
+    return_col: str = "actual_return",
+    return_horizon_days: int = 1,
+    n_trials: int = 100,
+    model_sharpe: Optional[float] = None,
+    random_seed: int = 42,
+) -> RandomBaselineResult:
+    """Run random stock selection baseline for comparison.
+    
+    At each timestamp, instead of using model predictions, randomly select
+    top_n and bottom_n stocks. Run multiple trials to get distribution.
+    
+    Args:
+        df: DataFrame with timestamp, ticker, actual_return.
+        config: Portfolio configuration (top_n, bottom_n, costs).
+        timestamp_col: Column name for timestamp.
+        ticker_col: Column name for ticker.
+        return_col: Column name for actual returns.
+        return_horizon_days: The horizon of the returns in days.
+        n_trials: Number of random trials to run.
+        model_sharpe: Optional model Sharpe ratio to compute percentile.
+        random_seed: Random seed for reproducibility.
+    
+    Returns:
+        RandomBaselineResult with statistics across random trials.
+    """
+    np.random.seed(random_seed)
+    
+    all_sharpes_post_fee = []
+    all_sharpes_pre_fee = []
+    all_total_returns = []
+    
+    for trial in range(n_trials):
+        # Create random predictions for each trial
+        trial_df = df.copy()
+        trial_df["random_score"] = np.random.randn(len(trial_df))
+        
+        # Run backtest with random scores
+        result = run_portfolio_backtest(
+            trial_df,
+            config,
+            timestamp_col=timestamp_col,
+            ticker_col=ticker_col,
+            score_col="random_score",
+            return_col=return_col,
+            return_horizon_days=return_horizon_days,
+        )
+        
+        if not np.isnan(result.sharpe_ratio):
+            all_sharpes_post_fee.append(result.sharpe_ratio)
+            all_sharpes_pre_fee.append(result.pre_fee_sharpe_ratio)
+            all_total_returns.append(result.total_return)
+    
+    if not all_sharpes_post_fee:
+        return RandomBaselineResult(
+            mean_sharpe_post_fee=np.nan,
+            std_sharpe_post_fee=np.nan,
+            mean_sharpe_pre_fee=np.nan,
+            std_sharpe_pre_fee=np.nan,
+            mean_total_return=np.nan,
+            std_total_return=np.nan,
+            n_trials=0,
+            all_sharpes_post_fee=[],
+            all_sharpes_pre_fee=[],
+        )
+    
+    # Compute statistics
+    mean_sharpe_post = np.mean(all_sharpes_post_fee)
+    std_sharpe_post = np.std(all_sharpes_post_fee)
+    mean_sharpe_pre = np.mean(all_sharpes_pre_fee)
+    std_sharpe_pre = np.std(all_sharpes_pre_fee)
+    mean_return = np.mean(all_total_returns)
+    std_return = np.std(all_total_returns)
+    
+    # Compute percentile of model if provided
+    percentile = None
+    if model_sharpe is not None and not np.isnan(model_sharpe):
+        percentile = 100 * np.mean([s <= model_sharpe for s in all_sharpes_post_fee])
+    
+    return RandomBaselineResult(
+        mean_sharpe_post_fee=mean_sharpe_post,
+        std_sharpe_post_fee=std_sharpe_post,
+        mean_sharpe_pre_fee=mean_sharpe_pre,
+        std_sharpe_pre_fee=std_sharpe_pre,
+        mean_total_return=mean_return,
+        std_total_return=std_return,
+        n_trials=len(all_sharpes_post_fee),
+        all_sharpes_post_fee=all_sharpes_post_fee,
+        all_sharpes_pre_fee=all_sharpes_pre_fee,
+        percentile_of_model=percentile,
+    )

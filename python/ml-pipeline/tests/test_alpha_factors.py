@@ -248,11 +248,7 @@ class TestIntegration:
         from pipeline.ranking_pipeline import add_all_features
         
         df = sample_multi_ticker_data
-        result = add_all_features(
-            df, 
-            df['timestamp'].min(), 
-            df['timestamp'].max()
-        )
+        result = add_all_features(df)
         
         # Should have significantly more columns
         assert result.shape[1] > df.shape[1] + 30

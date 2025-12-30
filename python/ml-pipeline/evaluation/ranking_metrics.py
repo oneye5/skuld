@@ -367,10 +367,13 @@ class RankingMetrics:
     Attributes:
         mean_ic: Average Information Coefficient across timestamps.
         std_ic: Standard deviation of IC.
-        icir: IC Information Ratio (annualized).
+        icir: IC Information Ratio (annualized). Note: for horizons > 252 days,
+              annualization factor is <1, so raw_icir may be more interpretable.
+        raw_icir: IC Information Ratio without annualization (mean_ic / std_ic).
         mean_rank_ic: Average Rank IC (Spearman) across timestamps.
         std_rank_ic: Standard deviation of Rank IC.
         rank_icir: Rank IC Information Ratio (annualized).
+        raw_rank_icir: Rank IC Information Ratio without annualization.
         hit_rate_top_n: Hit rate for top-N predictions.
         quintile_returns: Average return for each quintile.
         quintile_spread: Q5 return - Q1 return.
@@ -380,9 +383,11 @@ class RankingMetrics:
     mean_ic: float
     std_ic: float
     icir: float
+    raw_icir: float
     mean_rank_ic: float
     std_rank_ic: float
     rank_icir: float
+    raw_rank_icir: float
     hit_rate_top_n: float
     quintile_returns: Dict[int, float]
     quintile_spread: float
@@ -421,10 +426,18 @@ class RankingMetrics:
             RankingMetrics instance with all computed metrics.
         """
         # Compute periods_per_year from forward return horizon
-        # E.g., 5-day returns = 252/5 ≈ 50 independent periods per year
-        # NOTE: Use max(1, ...) to avoid periods_per_year < 1 for long horizons
-        # which would cause ICIR to be incorrectly scaled down
-        periods_per_year = max(1, 252 / forward_return_days)
+        # For overlapping returns, this represents INDEPENDENT periods per year.
+        # E.g., 5-day returns observed daily = 252/5 ≈ 50 independent periods
+        # E.g., 365-day returns observed daily = 252/365 ≈ 0.69 independent periods
+        #
+        # For horizons > 252 days, we have <1 independent period per year.
+        # In this case, we should NOT annualize ICIR (it would be meaningless),
+        # so we set periods_per_year=1 and note that ICIR is "per-period" not annualized.
+        #
+        # IMPORTANT: The raw ICIR (mean/std without annualization) is the more
+        # meaningful metric for comparing across different horizons.
+        periods_per_year = 252 / forward_return_days
+        
         # Compute IC series
         ic_series = compute_cross_sectional_ic_series(
             df, timestamp_col, predicted_col, actual_col, 
@@ -440,10 +453,12 @@ class RankingMetrics:
         mean_ic = ic_series.mean() if len(ic_series) > 0 else np.nan
         std_ic = ic_series.std() if len(ic_series) > 0 else np.nan
         icir = compute_icir(ic_series, annualize=True, periods_per_year=periods_per_year)
+        raw_icir = compute_icir(ic_series, annualize=False)
         
         mean_rank_ic = rank_ic_series.mean() if len(rank_ic_series) > 0 else np.nan
         std_rank_ic = rank_ic_series.std() if len(rank_ic_series) > 0 else np.nan
         rank_icir = compute_icir(rank_ic_series, annualize=True, periods_per_year=periods_per_year)
+        raw_rank_icir = compute_icir(rank_ic_series, annualize=False)
         
         # Compute quintile returns (aggregate across all data)
         quintile_returns = compute_quintile_returns(
@@ -473,9 +488,11 @@ class RankingMetrics:
             mean_ic=mean_ic,
             std_ic=std_ic,
             icir=icir,
+            raw_icir=raw_icir,
             mean_rank_ic=mean_rank_ic,
             std_rank_ic=std_rank_ic,
             rank_icir=rank_icir,
+            raw_rank_icir=raw_rank_icir,
             hit_rate_top_n=hit_rate,
             quintile_returns=quintile_returns,
             quintile_spread=quintile_spread,
@@ -491,9 +508,11 @@ class RankingMetrics:
             "mean_ic": float(self.mean_ic) if not pd.isna(self.mean_ic) else None,
             "std_ic": float(self.std_ic) if not pd.isna(self.std_ic) else None,
             "icir": float(self.icir) if not pd.isna(self.icir) else None,
+            "raw_icir": float(self.raw_icir) if not pd.isna(self.raw_icir) else None,
             "mean_rank_ic": float(self.mean_rank_ic) if not pd.isna(self.mean_rank_ic) else None,
             "std_rank_ic": float(self.std_rank_ic) if not pd.isna(self.std_rank_ic) else None,
             "rank_icir": float(self.rank_icir) if not pd.isna(self.rank_icir) else None,
+            "raw_rank_icir": float(self.raw_rank_icir) if not pd.isna(self.raw_rank_icir) else None,
             "hit_rate_top_n": float(self.hit_rate_top_n) if not pd.isna(self.hit_rate_top_n) else None,
             "quintile_returns": {k: float(v) if not pd.isna(v) else None 
                                 for k, v in self.quintile_returns.items()},
@@ -508,8 +527,10 @@ class RankingMetrics:
             "=== Ranking Metrics Summary ===",
             f"Mean IC:        {self.mean_ic:.4f}" if not pd.isna(self.mean_ic) else "Mean IC:        N/A",
             f"ICIR:           {self.icir:.4f}" if not pd.isna(self.icir) else "ICIR:           N/A",
+            f"Raw ICIR:       {self.raw_icir:.4f}" if not pd.isna(self.raw_icir) else "Raw ICIR:       N/A",
             f"Mean Rank IC:   {self.mean_rank_ic:.4f}" if not pd.isna(self.mean_rank_ic) else "Mean Rank IC:   N/A",
             f"Rank ICIR:      {self.rank_icir:.4f}" if not pd.isna(self.rank_icir) else "Rank ICIR:      N/A",
+            f"Raw Rank ICIR:  {self.raw_rank_icir:.4f}" if not pd.isna(self.raw_rank_icir) else "Raw Rank ICIR:  N/A",
             f"Hit Rate:       {self.hit_rate_top_n:.2%}" if not pd.isna(self.hit_rate_top_n) else "Hit Rate:       N/A",
             f"Quintile Spread:{self.quintile_spread:.4f}" if not pd.isna(self.quintile_spread) else "Quintile Spread:N/A",
             f"Timestamps:     {self.num_timestamps}",

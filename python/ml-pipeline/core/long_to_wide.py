@@ -247,7 +247,8 @@ def _merge_macro_data(ticker_wide: pd.DataFrame, macro_df: pd.DataFrame) -> pd.D
     # (for early stock data before first macro observation)
     result[macro_cols] = result[macro_cols].ffill()
     
-    # Also backward-fill to handle any edge cases at the start
-    result[macro_cols] = result[macro_cols].bfill()
+    # DO NOT backward-fill (bfill) here - that would leak future macro data to the past!
+    # If macro data starts later than stock data, early rows should remain NaN
+    # (they will be handled by preprocess_data later, likely filled with 0)
     
     return result

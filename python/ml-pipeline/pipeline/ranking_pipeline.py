@@ -814,6 +814,10 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
     
     # Save backtest results
     result.backtest.daily_returns.to_csv(output_dir / "daily_returns.csv")
+    if result.backtest.pre_fee_daily_returns is not None:
+        result.backtest.pre_fee_daily_returns.to_csv(output_dir / "daily_returns_pre_fee.csv")
+    if result.backtest.turnover_series is not None:
+        result.backtest.turnover_series.to_csv(output_dir / "turnover.csv")
     
     # Save random baseline results if available
     if result.random_baseline is not None:
@@ -850,6 +854,8 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
             feature_importances=result.feature_importances,
             metrics_dict=metrics_dict,
             decile_returns=result.decile_returns,
+            turnover_series=result.backtest.turnover_series,
+            pre_fee_returns_series=result.backtest.pre_fee_daily_returns,
             timestamp_col=TIMESTAMP,
             predicted_col="predicted_score",
             actual_col="actual_return",

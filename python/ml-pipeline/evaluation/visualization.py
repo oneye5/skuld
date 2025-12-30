@@ -23,6 +23,7 @@ BACKTEST & PERFORMANCE:
 TURNOVER & COSTS:
 - plot_turnover_histogram: Distribution of portfolio turnover
 - plot_turnover_over_time: Turnover series plot
+- plot_cost_impact: Pre vs post-fee returns and cost drag
 
 FACTOR ANALYSIS:
 - plot_feature_importance: Model feature importances
@@ -541,6 +542,114 @@ def plot_turnover_histogram(
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
     
+    return fig
+
+
+def plot_turnover_over_time(
+    turnover_series: pd.Series,
+    title: str = "Portfolio Turnover Over Time",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 4),
+) -> "plt.Figure":
+    """Plot turnover per rebalance with rolling mean.
+    
+    Args:
+        turnover_series: Series of turnover values indexed by timestamp.
+        title: Chart title.
+        save_path: Optional path to save figure.
+        figsize: Figure size.
+    """
+    _check_matplotlib()
+    series = turnover_series.dropna()
+    if series.empty:
+        raise ValueError("turnover_series is empty")
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.plot(series.index, series.values, color=COLORS['primary'], linewidth=1.4, label='Turnover')
+    rolling = series.rolling(10, min_periods=1).mean()
+    ax.plot(rolling.index, rolling.values, color=COLORS['secondary'], linestyle='--', linewidth=1.8, label='10-period mean')
+    mean_turnover = series.mean()
+    ax.axhline(mean_turnover, color='gray', linestyle=':', linewidth=1.2, label=f'Mean: {mean_turnover:.1%}')
+    ax.set_ylabel("Turnover")
+    ax.set_xlabel("Rebalance")
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    _format_timestamp_axis(ax, series.index)
+    ax.legend()
+    plt.tight_layout()
+    _save_figure(fig, save_path)
+    return fig
+
+
+def plot_cost_impact(
+    returns_post_fee: pd.Series,
+    returns_pre_fee: pd.Series,
+    turnover_series: Optional[pd.Series] = None,
+    title: str = "Cost Impact (Pre vs Post Fee)",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (12, 6),
+) -> "plt.Figure":
+    """Compare pre-fee vs post-fee performance and visualize cost drag.
+    
+    Args:
+        returns_post_fee: Net returns after transaction costs.
+        returns_pre_fee: Gross returns before costs.
+        turnover_series: Optional turnover series to overlay.
+        title: Chart title.
+        save_path: Optional path to save figure.
+        figsize: Figure size.
+    """
+    _check_matplotlib()
+    aligned = pd.concat(
+        [
+            returns_pre_fee.rename("pre_fee"),
+            returns_post_fee.rename("post_fee"),
+        ],
+        axis=1,
+        join="inner",
+    ).dropna()
+    if aligned.empty:
+        raise ValueError("No overlapping data for pre/post-fee returns")
+    cost_drag = aligned["pre_fee"] - aligned["post_fee"]
+    cum_pre = (1 + aligned["pre_fee"]).cumprod() - 1
+    cum_post = (1 + aligned["post_fee"]).cumprod() - 1
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    ax1, ax2 = axes
+    ax1.plot(cum_pre.index, cum_pre.values, color=COLORS['primary'], linewidth=1.8, label='Pre-fee')
+    ax1.plot(cum_post.index, cum_post.values, color=COLORS['secondary'], linewidth=1.8, label='Post-fee')
+    ax1.fill_between(cum_post.index, cum_post.values, cum_pre.values, color='gray', alpha=0.2, label='Cost drag')
+    final_drag = cum_pre.iloc[-1] - cum_post.iloc[-1]
+    ax1.annotate(
+        f'Drag: {final_drag:.2%}',
+        xy=(cum_post.index[-1], cum_post.iloc[-1]),
+        xytext=(5, -15),
+        textcoords='offset points',
+        fontsize=9,
+    )
+    ax1.axhline(0, color='black', linewidth=0.5)
+    ax1.set_ylabel("Cumulative Return")
+    ax1.set_title("Pre vs Post-fee Cumulative Returns", fontsize=11)
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    _format_timestamp_axis(ax1, cum_post.index)
+    ax1.legend()
+    colors = [COLORS['negative'] if v < 0 else COLORS['secondary'] for v in cost_drag]
+    ax2.bar(aligned.index, cost_drag.values, color=colors, width=0.8)
+    ax2.axhline(cost_drag.mean(), color='black', linestyle='--', linewidth=1.2, label=f'Mean drag: {cost_drag.mean():.3%}')
+    ax2.axhline(0, color='black', linewidth=0.5)
+    ax2.set_ylabel("Cost Drag per Period")
+    ax2.set_title("Cost Drag and Turnover", fontsize=11)
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.2%}'))
+    _format_timestamp_axis(ax2, aligned.index)
+    if turnover_series is not None and len(turnover_series) > 0:
+        aligned_turnover = turnover_series.reindex(aligned.index)
+        if aligned_turnover.notna().any():
+            ax2b = ax2.twinx()
+            ax2b.plot(aligned_turnover.index, aligned_turnover.values, color=COLORS['primary'], linewidth=1.3, label='Turnover')
+            ax2b.set_ylabel("Turnover")
+            ax2b.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+            ax2b.legend(loc='upper right')
+    ax2.legend(loc='lower left')
+    plt.tight_layout()
+    _save_figure(fig, save_path)
     return fig
 
 
@@ -2333,6 +2442,8 @@ def generate_all_figures_extended(
     feature_importances: Optional[Dict[str, float]] = None,
     metrics_dict: Optional[Dict[str, Any]] = None,
     decile_returns: Optional[Dict[int, float]] = None,
+    turnover_series: Optional[pd.Series] = None,
+    pre_fee_returns_series: Optional[pd.Series] = None,
     timestamp_col: str = "timestamp",
     predicted_col: str = "predicted_score",
     actual_col: str = "actual_return",
@@ -2349,6 +2460,8 @@ def generate_all_figures_extended(
         feature_importances: Optional dictionary of feature importances.
         metrics_dict: Optional pre-computed metrics dictionary.
         decile_returns: Optional decile returns dictionary.
+        turnover_series: Optional turnover series for cost/turnover plots.
+        pre_fee_returns_series: Optional pre-fee returns series for cost impact.
         timestamp_col: Column name for timestamp.
         predicted_col: Column name for predicted scores.
         actual_col: Column name for actual returns.
@@ -2431,6 +2544,40 @@ def generate_all_figures_extended(
         saved_figures['risk_dashboard'] = path
     except Exception as e:
         print(f"    Warning: Could not generate risk dashboard: {e}")
+
+    # Turnover-focused visuals
+    if turnover_series is not None and len(turnover_series) > 0:
+        try:
+            fig = plot_turnover_histogram(turnover_series)
+            path = str(figures_dir / "23_turnover_histogram.png")
+            _save_figure(fig, path)
+            plt.close(fig)
+            saved_figures['turnover_histogram'] = path
+        except Exception as e:
+            print(f"    Warning: Could not generate turnover histogram: {e}")
+        try:
+            fig = plot_turnover_over_time(turnover_series)
+            path = str(figures_dir / "24_turnover_over_time.png")
+            _save_figure(fig, path)
+            plt.close(fig)
+            saved_figures['turnover_over_time'] = path
+        except Exception as e:
+            print(f"    Warning: Could not generate turnover over time: {e}")
+
+    # Cost impact (pre vs post-fee)
+    if pre_fee_returns_series is not None and len(pre_fee_returns_series) > 0:
+        try:
+            fig = plot_cost_impact(
+                returns_post_fee=returns_series,
+                returns_pre_fee=pre_fee_returns_series,
+                turnover_series=turnover_series,
+            )
+            path = str(figures_dir / "25_cost_impact.png")
+            _save_figure(fig, path)
+            plt.close(fig)
+            saved_figures['cost_impact'] = path
+        except Exception as e:
+            print(f"    Warning: Could not generate cost impact chart: {e}")
     
     print(f"  Generated {len(saved_figures)} figures total in {figures_dir}")
     

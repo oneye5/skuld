@@ -75,6 +75,7 @@ class BacktestResult:
     pre_fee_sharpe_ratio: float = np.nan
     pre_fee_daily_returns: Optional[pd.Series] = None
     pre_fee_total_return: float = np.nan
+    turnover_series: Optional[pd.Series] = None
     
     def summary(self) -> str:
         """Generate human-readable summary."""
@@ -481,6 +482,7 @@ def run_portfolio_backtest(
             pre_fee_sharpe_ratio=np.nan,
             pre_fee_daily_returns=pd.Series(dtype=float),
             pre_fee_total_return=np.nan,
+            turnover_series=pd.Series(dtype=float),
         )
     
     # Convert to Series - post-fee (net) returns
@@ -490,6 +492,8 @@ def run_portfolio_backtest(
     # Convert to Series - pre-fee (gross) returns
     returns_pre_fee_df = pd.DataFrame(daily_returns_pre_fee)
     returns_pre_fee_series = returns_pre_fee_df.set_index("timestamp")["return"]
+
+    turnover_series = pd.Series(turnovers, index=returns_series.index)
     
     # Compute cumulative returns (post-fee)
     cumulative = (1 + returns_series).cumprod() - 1
@@ -523,6 +527,7 @@ def run_portfolio_backtest(
         pre_fee_sharpe_ratio=sharpe_pre_fee,
         pre_fee_daily_returns=returns_pre_fee_series,
         pre_fee_total_return=total_return_pre_fee,
+        turnover_series=turnover_series,
     )
 
 

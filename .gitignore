@@ -70,3 +70,4 @@ desktop.ini
 main_output_ensemble.txt
 python/ml-pipeline/output/debug/latest/1_after_macro_prefix_summary.txt
 *.txt
+*.parquet

@@ -59,6 +59,17 @@ def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.Data
     for col in numeric_cols:
         result[col] = result[col].replace([np.inf, -np.inf], np.nan)
     
+    # CRITICAL: Create missing flags BEFORE forward fill
+    # This ensures flags reflect the ORIGINAL data availability, not post-imputation state
+    # Flag = 1 means data was present (observed)
+    # Flag = 0 means data was missing (will be imputed)
+    missing_flag_cols = {}
+    if add_missing_flags:
+        for col in numeric_cols:
+            # Create flag: 1 if NOT NaN (present), 0 if NaN (missing)
+            present_mask = result[col].notna()
+            missing_flag_cols[f"MissingFlag_{col}"] = present_mask.astype(np.uint8)
+    
     # Forward fill missing values within each ticker group
     # CRITICAL: Sort by TICKER then TIMESTAMP to ensure forward fill only
     # propagates PAST values to PRESENT (not future to past - would cause leakage)
@@ -74,21 +85,13 @@ def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.Data
         result = result.sort_values(TIMESTAMP).reset_index(drop=True)
         result[numeric_cols] = result[numeric_cols].ffill()
 
-    # Add missing flags for ALL features (matching nzx-predictor Java)
-    # Flag = 1 means present, Flag = 0 means missing
-    if add_missing_flags:
-        missing_flag_cols = {}
-        for col in numeric_cols:
-            # Create flag: 1 if NOT NaN (present), 0 if NaN (missing)
-            present_mask = result[col].notna()
-            missing_flag_cols[f"MissingFlag_{col}"] = present_mask.astype(np.uint8)
-        
-        # Add all missing flags at once (more efficient)
-        if missing_flag_cols:
-            flag_df = pd.DataFrame(missing_flag_cols, index=result.index)
-            result = pd.concat([result, flag_df], axis=1)
+    # Add missing flags AFTER forward fill (flags were created before, so they're correct)
+    if add_missing_flags and missing_flag_cols:
+        # Re-index flags to match the sorted result (important after sorting)
+        flag_df = pd.DataFrame(missing_flag_cols, index=result.index)
+        result = pd.concat([result, flag_df], axis=1)
     
-    # Fill NaN with 0.0
+    # Fill remaining NaN with 0.0 (for values that couldn't be forward filled)
     for col in numeric_cols:
         result[col] = result[col].fillna(0.0)
     

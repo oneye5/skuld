@@ -16,10 +16,20 @@ VALUE: str = "value"
 # OHLCV COLUMNS
 # =============================================================================
 CLOSE: str = "Close"
+ADJCLOSE: str = "AdjClose"
 OPEN: str = "Open"
 HIGH: str = "High"
 LOW: str = "Low"
 VOLUME: str = "Volume"
+DIVIDEND: str = "Dividend"
+SPLIT: str = "Split"
+
+
+# =============================================================================
+# ENGINEERED DIVIDEND FEATURES
+# =============================================================================
+TRAILING_DIV_YIELD_252: str = "TrailingDivYield_252d"
+"""Trailing 12-month dividend yield = sum of dividends over past 252 days / current price."""
 
 
 # =============================================================================

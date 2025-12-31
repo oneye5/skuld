@@ -2156,7 +2156,8 @@ def plot_risk_metrics_dashboard(
     # 6. Metrics summary text
     ax6.axis('off')
     
-    # Compute metrics if not provided
+    # Use pre-computed metrics when available, otherwise compute from returns
+    # Note: When computing from returns, assumes daily frequency (252 periods/year)
     from scipy import stats as scipy_stats
     mean_ret = returns.mean() * 252
     std_ret = returns.std() * np.sqrt(252)
@@ -2176,7 +2177,10 @@ def plot_risk_metrics_dashboard(
         f"Skewness:           {skewness:>10.2f}\n"
         f"Kurtosis:           {kurtosis:>10.2f}\n"
         f"Win Rate:           {(returns > 0).mean():>10.2%}\n"
-        f"Periods:            {len(returns):>10d}"
+        f"Periods:            {len(returns):>10d}\n"
+        f"\n"
+        f"Note: Metrics computed from returns\n"
+        f"assuming daily frequency (252/year)."
     )
     
     ax6.text(0.1, 0.5, metrics_text, transform=ax6.transAxes, fontsize=11,
@@ -2382,12 +2386,21 @@ def create_extended_dashboard(
     # 12. Metrics summary
     ax12.axis('off')
     
-    # Compute basic metrics if not provided
-    from scipy import stats as scipy_stats
-    mean_return = returns.mean() * 252
-    std_return = returns.std() * np.sqrt(252)
-    sharpe = mean_return / std_return if std_return > 0 else 0
-    max_dd = drawdown.min()
+    # Use pre-computed metrics when available to match console output
+    # Otherwise compute basic metrics (for standalone visualization)
+    if metrics_dict and 'sharpe_ratio' in metrics_dict:
+        # Use pre-computed backtest metrics (correct for any return frequency)
+        sharpe = metrics_dict.get('sharpe_ratio', 0)
+        mean_return = metrics_dict.get('annualized_return', 0)
+        std_return = metrics_dict.get('annualized_volatility', 0)
+        max_dd = metrics_dict.get('max_drawdown', 0)
+    else:
+        # Fallback: compute from returns (assumes daily frequency)
+        from scipy import stats as scipy_stats
+        mean_return = returns.mean() * 252
+        std_return = returns.std() * np.sqrt(252)
+        sharpe = mean_return / std_return if std_return > 0 else 0
+        max_dd = drawdown.min()
     
     if metrics_dict:
         metrics_text = "\n".join([
@@ -2452,12 +2465,16 @@ def generate_all_figures_extended(
 ) -> Dict[str, str]:
     """Generate all visualization figures including new extended visualizations.
     
+    IMPORTANT: For accurate drawdown and volatility visualization, pass continuous
+    daily returns (true_daily_returns) rather than period returns (daily_returns).
+    This ensures plots reflect actual intra-period movements, not just rebalance points.
+    
     Args:
         predictions_df: DataFrame with timestamp, ticker, predicted_score, actual_return.
         ic_series: Pearson IC series.
         rank_ic_series: Spearman Rank IC series.
         quintile_df: DataFrame with quintile returns (Q1-Q5 columns).
-        returns_series: Portfolio returns series.
+        returns_series: Portfolio returns series (prefer continuous daily returns).
         output_dir: Directory to save figures.
         feature_importances: Optional dictionary of feature importances.
         metrics_dict: Optional pre-computed metrics dictionary.

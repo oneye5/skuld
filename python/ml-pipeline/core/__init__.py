@@ -5,7 +5,12 @@ from core.long_to_wide import long_to_wide, add_macro_prefix
 from core.target_builder import compute_forward_returns, FORWARD_RETURN
 from core.splitter import split_by_timestamp, TrainTestSplit, calculate_window_timestamps
 from core.scaler import fit_scaler, transform_data
-from core.preprocessor import preprocess_data
+from core.preprocessor import (
+    preprocess_data,
+    detect_price_anomalies,
+    filter_anomalous_data,
+    get_anomaly_summary,
+)
 from core.validation import (
     ValidationError,
     validate_dataframe,

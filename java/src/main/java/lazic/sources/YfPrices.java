@@ -16,7 +16,7 @@ import java.util.Set;
 
 public class YfPrices extends DataSourceBase {
 
-	private final String URL_TEMPLATE = "https://query1.finance.yahoo.com/v8/finance/chart/{TICKER}?interval=1d&period1=0&period2=99999999999&includeAdjustedClose=true";
+	private final String URL_TEMPLATE = "https://query1.finance.yahoo.com/v8/finance/chart/{TICKER}?interval=1d&period1=0&period2=99999999999&includeAdjustedClose=true&events=div,split";
 
 	/**
 	 * Returns a set of DataPoint's.
@@ -61,6 +61,12 @@ public class YfPrices extends DataSourceBase {
 
 				Quote quote = indicators.quote.get(0);
 
+				// Get adjusted close if available
+				List<Double> adjCloseValues = null;
+				if (indicators.adjclose != null && !indicators.adjclose.isEmpty()) {
+					adjCloseValues = indicators.adjclose.get(0).adjclose;
+				}
+
 				// 5. Iterate through time series and create DataPoints
 				for (int i = 0; i < timestamps.size(); i++) {
 					Long ts = timestamps.get(i);
@@ -75,6 +81,25 @@ public class YfPrices extends DataSourceBase {
 					addPoint(dataPoints, date, ticker, "High", quote.high, i);
 					addPoint(dataPoints, date, ticker, "Low", quote.low, i);
 					addPoint(dataPoints, date, ticker, "Volume", quote.volume, i);
+					addPoint(dataPoints, date, ticker, "AdjClose", adjCloseValues, i);
+				}
+
+				// 6. Extract dividend events
+				if (result.events != null && result.events.dividends != null) {
+					for (DividendEvent div : result.events.dividends.values()) {
+						LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(div.date), ZoneId.systemDefault());
+						dataPoints.add(new DataPoint(date, ticker, "Dividend", div.amount));
+					}
+				}
+
+				// 7. Extract stock split events
+				if (result.events != null && result.events.splits != null) {
+					for (SplitEvent split : result.events.splits.values()) {
+						LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(split.date), ZoneId.systemDefault());
+						// Store split ratio as numerator/denominator (e.g., 4:1 split = 4.0)
+						double splitRatio = (double) split.numerator / split.denominator;
+						dataPoints.add(new DataPoint(date, ticker, "Split", splitRatio));
+					}
 				}
 
 			} catch (Exception e) {
@@ -111,17 +136,40 @@ public class YfPrices extends DataSourceBase {
 		Meta meta;
 		List<Long> timestamp;
 		Indicators indicators;
+		Events events;
 	}
 
 	private static class Meta {
 		String currency;
 		String symbol;
 		String timezone;
+		String exchangeName;
+		String instrumentType;
+		Double regularMarketPrice;
+		Double previousClose;
+		Double fiftyTwoWeekHigh;
+		Double fiftyTwoWeekLow;
+	}
+
+	private static class Events {
+		java.util.Map<String, DividendEvent> dividends;
+		java.util.Map<String, SplitEvent> splits;
+	}
+
+	private static class DividendEvent {
+		long date;
+		double amount;
+	}
+
+	private static class SplitEvent {
+		long date;
+		double numerator;
+		double denominator;
 	}
 
 	private static class Indicators {
 		List<Quote> quote;
-		// List<AdjClose> adjclose; // Optional: map if you need adjusted close specifically
+		List<AdjClose> adjclose;
 	}
 
 	private static class Quote {
@@ -130,5 +178,9 @@ public class YfPrices extends DataSourceBase {
 		List<Double> low;
 		List<Double> close;
 		List<Double> volume;
+	}
+
+	private static class AdjClose {
+		List<Double> adjclose;
 	}
 }

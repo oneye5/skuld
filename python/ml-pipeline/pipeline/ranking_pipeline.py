@@ -26,6 +26,25 @@ import pandas as pd
 import numpy as np
 
 from config.columns import TIMESTAMP, TICKER, CLOSE, TARGET
+
+
+def _to_json_serializable(obj):
+    """Recursively convert numpy types to JSON-serializable Python types."""
+    if isinstance(obj, dict):
+        return {k: _to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
+    elif isinstance(obj, (np.integer, np.int32, np.int64)):
+        return int(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    return obj
+
+
 from config.settings import (
     NUM_ROLLING_WINDOWS,
     ROLLING_WINDOW_MOVEMENT_YEARS,
@@ -178,6 +197,7 @@ def _generate_run_id() -> str:
 def prepare_wide_data(
     long_df: pd.DataFrame | None = None,
     use_cache: bool = True,
+    filter_anomalies: bool | None = None,
 ) -> pd.DataFrame:
     """Convert long format to wide format with basic preparation.
     
@@ -186,11 +206,22 @@ def prepare_wide_data(
     Args:
         long_df: Long format data. If None and use_cache=True, loads from cache.
         use_cache: Whether to use parquet cache. Default True.
+        filter_anomalies: Whether to detect and filter anomalous price data.
+            None (default) uses the FILTER_ANOMALIES setting from config.
     
     Returns:
         Wide format DataFrame.
     """
-    from core.preprocessor import drop_sparse_columns
+    from core.preprocessor import (
+        drop_sparse_columns, 
+        detect_price_anomalies, 
+        filter_anomalous_data,
+        get_anomaly_summary,
+    )
+    from config.settings import FILTER_ANOMALIES, ANOMALY_RETURN_THRESHOLD
+    
+    if filter_anomalies is None:
+        filter_anomalies = FILTER_ANOMALIES
     
     if use_cache:
         from core.data_cache import load_cached_wide_data
@@ -216,12 +247,65 @@ def prepare_wide_data(
     # Drop extremely sparse columns
     wide_df = drop_sparse_columns(wide_df, threshold=0.95)
     
+    # Detect and filter price anomalies (unadjusted splits, ticker recycling, etc.)
+    # This trims the OLD data before the discontinuity, keeping the newer series
+    if filter_anomalies and CLOSE in wide_df.columns:
+        logger = get_logger(__name__)
+        logger.info("Detecting price anomalies...")
+        
+        wide_df = detect_price_anomalies(
+            wide_df,
+            price_col=CLOSE,
+            return_threshold=ANOMALY_RETURN_THRESHOLD,
+        )
+        
+        summary = get_anomaly_summary(wide_df)
+        if summary.get('n_affected_tickers', 0) > 0:
+            logger.warning(
+                f"Found {summary['anomaly_rows']} anomaly points in {summary['n_affected_tickers']} tickers. "
+                f"Trimming {summary['rows_to_trim']} rows ({summary['trim_pct']:.2f}%) of pre-anomaly data."
+            )
+            logger.info(f"Affected tickers: {summary['affected_tickers']}")
+        
+        wide_df, removed = filter_anomalous_data(wide_df, trim_before_anomaly=True)
+        logger.info(f"Removed {len(removed)} rows (old data before price discontinuities)")
+    
     # Force float32 to save memory
     for col in wide_df.columns:
         if wide_df[col].dtype == 'float64':
             wide_df[col] = wide_df[col].astype('float32')
     
     return wide_df
+
+
+def prepare_wide_data_with_features(
+    long_df: pd.DataFrame | None = None,
+    use_cache: bool = True,
+    experimental_features: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """Convert long format to wide format WITH pre-computed features.
+    
+    Uses parquet caching for ~20x speedup on repeated runs.
+    This combines prepare_wide_data() + add_all_features() with caching.
+    
+    Args:
+        long_df: Long format data. If None, loads from default.
+        use_cache: Whether to use parquet cache. Default True.
+        experimental_features: List of experimental feature sets to apply.
+    
+    Returns:
+        Wide format DataFrame with features computed.
+    """
+    if use_cache and long_df is None:
+        from core.data_cache import load_cached_wide_data_with_features
+        return load_cached_wide_data_with_features(
+            force_refresh=False,
+            experimental_features=experimental_features,
+        )
+    else:
+        # Compute without cache
+        wide_df = prepare_wide_data(long_df, use_cache=use_cache)
+        return add_all_features(wide_df, experimental_features)
 
 
 def add_all_features(
@@ -257,10 +341,16 @@ def add_all_features(
 def get_feature_columns_for_ranking(df: pd.DataFrame) -> List[str]:
     """Get list of feature columns for ranking model.
     
-    Excludes metadata columns (timestamp, ticker, target, forward_return).
+    Excludes metadata columns (timestamp, ticker, target, forward_return)
+    and raw price/event columns that could cause data leakage.
     """
     excluded = {TIMESTAMP, TICKER, TARGET, FORWARD_RETURN, CLOSE, 
-                'Open', 'High', 'Low', 'Volume'}
+                'Open', 'High', 'Low', 'Volume',
+                # Raw price and event columns - potential leakage sources
+                'AdjClose',   # Raw price level - no cross-sectional meaning, used only for returns
+                'Dividend',   # Point-in-time dividend - could encode future events
+                'Split',      # Stock split indicator - could encode future events
+                }
     
     feature_cols = [
         col for col in df.columns
@@ -601,13 +691,18 @@ def run_ranking_pipeline(
     }
     log_config(run_config, logger)
     
-    # Convert to wide format (uses cache for 20x speedup)
-    logger.info("Phase 1: Loading and converting to wide format...")
-    print("Loading and converting to wide format (using cache if available)...")
-    with log_timing("data loading and wide conversion", logger):
-        wide_df = prepare_wide_data(long_df, use_cache=(long_df is None))
-    log_dataframe_info(wide_df, "Wide format data", logger)
-    print(f"Wide format: {len(wide_df):,} rows, {len(wide_df.columns)} columns")
+    # Convert to wide format with features (uses cache for massive speedup)
+    # First run: ~85s, subsequent runs: ~5s
+    logger.info("Phase 1: Loading data with features (using cache if available)...")
+    print("Loading data with features (using cache if available)...")
+    with log_timing("data loading with features", logger):
+        wide_df = prepare_wide_data_with_features(
+            long_df, 
+            use_cache=(long_df is None),
+            experimental_features=experimental_features,
+        )
+    log_dataframe_info(wide_df, "Wide format data with features", logger)
+    print(f"Wide format with features: {len(wide_df):,} rows, {len(wide_df.columns)} columns")
     
     if wide_df.empty:
         logger.error("No data after converting to wide format")
@@ -616,16 +711,6 @@ def run_ranking_pipeline(
     # Get max timestamp for window calculation
     data_max_ts = wide_df[TIMESTAMP].max()
     logger.debug(f"Data max timestamp: {data_max_ts} ({datetime.fromtimestamp(data_max_ts/1000).isoformat()})")
-    
-    # OPTIMIZATION: Compute expensive features ONCE on full dataset
-    # This is safe because these features are per-ticker time-series features
-    # that don't leak information across tickers or into the future
-    logger.info("Phase 2: Computing features on full dataset...")
-    print("Computing features on full dataset (one-time cost)...")
-    with log_timing("feature engineering", logger):
-        wide_df = add_all_features(wide_df, experimental_features)
-    logger.info(f"Feature engineering complete: {len(wide_df.columns)} columns")
-    print(f"After features: {len(wide_df.columns)} columns")
     
     # Calculate window timestamps
     window_timestamps = calculate_window_timestamps(
@@ -651,7 +736,7 @@ def run_ranking_pipeline(
     )
     
     # Run each window
-    logger.info(f"Phase 3: Running {num_windows} ranking windows...")
+    logger.info(f"Phase 2: Running {num_windows} ranking windows...")
     print(f"\nRunning {num_windows} ranking windows...")
     
     all_predictions: List[pd.DataFrame] = []
@@ -693,6 +778,15 @@ def run_ranking_pipeline(
         result.predictions_df["window_id"] = window_id
         all_predictions.append(result.predictions_df)
         
+        # Compute per-window IC
+        window_ic = compute_cross_sectional_ic_series(
+            result.predictions_df,
+            timestamp_col=TIMESTAMP,
+            predicted_col="predicted_score",
+            actual_col="actual_return",
+            min_stocks=min_stocks,
+        ).mean()
+        
         # Create summary
         summary = {
             "window_id": window_id,
@@ -701,18 +795,20 @@ def run_ranking_pipeline(
             "train_stocks_per_ts": f"{result.train_stocks_per_ts:.1f}",
             "test_stocks_per_ts": f"{result.test_stocks_per_ts:.1f}",
             "feature_importances": result.feature_importances,
+            "ic": float(window_ic) if not pd.isna(window_ic) else 0.0,
         }
         window_summaries.append(summary)
         
-        # Log window result
+        # Log window result with actual IC
         log_window_result(
             window_id, 
             result.train_timestamps, 
             result.test_timestamps, 
-            ic=0.0  # Will be computed later
+            ic=window_ic if not pd.isna(window_ic) else 0.0,
         )
         print(f"  Train: {result.train_timestamps} timestamps, {result.train_stocks_per_ts:.1f} stocks/ts")
         print(f"  Test:  {result.test_timestamps} timestamps, {result.test_stocks_per_ts:.1f} stocks/ts")
+        print(f"  IC:    {window_ic:.4f}" if not pd.isna(window_ic) else "  IC:    N/A")
     
     logger.info(f"Windows completed: {windows_completed}/{num_windows}, skipped: {windows_skipped}")
     
@@ -776,6 +872,13 @@ def run_ranking_pipeline(
         transaction_cost_bps=transaction_cost_bps,
         slippage_bps=slippage_bps,
     )
+    
+    # Prepare price data for accurate drawdown calculation with long holding periods
+    # We need daily price data with columns: timestamp, ticker, Close
+    # Convert wide_df (which has Close column) to a format compatible with compute_daily_portfolio_returns
+    price_data_for_backtest = wide_df[[TIMESTAMP, TICKER, 'Close']].copy()
+    print(f"Using {len(price_data_for_backtest):,} price records for continuous drawdown calculation")
+    
     backtest = run_portfolio_backtest(
         combined_predictions,
         portfolio_config,
@@ -783,6 +886,7 @@ def run_ranking_pipeline(
         score_col="predicted_score",
         return_col="actual_return",
         return_horizon_days=forward_return_days,
+        price_data=price_data_for_backtest,
     )
     
     # Run random baseline for comparison
@@ -799,18 +903,32 @@ def run_ranking_pipeline(
     )
     
     # Compute comprehensive metrics
+    # IMPORTANT: Use true_daily_returns (continuous) for risk metrics when available,
+    # not period returns (only 20 points for annual rebalancing)
     print("Computing comprehensive metrics...")
     comprehensive_metrics = None
     decile_returns = None
+    
+    # Choose the right returns series for risk metrics
+    # - true_daily_returns: ~5000 daily observations, proper for Sortino/Calmar/Omega
+    # - daily_returns: period returns (20 observations for annual), not enough for risk metrics
+    returns_for_risk_metrics = backtest.true_daily_returns if backtest.true_daily_returns is not None and len(backtest.true_daily_returns) > 50 else backtest.daily_returns
+    
+    # Determine periods_per_year based on which returns we're using
+    if backtest.true_daily_returns is not None and len(backtest.true_daily_returns) > 50:
+        risk_periods_per_year = 252  # Daily returns
+    else:
+        risk_periods_per_year = max(1, 252 // forward_return_days)  # Period returns
+    
     try:
         comprehensive_metrics = ComprehensiveMetrics.from_predictions_and_returns(
             combined_predictions,
-            backtest.daily_returns,
+            returns_for_risk_metrics,
             timestamp_col=TIMESTAMP,
             predicted_col="predicted_score",
             actual_col="actual_return",
             min_stocks=MIN_STOCKS_FOR_IC,
-            forward_return_days=forward_return_days,
+            forward_return_days=forward_return_days,  # Always use actual horizon for IC annualization
         )
         decile_returns = comprehensive_metrics.decile_returns
     except Exception as e:
@@ -902,16 +1020,16 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
     
     # Save config
     with open(output_dir / "config.json", "w") as f:
-        json.dump(result.config, f, indent=2)
+        json.dump(_to_json_serializable(result.config), f, indent=2)
     
     # Save metrics (basic)
     with open(output_dir / "metrics.json", "w") as f:
-        json.dump(result.metrics.to_dict(), f, indent=2)
+        json.dump(_to_json_serializable(result.metrics.to_dict()), f, indent=2)
     
     # Save comprehensive metrics if available
     if result.comprehensive_metrics is not None:
         with open(output_dir / "comprehensive_metrics.json", "w") as f:
-            json.dump(result.comprehensive_metrics.to_dict(), f, indent=2)
+            json.dump(_to_json_serializable(result.comprehensive_metrics.to_dict()), f, indent=2)
     
     # Save feature importances if available
     if result.feature_importances:
@@ -920,7 +1038,7 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
             sorted(result.feature_importances.items(), key=lambda x: x[1], reverse=True)
         )
         with open(output_dir / "feature_importances.json", "w") as f:
-            json.dump(sorted_importances, f, indent=2)
+            json.dump(_to_json_serializable(sorted_importances), f, indent=2)
     
     # Save predictions
     result.predictions_df.to_csv(output_dir / "predictions.csv", index=False)
@@ -934,6 +1052,9 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
         result.backtest.pre_fee_daily_returns.to_csv(output_dir / "daily_returns_pre_fee.csv")
     if result.backtest.turnover_series is not None:
         result.backtest.turnover_series.to_csv(output_dir / "turnover.csv")
+    if result.backtest.true_daily_returns is not None:
+        result.backtest.true_daily_returns.to_csv(output_dir / "true_daily_returns.csv")
+        print(f"Saved {len(result.backtest.true_daily_returns)} continuous daily returns for accurate drawdown")
     
     # Save detailed backtest metrics (implementation-focused)
     backtest_metrics = {
@@ -965,13 +1086,18 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
             "slippage_bps": result.config.get("slippage_bps", 0),
         },
     }
+    
+    # Add annual statistics if available
+    if result.backtest.annual_stats is not None:
+        backtest_metrics["annual_statistics"] = result.backtest.annual_stats.to_dict()
+    
     with open(output_dir / "backtest_metrics.json", "w") as f:
-        json.dump(backtest_metrics, f, indent=2)
+        json.dump(_to_json_serializable(backtest_metrics), f, indent=2)
     
     # Save random baseline results if available
     if result.random_baseline is not None:
         with open(output_dir / "random_baseline.json", "w") as f:
-            json.dump(result.random_baseline.to_dict(), f, indent=2)
+            json.dump(_to_json_serializable(result.random_baseline.to_dict()), f, indent=2)
     
     # Save window summaries (without feature importances to keep file small)
     window_summaries_clean = [
@@ -979,7 +1105,7 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
         for ws in result.window_summaries
     ]
     with open(output_dir / "window_summaries.json", "w") as f:
-        json.dump(window_summaries_clean, f, indent=2)
+        json.dump(_to_json_serializable(window_summaries_clean), f, indent=2)
     
     # Generate visualizations using the extended generator
     try:
@@ -992,13 +1118,38 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
         if result.comprehensive_metrics:
             metrics_dict.update(result.comprehensive_metrics.to_dict())
         
+        # Add backtest metrics to avoid recalculation in visualization
+        # This ensures figures show the same metrics as console output
+        metrics_dict.update({
+            'sharpe_ratio': result.backtest.sharpe_ratio,
+            'pre_fee_sharpe_ratio': result.backtest.pre_fee_sharpe_ratio,
+            'annualized_return': result.backtest.annualized_return_post_fee,
+            'annualized_volatility': result.backtest.annualized_volatility,
+            'max_drawdown': result.backtest.max_drawdown,
+            'calmar_ratio': result.backtest.calmar_ratio,
+            'total_return': result.backtest.total_return,
+        })
+        
+        # Use true_daily_returns (continuous) for visualization when available
+        # This ensures drawdown and other plots reflect actual daily movements
+        # rather than only rebalance-point movements
+        returns_for_viz = result.backtest.true_daily_returns if (
+            result.backtest.true_daily_returns is not None 
+            and len(result.backtest.true_daily_returns) > 10
+        ) else result.backtest.daily_returns
+        
+        if result.backtest.true_daily_returns is not None and len(result.backtest.true_daily_returns) > 10:
+            print(f"  Using {len(returns_for_viz)} continuous daily returns for accurate visualization")
+        else:
+            print(f"  Using {len(returns_for_viz)} period returns for visualization")
+        
         # Generate all figures including extended visualizations
         saved_figures = generate_all_figures_extended(
             predictions_df=result.predictions_df,
             ic_series=result.metrics.ic_series,
             rank_ic_series=result.metrics.rank_ic_series,
             quintile_df=result.quintile_returns,
-            returns_series=result.backtest.daily_returns,
+            returns_series=returns_for_viz,
             output_dir=str(output_dir),
             feature_importances=result.feature_importances,
             metrics_dict=metrics_dict,
@@ -1012,7 +1163,7 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
         
         # Save figure manifest
         with open(output_dir / "figures_manifest.json", "w") as f:
-            json.dump(saved_figures, f, indent=2)
+            json.dump(_to_json_serializable(saved_figures), f, indent=2)
         
         import matplotlib.pyplot as plt
         plt.close('all')
@@ -1031,6 +1182,12 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
                 create_ranking_dashboard,
             )
             
+            # Use true_daily_returns when available for accurate visualization
+            returns_for_viz = result.backtest.true_daily_returns if (
+                result.backtest.true_daily_returns is not None 
+                and len(result.backtest.true_daily_returns) > 10
+            ) else result.backtest.daily_returns
+            
             # Quintile chart
             plot_quintile_returns(
                 result.quintile_returns,
@@ -1045,7 +1202,7 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
             
             # Cumulative returns
             plot_cumulative_returns(
-                result.backtest.daily_returns,
+                returns_for_viz,
                 save_path=str(output_dir / "figures" / "cumulative_returns.png"),
             )
             
@@ -1053,7 +1210,7 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
             create_ranking_dashboard(
                 result.metrics.ic_series,
                 result.quintile_returns,
-                result.backtest.daily_returns,
+                returns_for_viz,
                 save_path=str(output_dir / "figures" / "dashboard.png"),
             )
             

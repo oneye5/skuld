@@ -320,3 +320,275 @@ class TestQuintileBacktest:
         
         # Q5 should have highest returns, Q1 lowest
         assert quintile_returns["Q5"].mean() > quintile_returns["Q1"].mean()
+
+
+class TestComputeDailyPortfolioReturns:
+    """Tests for compute_daily_portfolio_returns - true daily return calculation."""
+    
+    def test_basic_daily_returns_calculation(self):
+        """Should compute daily returns from holdings and price data."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        # Create holdings: 50% in TICK_A, 50% in TICK_B at ts=1000
+        holdings = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "weight": 0.5},
+            {TIMESTAMP: 1000, TICKER: "TICK_B", "weight": 0.5},
+        ])
+        
+        # Create price data: TICK_A goes up 10%, TICK_B goes down 10%
+        prices = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "Close": 100.0},
+            {TIMESTAMP: 1000, TICKER: "TICK_B", "Close": 100.0},
+            {TIMESTAMP: 1001, TICKER: "TICK_A", "Close": 110.0},  # +10%
+            {TIMESTAMP: 1001, TICKER: "TICK_B", "Close": 90.0},   # -10%
+        ])
+        
+        daily_returns = compute_daily_portfolio_returns(
+            holdings, prices, timestamp_col=TIMESTAMP, ticker_col=TICKER
+        )
+        
+        # Portfolio return = 0.5 * 10% + 0.5 * (-10%) = 0%
+        assert len(daily_returns) == 1
+        assert abs(daily_returns.iloc[0]) < 0.01  # ~0%
+    
+    def test_long_short_portfolio_daily_returns(self):
+        """Should handle long (positive weight) and short (negative weight) positions."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        # Long TICK_A, Short TICK_B (equal weight)
+        holdings = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "weight": 0.5},   # Long
+            {TIMESTAMP: 1000, TICKER: "TICK_B", "weight": -0.5},  # Short
+        ])
+        
+        # Both stocks go up 10%
+        prices = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "Close": 100.0},
+            {TIMESTAMP: 1000, TICKER: "TICK_B", "Close": 100.0},
+            {TIMESTAMP: 1001, TICKER: "TICK_A", "Close": 110.0},  # +10%
+            {TIMESTAMP: 1001, TICKER: "TICK_B", "Close": 110.0},  # +10%
+        ])
+        
+        daily_returns = compute_daily_portfolio_returns(
+            holdings, prices, timestamp_col=TIMESTAMP, ticker_col=TICKER
+        )
+        
+        # Portfolio return = 0.5 * 10% + (-0.5) * 10% = 0%
+        # Long gains, short loses
+        assert len(daily_returns) == 1
+        assert abs(daily_returns.iloc[0]) < 0.01  # ~0%
+    
+    def test_multiple_days_returns(self):
+        """Should compute returns for multiple consecutive days."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        holdings = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "weight": 1.0},
+        ])
+        
+        # 3 days of prices: +5%, +3%, -2%
+        prices = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "Close": 100.0},
+            {TIMESTAMP: 1001, TICKER: "TICK_A", "Close": 105.0},  # +5%
+            {TIMESTAMP: 1002, TICKER: "TICK_A", "Close": 108.15}, # +3%
+            {TIMESTAMP: 1003, TICKER: "TICK_A", "Close": 105.99}, # -2%
+        ])
+        
+        daily_returns = compute_daily_portfolio_returns(
+            holdings, prices, timestamp_col=TIMESTAMP, ticker_col=TICKER
+        )
+        
+        assert len(daily_returns) == 3
+        assert abs(daily_returns.iloc[0] - 0.05) < 0.001  # +5%
+        assert abs(daily_returns.iloc[1] - 0.03) < 0.001  # +3%
+        assert abs(daily_returns.iloc[2] - (-0.02)) < 0.001  # -2%
+    
+    def test_rebalancing_changes_holdings(self):
+        """Should switch holdings at rebalance points."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        # Rebalance at ts=1000: hold TICK_A
+        # Rebalance at ts=1002: switch to TICK_B
+        holdings = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "weight": 1.0},
+            {TIMESTAMP: 1002, TICKER: "TICK_B", "weight": 1.0},
+        ])
+        
+        prices = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "Close": 100.0},
+            {TIMESTAMP: 1000, TICKER: "TICK_B", "Close": 50.0},
+            {TIMESTAMP: 1001, TICKER: "TICK_A", "Close": 110.0},  # A: +10%
+            {TIMESTAMP: 1001, TICKER: "TICK_B", "Close": 55.0},   # B: +10%
+            {TIMESTAMP: 1002, TICKER: "TICK_A", "Close": 115.0},  # A: +4.5%
+            {TIMESTAMP: 1002, TICKER: "TICK_B", "Close": 50.0},   # B: -9%
+            {TIMESTAMP: 1003, TICKER: "TICK_A", "Close": 120.0},  # A: +4.3%
+            {TIMESTAMP: 1003, TICKER: "TICK_B", "Close": 60.0},   # B: +20%
+        ])
+        
+        daily_returns = compute_daily_portfolio_returns(
+            holdings, prices, timestamp_col=TIMESTAMP, ticker_col=TICKER
+        )
+        
+        # Day 1 (ts=1001): Hold A, expect +10%
+        # Day 2 (ts=1002): Still hold A (rebalance happens AT 1002), expect +4.5%
+        # Day 3 (ts=1003): Now hold B, expect +20%
+        assert len(daily_returns) == 3
+        assert abs(daily_returns.iloc[0] - 0.10) < 0.01  # +10% from A
+        assert daily_returns.iloc[2] > 0.15  # ~+20% from B
+    
+    def test_empty_holdings_returns_empty_series(self):
+        """Should return empty series if no holdings."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        holdings = pd.DataFrame(columns=[TIMESTAMP, TICKER, "weight"])
+        prices = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "Close": 100.0},
+        ])
+        
+        daily_returns = compute_daily_portfolio_returns(holdings, prices)
+        
+        assert len(daily_returns) == 0
+    
+    def test_transaction_cost_applied_at_rebalance(self):
+        """Should deduct transaction cost at rebalance points."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        holdings = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "weight": 1.0},
+        ])
+        
+        # Flat prices - no gain
+        prices = pd.DataFrame([
+            {TIMESTAMP: 1000, TICKER: "TICK_A", "Close": 100.0},
+            {TIMESTAMP: 1001, TICKER: "TICK_A", "Close": 100.0},
+        ])
+        
+        # Apply 100 bps = 1% cost
+        daily_returns = compute_daily_portfolio_returns(
+            holdings, prices, 
+            timestamp_col=TIMESTAMP, ticker_col=TICKER,
+            cost_bps_per_rebalance=100.0,
+        )
+        
+        # Return should be -1% due to cost
+        assert len(daily_returns) == 1
+        assert abs(daily_returns.iloc[0] - (-0.01)) < 0.001
+
+
+class TestBacktestWithPriceData:
+    """Tests for run_portfolio_backtest with price_data for accurate drawdown."""
+    
+    def test_backtest_with_price_data_computes_realistic_drawdown(self):
+        """With price_data, max drawdown should reflect intra-period volatility."""
+        from evaluation.portfolio_simulator import run_portfolio_backtest, PortfolioConfig
+        
+        np.random.seed(42)
+        
+        # Create predictions at annual intervals
+        base_ts = 1000000000000
+        ms_per_day = 86400000
+        
+        tickers = ["TICK_A", "TICK_B", "TICK_C", "TICK_D"]
+        
+        # Create daily price data with volatility
+        price_records = []
+        for ticker in tickers:
+            price = 100.0
+            for day in range(365 * 2):  # 2 years
+                ts = base_ts + day * ms_per_day
+                price *= 1 + np.random.randn() * 0.03  # 3% daily vol
+                price_records.append({
+                    TIMESTAMP: ts,
+                    TICKER: ticker,
+                    "Close": price,
+                })
+        
+        price_df = pd.DataFrame(price_records)
+        
+        # Create predictions at year boundaries
+        prediction_records = []
+        for day in [0, 365]:  # Start and 1 year later
+            ts = base_ts + day * ms_per_day
+            for ticker in tickers:
+                prediction_records.append({
+                    TIMESTAMP: ts,
+                    TICKER: ticker,
+                    "predicted_score": np.random.randn(),
+                    "actual_return": 0.10,  # Dummy
+                })
+        
+        pred_df = pd.DataFrame(prediction_records)
+        
+        config = PortfolioConfig(top_n=2, bottom_n=2, transaction_cost_bps=10)
+        
+        # Without price data - drawdown likely 0 (only 2 positive periods)
+        result_no_prices = run_portfolio_backtest(
+            pred_df, config, return_horizon_days=365, price_data=None
+        )
+        
+        # With price data - should have realistic drawdown
+        result_with_prices = run_portfolio_backtest(
+            pred_df, config, return_horizon_days=365, price_data=price_df
+        )
+        
+        # With daily price data, we should see some drawdown
+        # (3% daily vol over 2 years will definitely have drawdowns)
+        assert result_with_prices.max_drawdown > 0.01  # At least 1%
+    
+    def test_backtest_without_price_data_uses_period_drawdown(self):
+        """Without price_data, drawdown is computed from period returns only."""
+        from evaluation.portfolio_simulator import run_portfolio_backtest, PortfolioConfig
+        
+        # Create data with all positive period returns
+        data = []
+        for ts in range(3):
+            for ticker in ["A", "B", "C", "D"]:
+                data.append({
+                    TIMESTAMP: ts * 365 * 86400000,  # Annual timestamps
+                    TICKER: ticker,
+                    "predicted_score": np.random.randn(),
+                    "actual_return": 0.10,  # All positive
+                })
+        
+        df = pd.DataFrame(data)
+        config = PortfolioConfig(top_n=2, bottom_n=2, transaction_cost_bps=0)
+        
+        result = run_portfolio_backtest(
+            df, config, return_horizon_days=365, price_data=None
+        )
+        
+        # All periods positive, no drawdown
+        assert result.max_drawdown == 0.0
+    
+    def test_price_data_only_used_for_long_horizons(self):
+        """Price data should only be used when return_horizon_days > 20."""
+        from evaluation.portfolio_simulator import run_portfolio_backtest, PortfolioConfig
+        
+        # With short horizon (daily), price_data shouldn't affect drawdown calculation
+        data = []
+        for ts in range(100):
+            for ticker in ["A", "B"]:
+                data.append({
+                    TIMESTAMP: ts * 86400000,
+                    TICKER: ticker,
+                    "predicted_score": np.random.randn(),
+                    "actual_return": 0.01 if ts % 2 == 0 else -0.005,
+                })
+        
+        df = pd.DataFrame(data)
+        
+        # Dummy price data
+        price_df = pd.DataFrame([
+            {TIMESTAMP: 0, TICKER: "A", "Close": 100.0},
+        ])
+        
+        config = PortfolioConfig(top_n=1, bottom_n=1, transaction_cost_bps=0)
+        
+        # With return_horizon_days=1 (daily), price_data shouldn't be used
+        result = run_portfolio_backtest(
+            df, config, return_horizon_days=1, price_data=price_df
+        )
+        
+        # Should have computed drawdown from the period returns
+        # Some negative returns, so should have some drawdown
+        assert result.num_rebalances > 50

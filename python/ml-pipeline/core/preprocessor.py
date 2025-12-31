@@ -1,11 +1,172 @@
-"""Module for data preprocessing (cleaning, NaN handling)."""
+"""Module for data preprocessing (cleaning, NaN handling, anomaly detection)."""
 
 import pandas as pd
 import numpy as np
 import warnings
+from typing import Tuple, Optional
 
 from config.columns import TIMESTAMP, TICKER, TARGET
 from config.settings import CLIP_THRESHOLD
+
+
+# =============================================================================
+# ANOMALY DETECTION FOR DATA QUALITY
+# =============================================================================
+
+def detect_price_anomalies(
+    df: pd.DataFrame,
+    price_col: str = "Close",
+    return_threshold: float = 2.0,
+    timestamp_col: str = TIMESTAMP,
+    ticker_col: str = TICKER,
+) -> pd.DataFrame:
+    """Detect anomalous price moves indicating data quality issues.
+    
+    Identifies rows where daily price returns exceed a threshold, suggesting
+    unadjusted stock splits, ticker recycling, or data errors.
+    
+    Args:
+        df: Wide-format DataFrame with price data.
+        price_col: Column name for price (default 'Close').
+        return_threshold: Absolute return threshold to flag (default 2.0 = 200%).
+        timestamp_col: Column name for timestamp.
+        ticker_col: Column name for ticker.
+    
+    Returns:
+        DataFrame with additional columns:
+            - _daily_return: Computed daily return
+            - _is_anomaly: Boolean flag (True = anomalous data point)
+            - _anomaly_timestamp: Timestamp of first anomaly for this ticker (if any)
+    """
+    if df.empty or price_col not in df.columns:
+        return df
+    
+    result = df.copy()
+    
+    # Sort by ticker and timestamp
+    result = result.sort_values([ticker_col, timestamp_col]).reset_index(drop=True)
+    
+    # Compute daily returns
+    result['_prev_price'] = result.groupby(ticker_col)[price_col].shift(1)
+    result['_daily_return'] = (result[price_col] - result['_prev_price']) / result['_prev_price']
+    
+    # Flag anomalies (extreme returns)
+    result['_is_anomaly'] = abs(result['_daily_return']) > return_threshold
+    
+    # For each ticker, find the FIRST anomaly timestamp
+    # This marks the discontinuity point where we should trim
+    anomaly_rows = result[result['_is_anomaly']]
+    first_anomaly_per_ticker = anomaly_rows.groupby(ticker_col)[timestamp_col].min()
+    result['_anomaly_timestamp'] = result[ticker_col].map(first_anomaly_per_ticker)
+    
+    # Clean up temp column
+    result = result.drop(columns=['_prev_price'])
+    
+    return result
+
+
+def filter_anomalous_data(
+    df: pd.DataFrame,
+    trim_before_anomaly: bool = True,
+    timestamp_col: str = TIMESTAMP,
+    ticker_col: str = TICKER,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Filter anomalous data by trimming pre-anomaly history.
+    
+    When a ticker has an anomaly (e.g., ticker recycling, unadjusted split),
+    the data before and after represent different price series that shouldn't
+    be connected. This function keeps only the NEWER portion (after the anomaly).
+    
+    Args:
+        df: DataFrame with anomaly detection columns (from detect_price_anomalies).
+        trim_before_anomaly: If True, remove all data BEFORE the first anomaly
+            for each affected ticker (keeps the newer, post-anomaly series).
+            If False, just remove the anomalous rows themselves.
+        timestamp_col: Column name for timestamp.
+        ticker_col: Column name for ticker.
+    
+    Returns:
+        Tuple of (filtered_df, removed_df):
+            - filtered_df: Data with old series trimmed
+            - removed_df: The removed rows (for inspection)
+    """
+    if '_is_anomaly' not in df.columns:
+        warnings.warn("No _is_anomaly column found. Run detect_price_anomalies first.")
+        return df, pd.DataFrame()
+    
+    if trim_before_anomaly and '_anomaly_timestamp' in df.columns:
+        # For tickers with anomalies, keep only data >= anomaly timestamp
+        # (i.e., the newer series after the discontinuity)
+        has_anomaly = df['_anomaly_timestamp'].notna()
+        
+        # Keep: no anomaly OR timestamp >= first anomaly timestamp
+        keep_mask = ~has_anomaly | (df[timestamp_col] >= df['_anomaly_timestamp'])
+        
+        filtered = df[keep_mask].copy()
+        removed = df[~keep_mask].copy()
+    else:
+        # Simple approach: just remove anomaly rows
+        filtered = df[~df['_is_anomaly']].copy()
+        removed = df[df['_is_anomaly']].copy()
+    
+    # Clean up anomaly metadata columns
+    anomaly_cols = ['_daily_return', '_is_anomaly', '_anomaly_timestamp']
+    filtered = filtered.drop(columns=[c for c in anomaly_cols if c in filtered.columns])
+    
+    return filtered, removed
+
+
+def get_anomaly_summary(
+    df: pd.DataFrame,
+    ticker_col: str = TICKER,
+    timestamp_col: str = TIMESTAMP,
+) -> dict:
+    """Get summary of anomalies detected in data.
+    
+    Args:
+        df: DataFrame with _is_anomaly column.
+        ticker_col: Column name for ticker.
+        timestamp_col: Column name for timestamp.
+    
+    Returns:
+        Dictionary with anomaly statistics.
+    """
+    if '_is_anomaly' not in df.columns:
+        return {'error': 'No _is_anomaly column found'}
+    
+    anomalies = df[df['_is_anomaly']]
+    
+    # Get tickers that have any anomaly
+    affected_tickers = []
+    if '_anomaly_timestamp' in df.columns:
+        affected_tickers = df[df['_anomaly_timestamp'].notna()][ticker_col].unique().tolist()
+    elif ticker_col in anomalies.columns:
+        affected_tickers = anomalies[ticker_col].unique().tolist()
+    
+    # Count rows that would be trimmed (before first anomaly for affected tickers)
+    rows_to_trim = 0
+    if '_anomaly_timestamp' in df.columns:
+        has_anomaly = df['_anomaly_timestamp'].notna()
+        before_anomaly = df[timestamp_col] < df['_anomaly_timestamp']
+        rows_to_trim = (has_anomaly & before_anomaly).sum()
+    
+    summary = {
+        'total_rows': len(df),
+        'anomaly_rows': len(anomalies),
+        'rows_to_trim': int(rows_to_trim),
+        'trim_pct': rows_to_trim / len(df) * 100 if len(df) > 0 else 0,
+        'affected_tickers': affected_tickers,
+        'n_affected_tickers': len(affected_tickers),
+    }
+    
+    # Add sample of extreme returns
+    if '_daily_return' in anomalies.columns and len(anomalies) > 0:
+        extreme_returns = anomalies['_daily_return'].dropna()
+        if len(extreme_returns) > 0:
+            summary['max_return'] = float(extreme_returns.max())
+            summary['min_return'] = float(extreme_returns.min())
+    
+    return summary
 
 
 def preprocess_data(df: pd.DataFrame, add_missing_flags: bool = True) -> pd.DataFrame:

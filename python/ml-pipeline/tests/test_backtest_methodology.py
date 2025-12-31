@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-from config.columns import TIMESTAMP, TICKER
+from config.columns import TIMESTAMP, TICKER, ADJCLOSE
 from config.settings import MS_PER_DAY
 from evaluation.portfolio_simulator import (
     run_portfolio_backtest,
@@ -110,6 +110,7 @@ class TestOverlappingReturns:
             TIMESTAMP: timestamps,
             TICKER: ["A"] * 10,
             "Close": prices,
+            ADJCLOSE: prices,
         })
         
         # Compute 5-day forward returns
@@ -145,6 +146,7 @@ class TestOverlappingReturns:
             TIMESTAMP: timestamps,
             TICKER: ["A"] * 20,
             "Close": prices,
+            ADJCLOSE: prices,
         })
         
         result = compute_forward_returns(df, lookahead_days=5)
@@ -167,10 +169,12 @@ class TestLookaheadBias:
     def test_forward_return_uses_future_price_only(self):
         """Forward return should only depend on future price, not current day info."""
         timestamps = [i * MS_PER_DAY for i in range(10)]
+        prices = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
         df = pd.DataFrame({
             TIMESTAMP: timestamps,
             TICKER: ["A"] * 10,
-            "Close": [100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
+            "Close": prices,
+            ADJCLOSE: prices,
         })
         
         result = compute_forward_returns(df, lookahead_days=5)
@@ -398,11 +402,13 @@ class TestPipelineIntegrity:
         # Create synthetic data
         n_days = 100
         timestamps = [i * MS_PER_DAY for i in range(n_days)]  # Daily
+        prices = 100 * np.cumprod(1 + np.random.normal(0.001, 0.02, n_days))
         
         df = pd.DataFrame({
             TIMESTAMP: timestamps,
             TICKER: ["A"] * n_days,
-            "Close": 100 * np.cumprod(1 + np.random.normal(0.001, 0.02, n_days)),
+            "Close": prices,
+            ADJCLOSE: prices,
         })
         
         # Compute 5-day forward returns
@@ -445,5 +451,187 @@ class TestPipelineIntegrity:
         assert abs(actual_ratio - expected_ratio) < 0.1
 
 
+class TestPortfolioTimestampSampling:
+    """Tests for correct timestamp sampling in portfolio backtest."""
+    
+    def test_timestamp_sampling_by_days_not_index(self):
+        """Portfolio backtest should sample by actual days, not array index.
+        
+        Bug fix test: Previously timestamps[::365] sampled every 365th INDEX,
+        not every 365 days. With daily timestamps (avg ~4 day spacing),
+        this resulted in sampling every ~1300 days instead of ~365.
+        """
+        # Create predictions with timestamps every ~4 days on average
+        # (simulating real-world data where timestamps are trading days)
+        MS_PER_DAY_LOCAL = 86_400_000
+        n_days = 2000
+        
+        # Simulate ~500 timestamps covering ~2000 days (avg 4 days apart)
+        np.random.seed(42)
+        timestamps = []
+        current_ts = 0
+        for _ in range(500):
+            timestamps.append(current_ts)
+            # Skip 1-7 days randomly (avg ~4 days)
+            current_ts += int(np.random.choice([1, 2, 3, 4, 5, 6, 7]) * MS_PER_DAY_LOCAL)
+        
+        # Create fake predictions
+        df = pd.DataFrame({
+            TIMESTAMP: sorted(timestamps * 10),  # 10 stocks per timestamp
+            TICKER: [f"S{i}" for i in range(10)] * len(timestamps),
+            "predicted_score": np.random.randn(len(timestamps) * 10),
+            "actual_return": np.random.randn(len(timestamps) * 10) * 0.05,
+        })
+        
+        config = PortfolioConfig(top_n=5, bottom_n=5)
+        result = run_portfolio_backtest(
+            df, config, 
+            return_horizon_days=365
+        )
+        
+        # With 2000 days of data and 365-day horizon, we should get ~5-6 periods
+        # NOT 500/365 ≈ 1 period (which the bug would give)
+        total_days = (max(timestamps) - min(timestamps)) / MS_PER_DAY_LOCAL
+        expected_periods = max(1, int(total_days / 365))
+        actual_periods = result.num_rebalances
+        
+        print(f"Total days: {total_days:.0f}")
+        print(f"Expected periods (~365 days apart): {expected_periods}")
+        print(f"Actual periods: {actual_periods}")
+        
+        # Should be within reasonable range of expected
+        assert actual_periods >= expected_periods - 1, (
+            f"Too few periods ({actual_periods}) for {total_days:.0f} days "
+            f"with 365-day horizon. Expected ~{expected_periods}."
+        )
+        assert actual_periods <= expected_periods + 2, (
+            f"Too many periods ({actual_periods}). May indicate bug in sampling."
+        )
+
+
+class TestDailyReturnCapping:
+    """Tests for handling anomalous price data in portfolio simulation."""
+    
+    def test_anomalous_split_data_is_detected_and_excluded(self):
+        """Unadjusted split patterns should be detected and excluded."""
+        from evaluation.portfolio_simulator import _detect_anomalous_prices
+        
+        # Create price data with a split pattern: -66% then +200%
+        price_data = pd.DataFrame({
+            TIMESTAMP: [1000, 1001, 1002, 1003],
+            TICKER: ['A', 'A', 'A', 'A'],
+            'Close': [100.0, 33.0, 100.0, 102.0],  # Split at day 2, reverses at day 3
+        })
+        
+        excluded = _detect_anomalous_prices(
+            price_data, TIMESTAMP, TICKER, 'Close', threshold=0.40
+        )
+        
+        # Should exclude the split day (1001) and reversal day (1002)
+        assert (1001, 'A') in excluded, "Split day should be excluded"
+        assert (1002, 'A') in excluded, "Reversal day should be excluded"
+        assert (1000, 'A') not in excluded, "Normal day before split should not be excluded"
+        assert (1003, 'A') not in excluded, "Normal day after reversal should not be excluded"
+    
+    def test_portfolio_excludes_anomalous_ticker_days(self):
+        """Portfolio returns should skip ticker-days with anomalous prices."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        # Holdings: 100% in stock A
+        holdings = pd.DataFrame({
+            TIMESTAMP: [1000],
+            TICKER: ['A'],
+            'weight': [1.0],
+        })
+        
+        # Price data with split pattern
+        price_data = pd.DataFrame({
+            TIMESTAMP: [1000, 1001, 1002, 1003, 1004],
+            TICKER: ['A', 'A', 'A', 'A', 'A'],
+            'Close': [100.0, 33.0, 100.0, 102.0, 104.0],  # Split/reversal in middle
+        })
+        
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            returns = compute_daily_portfolio_returns(
+                holdings, price_data, cost_bps_per_rebalance=0
+            )
+            # Should warn about anomalous prices
+            assert any("anomalous" in str(warning.message).lower() for warning in w)
+        
+        # Returns should not include the extreme -67% or +200% moves
+        if len(returns) > 0:
+            assert returns.min() > -0.50, "Should not have extreme negative return from split"
+            assert returns.max() < 0.50, "Should not have extreme positive return from reversal"
+    
+    def test_suspicious_return_threshold_handles_extreme_moves(self):
+        """Suspicious return threshold should treat extreme returns as flat (0%)."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        # Holdings: 100% in stock A
+        holdings = pd.DataFrame({
+            TIMESTAMP: [1000],
+            TICKER: ['A'],
+            'weight': [1.0],
+        })
+        
+        # Price data with extreme move that doesn't trigger anomaly detection
+        # (anomaly detection looks for reversal pattern, this is a sustained move)
+        price_data = pd.DataFrame({
+            TIMESTAMP: [1000, 1001, 1002, 1003],
+            TICKER: ['A', 'A', 'A', 'A'],
+            'Close': [100.0, 1000.0, 1100.0, 1200.0],  # 10x jump, then normal moves
+        })
+        
+        # With suspect_return_threshold=0.5 (50%)
+        # Extreme returns are treated as 0% (flat), not clipped
+        returns_filtered = compute_daily_portfolio_returns(
+            holdings, price_data, cost_bps_per_rebalance=0,
+            suspect_return_threshold=0.5
+        )
+        
+        # The 10x move (900% return) exceeds threshold so it becomes 0%
+        assert len(returns_filtered) > 0
+        # After 10x jump is zeroed, remaining returns are small (~10%)
+        assert returns_filtered.max() <= 0.5 + 1e-9, "Extreme return should be treated as 0%"
+        
+        # Without threshold (None), should see the full 900% return
+        returns_unfiltered = compute_daily_portfolio_returns(
+            holdings, price_data, cost_bps_per_rebalance=0,
+            suspect_return_threshold=None
+        )
+        
+        assert returns_unfiltered.max() > 5.0, "Without threshold, should show 900% move"
+    
+    def test_suspicious_threshold_works_for_negative_returns(self):
+        """Suspicious return threshold should also handle extreme negative returns."""
+        from evaluation.portfolio_simulator import compute_daily_portfolio_returns
+        
+        holdings = pd.DataFrame({
+            TIMESTAMP: [1000],
+            TICKER: ['A'],
+            'weight': [1.0],
+        })
+        
+        # Price crashes from 100 to 5 (-95%)
+        price_data = pd.DataFrame({
+            TIMESTAMP: [1000, 1001],
+            TICKER: ['A', 'A'],
+            'Close': [100.0, 5.0],
+        })
+        
+        returns = compute_daily_portfolio_returns(
+            holdings, price_data, cost_bps_per_rebalance=0,
+            suspect_return_threshold=0.5
+        )
+        
+        # -95% exceeds threshold (|−0.95| > 0.5), so it's treated as 0%
+        assert len(returns) > 0
+        # Return should be 0% (treated as flat), not the actual -95%
+        assert returns.min() >= -0.5 - 1e-9, "Extreme negative return should be zeroed"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

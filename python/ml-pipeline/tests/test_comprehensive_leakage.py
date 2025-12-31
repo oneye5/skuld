@@ -22,7 +22,7 @@ import numpy as np
 from pathlib import Path
 import sys
 
-from config.columns import TIMESTAMP, TICKER, CLOSE, OPEN, HIGH, LOW, VOLUME
+from config.columns import TIMESTAMP, TICKER, CLOSE, ADJCLOSE, OPEN, HIGH, LOW, VOLUME
 from config.settings import MS_PER_DAY
 
 
@@ -127,10 +127,12 @@ class TestTargetLeakage:
         from core.target_builder import compute_forward_returns, FORWARD_RETURN
         
         # Create simple price series
+        prices = [100, 102, 104, 106, 108, 110, 112, 114, 116, 118]
         df = pd.DataFrame({
             TIMESTAMP: [i * MS_PER_DAY for i in range(10)],
             TICKER: ["A"] * 10,
-            CLOSE: [100, 102, 104, 106, 108, 110, 112, 114, 116, 118],
+            CLOSE: prices,
+            ADJCLOSE: prices,  # Same as Close for test (no dividends)
         })
         
         result = compute_forward_returns(df, lookahead_days=5, drop_na=False)
@@ -158,10 +160,12 @@ class TestTargetLeakage:
         from core.target_builder import compute_forward_returns, FORWARD_RETURN
         
         # Create data where we'll "accidentally" add a leaky feature
+        prices = 100 + np.arange(100) * 0.5  # Linear trend
         df = pd.DataFrame({
             TIMESTAMP: [i * MS_PER_DAY for i in range(100)],
             TICKER: ["A"] * 100,
-            CLOSE: 100 + np.arange(100) * 0.5,  # Linear trend
+            CLOSE: prices,
+            ADJCLOSE: prices,
         })
         
         # Compute forward returns
@@ -186,17 +190,21 @@ class TestTargetLeakage:
         from core.target_builder import compute_forward_returns, FORWARD_RETURN
         
         # Create train data with one distribution
+        train_prices = 100 + np.random.randn(50) * 2  # Low volatility
         train_df = pd.DataFrame({
             TIMESTAMP: [i * MS_PER_DAY for i in range(50)],
             TICKER: ["A"] * 50,
-            CLOSE: 100 + np.random.randn(50) * 2,  # Low volatility
+            CLOSE: train_prices,
+            ADJCLOSE: train_prices,
         })
         
         # Create test data with different distribution
+        test_prices = 200 + np.random.randn(50) * 20  # High volatility, different mean
         test_df = pd.DataFrame({
             TIMESTAMP: [i * MS_PER_DAY for i in range(50, 100)],
             TICKER: ["A"] * 50,
-            CLOSE: 200 + np.random.randn(50) * 20,  # High volatility, different mean
+            CLOSE: test_prices,
+            ADJCLOSE: test_prices,
         })
         
         # Compute returns separately
@@ -536,10 +544,12 @@ class TestPipelineIntegrationLeakage:
         rows_original = []
         for day in range(n_days):
             for ticker in tickers:
+                close_price = 100 + np.random.randn() * 5
                 rows_original.append({
                     TIMESTAMP: day * MS_PER_DAY,
                     TICKER: ticker,
-                    CLOSE: 100 + np.random.randn() * 5,
+                    CLOSE: close_price,
+                    ADJCLOSE: close_price,
                     OPEN: 100 + np.random.randn() * 5,
                     HIGH: 105 + np.random.randn() * 5,
                     LOW: 95 + np.random.randn() * 5,
@@ -601,10 +611,12 @@ class TestPipelineIntegrationLeakage:
         rows_extended = rows_original.copy()
         for day in range(75, n_days):
             for ticker in tickers:
+                close_price = 100 + np.random.randn() * 5
                 rows_extended.append({
                     TIMESTAMP: day * MS_PER_DAY,
                     TICKER: ticker,
-                    CLOSE: 100 + np.random.randn() * 5,
+                    CLOSE: close_price,
+                    ADJCLOSE: close_price,
                     OPEN: 100 + np.random.randn() * 5,
                     HIGH: 105 + np.random.randn() * 5,
                     LOW: 95 + np.random.randn() * 5,
@@ -696,10 +708,12 @@ class TestPipelineIntegrationLeakage:
         rows = []
         for ts in timestamps:
             for ticker in tickers:
+                close_price = 100 + np.random.randn() * 10
                 rows.append({
                     TIMESTAMP: ts,
                     TICKER: ticker,
-                    CLOSE: 100 + np.random.randn() * 10,
+                    CLOSE: close_price,
+                    ADJCLOSE: close_price,
                     OPEN: 100 + np.random.randn() * 10,
                     HIGH: 105 + np.random.randn() * 10,
                     LOW: 95 + np.random.randn() * 10,
@@ -738,10 +752,12 @@ class TestPipelineIntegrationLeakage:
         full dataset first, then split. This test verifies the pattern.
         """
         # Create data
+        prices = 100 + np.arange(100) * 0.1
         df = pd.DataFrame({
             TIMESTAMP: [i * MS_PER_DAY for i in range(100)],
             TICKER: ["A"] * 100,
-            CLOSE: 100 + np.arange(100) * 0.1,
+            CLOSE: prices,
+            ADJCLOSE: prices,
             OPEN: 100 + np.arange(100) * 0.1,
             HIGH: 101 + np.arange(100) * 0.1,
             LOW: 99 + np.arange(100) * 0.1,
@@ -817,10 +833,12 @@ class TestRealWorldLeakageScenarios:
         """Common mistake: using Close[t+n] as a feature instead of only for target."""
         from core.target_builder import compute_forward_returns, FORWARD_RETURN
         
+        prices = [100, 102, 104, 106, 108, 110, 112, 114, 116, 118]
         df = pd.DataFrame({
             TIMESTAMP: [i * MS_PER_DAY for i in range(10)],
             TICKER: ["A"] * 10,
-            CLOSE: [100, 102, 104, 106, 108, 110, 112, 114, 116, 118],
+            CLOSE: prices,
+            ADJCLOSE: prices,
         })
         
         # Compute forward returns
@@ -843,10 +861,12 @@ class TestRealWorldLeakageScenarios:
         """Subtle leak: using max/min from a window that includes future data."""
         
         # Create data with a spike at t=50
+        prices = [100] * 49 + [200] + [100] * 50  # Spike at t=49
         df = pd.DataFrame({
             TIMESTAMP: [i * MS_PER_DAY for i in range(100)],
             TICKER: ["A"] * 100,
-            CLOSE: [100] * 49 + [200] + [100] * 50,  # Spike at t=49
+            CLOSE: prices,
+            ADJCLOSE: prices,
         })
         
         # WRONG: Rolling max with forward-looking window

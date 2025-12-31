@@ -175,7 +175,7 @@ def log_dataframe_info(
         logger = get_logger("data")
     
     memory_mb = df.memory_usage(deep=True).sum() / 1024 / 1024
-    logger.info(f"{name}: {df.shape[0]:,} rows × {df.shape[1]} cols ({memory_mb:.1f} MB)")
+    logger.info(f"{name}: {df.shape[0]:,} rows x {df.shape[1]} cols ({memory_mb:.1f} MB)")
 
 
 def log_metrics(

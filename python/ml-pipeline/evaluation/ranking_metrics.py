@@ -567,9 +567,9 @@ def compute_sortino_ratio(
         periods_per_year: For annualization.
     
     Returns:
-        Annualized Sortino ratio.
+        Annualized Sortino ratio, or NaN if insufficient data/no downside.
     """
-    if len(returns) < 2:
+    if len(returns) < 10:  # Need reasonable sample size
         return np.nan
     
     excess_returns = returns - target_return / periods_per_year
@@ -577,13 +577,13 @@ def compute_sortino_ratio(
     # Downside returns only
     downside_returns = excess_returns[excess_returns < 0]
     
-    if len(downside_returns) == 0:
-        return np.inf  # No downside periods
+    if len(downside_returns) < 3:  # Need at least a few downside periods
+        return np.nan  # Not enough downside data to compute meaningful ratio
     
     downside_std = np.sqrt(np.mean(downside_returns ** 2))
     
-    if downside_std == 0:
-        return np.inf
+    if downside_std < 1e-10:
+        return np.nan  # Effectively zero downside deviation
     
     return (excess_returns.mean() / downside_std) * np.sqrt(periods_per_year)
 
@@ -618,8 +618,8 @@ def compute_calmar_ratio(
     drawdown = (running_max - cumulative) / running_max
     max_drawdown = drawdown.max()
     
-    if max_drawdown == 0:
-        return np.inf
+    if max_drawdown < 0.001:  # Less than 0.1% drawdown is effectively zero
+        return np.nan  # Not meaningful to compute
     
     return annual_return / max_drawdown
 
@@ -646,7 +646,7 @@ def compute_tail_ratio(
     left_tail = np.percentile(returns, 100 - percentile)
     
     if abs(left_tail) < 1e-10:
-        return np.inf if right_tail > 0 else 0.0
+        return np.nan  # Left tail too small for meaningful ratio
     
     return abs(right_tail) / abs(left_tail)
 
@@ -676,8 +676,8 @@ def compute_omega_ratio(
     total_gains = gains.sum()
     total_losses = losses.sum()
     
-    if total_losses == 0:
-        return np.inf if total_gains > 0 else 1.0
+    if total_losses < 1e-10:
+        return np.nan if total_gains > 1e-10 else 1.0  # No losses = undefined
     
     return total_gains / total_losses
 
@@ -767,12 +767,12 @@ def compute_win_loss_metrics(returns: pd.Series) -> WinLossMetrics:
     avg_loss = losses.mean() if n_losses > 0 else 0.0
     
     # Win/loss ratio (average win / average loss)
-    win_loss_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else np.inf
+    win_loss_ratio = abs(avg_win / avg_loss) if abs(avg_loss) > 1e-10 else np.nan
     
     # Profit factor (sum of wins / sum of losses)
     sum_wins = wins.sum() if n_wins > 0 else 0.0
     sum_losses = abs(losses.sum()) if n_losses > 0 else 0.0
-    profit_factor = sum_wins / sum_losses if sum_losses > 0 else np.inf
+    profit_factor = sum_wins / sum_losses if sum_losses > 1e-10 else np.nan
     
     # Consecutive streaks
     max_wins = compute_consecutive_streak(returns, True)

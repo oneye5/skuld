@@ -25,18 +25,24 @@ WINSORIZE_LIMITS: tuple[float, float] | None = (-0.5, 0.5)
 """Clip extreme returns to this range. None to disable winsorization.
 E.g., (-0.5, 0.5) clips returns to [-50%, +50%]."""
 
+RETURN_PRICE_COLUMN: str = "AdjClose"
+"""Price column to use for forward return calculations.
+Use 'AdjClose' for total return (includes dividends, adjusted for splits).
+Use 'Close' for price-only returns (ignores dividends).
+Recommended: 'AdjClose' for accurate evaluation of stock performance."""
+
 
 # =============================================================================
 # ROLLING WINDOW SETTINGS
 # =============================================================================
-NUM_ROLLING_WINDOWS: int = 30
-"""Number of rolling windows for backtesting."""
+NUM_ROLLING_WINDOWS: int = 20
+"""Number of rolling windows for backtesting. Use a smaller value for testing, 20 windows takes a long time"""
 
-ROLLING_WINDOW_MOVEMENT_YEARS: float = 0.6666666666
+ROLLING_WINDOW_MOVEMENT_YEARS: float = 1
 """How far back (in years) each window moves from the previous."""
 
-TEST_PERIOD_YEARS: float = 0.6666666666
-"""Length of test period in each window (in years)."""
+TEST_PERIOD_YEARS: float = 0.1
+"""This effectively does not do anything when test period is less than double the window movement."""
 
 
 # =============================================================================
@@ -121,6 +127,19 @@ TOP_N_FOR_HIT_RATE: int = 10
 PERIODS_PER_YEAR: int = 252
 """Trading days per year, used for annualizing ICIR."""
 
+
+# =============================================================================
+# DATA QUALITY / ANOMALY DETECTION
+# =============================================================================
+ANOMALY_RETURN_THRESHOLD: float = 2.0
+"""Daily return threshold for flagging anomalous data (default 2.0 = 200%).
+Returns exceeding this threshold (positive or negative) indicate potential
+unadjusted stock splits, ticker recycling, or data errors."""
+
+FILTER_ANOMALIES: bool = True
+"""Whether to filter out anomalous data points before training.
+If True, rows with extreme daily returns are removed.
+If False, anomalies are flagged but kept in the data."""
 
 # =============================================================================
 # CONSTANTS

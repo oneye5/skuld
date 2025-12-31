@@ -8,7 +8,8 @@ import pandas as pd
 import numpy as np
 
 from config.columns import (
-    OPEN, HIGH, LOW, CLOSE, VOLUME,
+    OPEN, HIGH, LOW, CLOSE, VOLUME, TICKER,
+    DIVIDEND, TRAILING_DIV_YIELD_252,
     LONG_TERM_INTEREST_RATE,
     IMMEDIATE_INTEREST_RATE,
     SHORT_TERM_INTEREST_RATE,
@@ -95,6 +96,52 @@ def add_financial_ratios(df: pd.DataFrame) -> pd.DataFrame:
     
     # Fundamental ratios (from nzx-predictor's add_engineered_features)
     result = _add_fundamental_ratios(result)
+    
+    # Trailing dividend yield (safe, backward-looking)
+    result = _add_trailing_dividend_yield(result)
+    
+    return result
+
+
+def _add_trailing_dividend_yield(df: pd.DataFrame, window: int = 252) -> pd.DataFrame:
+    """Add trailing dividend yield feature.
+    
+    Computes trailing 12-month (252 trading days) dividend yield:
+        TrailingDivYield = Sum(Dividends over past 252 days) / Current Price
+    
+    This is a safe, backward-looking feature that doesn't cause data leakage.
+    The raw Dividend column (point-in-time payments) should be excluded from
+    model features, but this derived yield is safe to use.
+    
+    Args:
+        df: Wide format DataFrame with Dividend and Close columns.
+        window: Lookback window in trading days (default 252 = ~1 year).
+    
+    Returns:
+        DataFrame with TrailingDivYield_252d column added.
+    """
+    result = df.copy()
+    
+    if DIVIDEND not in result.columns or CLOSE not in result.columns:
+        return result
+    
+    if TICKER not in result.columns:
+        # No ticker column - can't compute per-stock trailing dividends
+        return result
+    
+    # Fill NaN dividends with 0 (no dividend on that day)
+    dividends = result[DIVIDEND].fillna(0)
+    
+    # Compute trailing sum of dividends per ticker
+    # Group by ticker and compute rolling sum
+    trailing_div = (
+        result.assign(_div=dividends)
+        .groupby(TICKER)['_div']
+        .transform(lambda x: x.rolling(window=window, min_periods=1).sum())
+    )
+    
+    # Dividend yield = trailing dividends / current price
+    result[TRAILING_DIV_YIELD_252] = trailing_div / (result[CLOSE] + EPSILON)
     
     return result
 

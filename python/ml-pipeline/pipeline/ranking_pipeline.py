@@ -1297,3 +1297,248 @@ def print_ranking_summary(result: RankingPipelineResult) -> None:
             print(f"  {i:2}. {feature:<30} {importance:.4f}")
     
     print("\n" + "=" * 60)
+
+# =============================================================================
+# PREDICTION API (for real-world use)
+# =============================================================================
+
+@dataclass
+class PredictionResult:
+    """Result from prediction pipeline."""
+    predictions: pd.DataFrame  # timestamp, ticker, predicted_score, rank
+    prediction_date: datetime
+    forward_days: int
+    n_stocks: int
+    feature_columns: List[str]
+    model_config: dict
+    training_samples: int = 0
+    
+    @property
+    def top_picks(self) -> pd.DataFrame:
+        """Get top 10 ranked stocks."""
+        return self.predictions.head(10)
+    
+    @property
+    def bottom_picks(self) -> pd.DataFrame:
+        """Get bottom 10 ranked stocks."""
+        return self.predictions.tail(10)
+    
+    def get_stock_rank(self, ticker: str) -> Optional[dict]:
+        """Get ranking info for a specific stock."""
+        match = self.predictions[self.predictions[TICKER] == ticker]
+        if match.empty:
+            return None
+        row = match.iloc[0]
+        return {
+            "ticker": ticker,
+            "rank": int(row["rank"]),
+            "score": float(row["predicted_score"]),
+            "percentile": 100 * (1 - row["rank"] / self.n_stocks),
+        }
+
+
+def train_and_save_model(
+    output_path: str | Path,
+    forward_days: int = FORWARD_RETURN_DAYS,
+    min_stocks: int = MIN_STOCKS_PER_TIMESTAMP,
+) -> "ModelBundle":
+    """Train a ranking model on all available data and save it.
+    
+    Use this to pre-train a model that can later be loaded for quick predictions.
+    
+    Args:
+        output_path: Path to save the model bundle (.pkl file).
+        forward_days: Forward return horizon in days.
+        min_stocks: Minimum stocks per timestamp for training.
+    
+    Returns:
+        ModelBundle containing the trained model and all components.
+    
+    Example:
+        >>> bundle = train_and_save_model("models/ranking_model.pkl")
+        >>> print(f"Model saved with {bundle.n_features} features")
+    """
+    from core.model_persistence import ModelBundle, save_model, compute_data_fingerprint
+    from core.target_builder import compute_forward_returns, FORWARD_RETURN
+    
+    logger.info(f"Training model for {forward_days}-day horizon...")
+    
+    # Load and prepare data
+    wide_df = prepare_wide_data_with_features(use_cache=True)
+    
+    # Get timestamps
+    timestamps = sorted(wide_df[TIMESTAMP].unique())
+    latest_ts = timestamps[-1]
+    
+    # Training cutoff: need buffer for forward returns
+    buffer_ts = forward_days * MS_PER_DAY
+    train_cutoff = latest_ts - buffer_ts
+    train_timestamps = [ts for ts in timestamps if ts <= train_cutoff]
+    
+    if len(train_timestamps) < 10:
+        raise ValueError(f"Insufficient training timestamps: {len(train_timestamps)}")
+    
+    # Get training data
+    train_df = wide_df[wide_df[TIMESTAMP].isin(train_timestamps)].copy()
+    
+    # Compute forward returns
+    train_with_returns = compute_forward_returns(
+        train_df,
+        lookahead_days=forward_days,
+        return_type="simple",
+        winsorize_limits=WINSORIZE_LIMITS,
+        drop_na=True,
+        price_lookup_df=wide_df,
+    )
+    
+    # Filter
+    train_with_returns = filter_min_stocks_per_timestamp(
+        train_with_returns, min_stocks, TIMESTAMP
+    )
+    
+    if train_with_returns.empty:
+        raise ValueError("No valid training data after filtering")
+    
+    # Preprocess
+    train_processed = preprocess_data(train_with_returns, add_missing_flags=False)
+    feature_cols = get_feature_columns_for_ranking(train_processed)
+    
+    # Fit scaler
+    scaler = fit_scaler(train_processed[feature_cols])
+    train_scaled = transform_data(train_processed, scaler)
+    
+    # Prepare ranking data
+    X_train, y_train, groups_train = prepare_ranking_data(
+        train_scaled,
+        feature_cols=feature_cols,
+        target_col=FORWARD_RETURN,
+        timestamp_col=TIMESTAMP,
+    )
+    
+    # Train ranker
+    ranker_config = RankerConfig(
+        n_estimators=RANKER_N_ESTIMATORS,
+        learning_rate=RANKER_LEARNING_RATE,
+        num_leaves=RANKER_NUM_LEAVES,
+        max_depth=RANKER_MAX_DEPTH,
+        min_child_samples=RANKER_MIN_CHILD_SAMPLES,
+        subsample=RANKER_SUBSAMPLE,
+        colsample_bytree=RANKER_COLSAMPLE_BYTREE,
+        device=RANKER_DEVICE,
+    )
+    
+    ranker = LightGBMRankerWrapper(ranker_config)
+    ranker.fit(X_train, y_train, groups_train)
+    
+    # Create bundle
+    bundle = ModelBundle(
+        ranker=ranker,
+        scaler=scaler,
+        feature_columns=feature_cols,
+        config={
+            "forward_return_days": forward_days,
+            "n_estimators": ranker_config.n_estimators,
+            "learning_rate": ranker_config.learning_rate,
+            "training_samples": len(X_train),
+            "training_timestamps": len(train_timestamps),
+        },
+        metadata={
+            "created_at": datetime.now().isoformat(),
+            "data_fingerprint": compute_data_fingerprint(train_df),
+        },
+    )
+    
+    # Save
+    save_model(bundle, output_path)
+    logger.info(f"Model saved to {output_path}")
+    
+    return bundle
+
+
+def generate_predictions(
+    model_bundle: "ModelBundle" = None,
+    model_path: str | Path = None,
+) -> PredictionResult:
+    """Generate predictions for the most recent timestamp.
+    
+    Either provide a loaded ModelBundle or a path to load from.
+    
+    Args:
+        model_bundle: Pre-loaded ModelBundle (takes precedence).
+        model_path: Path to saved model file.
+    
+    Returns:
+        PredictionResult with stock rankings.
+    
+    Example:
+        >>> from core.model_persistence import load_model
+        >>> bundle = load_model("models/ranking_model.pkl")
+        >>> result = generate_predictions(model_bundle=bundle)
+        >>> print(result.top_picks)
+    """
+    from core.model_persistence import load_model
+    from core.scaler import transform_data
+    
+    if model_bundle is None and model_path is None:
+        raise ValueError("Must provide either model_bundle or model_path")
+    
+    if model_bundle is None:
+        model_bundle = load_model(model_path)
+    
+    # Load and prepare current data
+    wide_df = prepare_wide_data_with_features(use_cache=True)
+    
+    # Get latest timestamp
+    latest_ts = wide_df[TIMESTAMP].max()
+    latest_date = datetime.fromtimestamp(latest_ts / 1000)
+    
+    predict_df = wide_df[wide_df[TIMESTAMP] == latest_ts].copy()
+    
+    # Preprocess
+    predict_processed = preprocess_data(predict_df, add_missing_flags=False)
+    
+    # Check features
+    available_features = [f for f in model_bundle.feature_columns 
+                         if f in predict_processed.columns]
+    
+    if len(available_features) < len(model_bundle.feature_columns) * 0.8:
+        logger.warning(
+            f"Only {len(available_features)}/{len(model_bundle.feature_columns)} "
+            "features available. Predictions may be less accurate."
+        )
+    
+    # Scale
+    predict_scaled = transform_data(predict_processed, model_bundle.scaler)
+    
+    # Predict
+    X_predict = predict_scaled[available_features].values
+    predictions = model_bundle.ranker.predict(
+        pd.DataFrame(X_predict, columns=available_features)
+    )
+    
+    # Build result
+    result_df = pd.DataFrame({
+        TIMESTAMP: predict_scaled[TIMESTAMP].values,
+        TICKER: predict_scaled[TICKER].values,
+        "predicted_score": predictions,
+        "rank": pd.Series(predictions).rank(ascending=False, method="first").astype(int).values,
+    })
+    
+    result_df = result_df.sort_values("predicted_score", ascending=False).reset_index(drop=True)
+    
+    # Add price if available
+    if CLOSE in predict_scaled.columns:
+        close_map = predict_scaled.set_index(TICKER)[CLOSE].to_dict()
+        result_df["close_price"] = result_df[TICKER].map(close_map)
+    
+    forward_days = model_bundle.config.get("forward_return_days", FORWARD_RETURN_DAYS)
+    
+    return PredictionResult(
+        predictions=result_df,
+        prediction_date=latest_date,
+        forward_days=forward_days,
+        n_stocks=len(result_df),
+        feature_columns=available_features,
+        model_config=model_bundle.config,
+        training_samples=model_bundle.config.get("training_samples", 0),
+    )

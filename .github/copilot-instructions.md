@@ -61,13 +61,12 @@ If you add a dependency:
 ### Run the pipeline
 
 **Ranking Pipeline (Primary)**:
-- `uv run python scripts/run_model_evaluation.py` — Full evaluation with rolling windows
-- `uv run python scripts/debug_ranking_quick.py` — Quick validation (~30 sec)
-- `uv run python scripts/generate_predictions.py` — Generate predictions for latest data
+- `uv run python scripts/run_model_evaluation.py` — Full evaluation with rolling windows (main entry point)
 
-**Utility Scripts**:
-- `uv run python scripts/inspect_data.py` — Debug data loading/conversion
-- `uv run python scripts/analyze_sparsity.py` — Analyze column sparsity
+**Debug/Analysis Scripts**:
+- `uv run python scripts/debug_anomaly_detection.py` — Debug price anomaly detection
+- `uv run python scripts/analyze_quintile_by_year.py` — Analyze performance by year
+- `uv run python scripts/profile_*.py` — Performance profiling tools
 
 **Rule:** when Copilot suggests running Python code, prefer `uv run <file.py>` (not `python <file.py>`).
 

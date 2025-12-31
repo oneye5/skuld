@@ -69,24 +69,44 @@ def fit_scaler(df: pd.DataFrame) -> ScalerSet:
     )
 
 
-def transform_data(df: pd.DataFrame, scaler_set: ScalerSet) -> pd.DataFrame:
+def transform_data(
+    df: pd.DataFrame, 
+    scaler_set: ScalerSet,
+    strict: bool = False,
+) -> pd.DataFrame:
     """Transform data using fitted scalers.
     
     Args:
         df: DataFrame to transform.
         scaler_set: Fitted ScalerSet from fit_scaler().
+        strict: If True, raise error when required columns are missing.
+                Use strict=True for prediction to ensure feature alignment.
+                Use strict=False for training pipelines with dynamic features.
     
     Returns:
         Transformed DataFrame.
+    
+    Raises:
+        ValueError: If strict=True and required columns are missing.
     """
     result = df.copy()
     
     if scaler_set.continuous_cols:
-        # Only transform columns that exist in this DataFrame
+        # Check which columns exist
         cols_to_transform = [c for c in scaler_set.continuous_cols if c in result.columns]
+        missing_cols = set(scaler_set.continuous_cols) - set(result.columns)
+        
+        # In strict mode, all fitted columns must be present
+        if strict and missing_cols:
+            raise ValueError(
+                f"Strict mode: {len(missing_cols)} columns required by scaler are missing.\\n"
+                f"Missing columns: {sorted(missing_cols)[:20]}{'...' if len(missing_cols) > 20 else ''}\\n"
+                "This causes feature misalignment and invalid predictions.\\n"
+                "Either retrain the model or ensure all required features are present."
+            )
         
         if cols_to_transform:
-            # If all fitted columns exist, use the scaler directly
+            # If all fitted columns exist, use the scaler directly (most efficient)
             if cols_to_transform == scaler_set.continuous_cols:
                 transformed = scaler_set.continuous_scaler.transform(
                     result[cols_to_transform].values
@@ -95,6 +115,13 @@ def transform_data(df: pd.DataFrame, scaler_set: ScalerSet) -> pd.DataFrame:
             else:
                 # Only some columns exist - transform column by column using the 
                 # fitted parameters for each column
+                # WARNING: This path should rarely be used - indicates potential issues
+                import warnings
+                warnings.warn(
+                    f"Partial column transform: {len(missing_cols)} columns missing from scaler. "
+                    "This may cause feature misalignment.",
+                    UserWarning
+                )
                 for col in cols_to_transform:
                     col_idx = scaler_set.continuous_cols.index(col)
                     center = scaler_set.continuous_scaler.center_[col_idx]

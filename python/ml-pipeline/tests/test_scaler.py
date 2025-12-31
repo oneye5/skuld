@@ -102,3 +102,47 @@ class TestTransformData:
         # Non-outlier values should be relatively close to each other
         non_outlier_values = result["feature"].values[:4]
         assert np.std(non_outlier_values) < 1.0  # Small std after scaling
+
+    def test_strict_mode_raises_on_missing_columns(self):
+        """Test that strict mode raises error when required columns are missing."""
+        # Fit scaler on data with 2 features
+        train_df = pd.DataFrame({
+            TIMESTAMP: [1, 2, 3],
+            TICKER: ["A", "B", "C"],
+            "feature1": [10.0, 20.0, 30.0],
+            "feature2": [1.0, 2.0, 3.0],
+        })
+        scaler_set = fit_scaler(train_df)
+        
+        # Try to transform data missing feature2
+        test_df = pd.DataFrame({
+            TIMESTAMP: [4, 5],
+            TICKER: ["D", "E"],
+            "feature1": [40.0, 50.0],
+            # feature2 is missing!
+        })
+        
+        # Strict mode should raise ValueError
+        with pytest.raises(ValueError, match="columns required by scaler are missing"):
+            transform_data(test_df, scaler_set, strict=True)
+        
+        # Non-strict mode should work (with warning)
+        with pytest.warns(UserWarning, match="Partial column transform"):
+            result = transform_data(test_df, scaler_set, strict=False)
+        assert "feature1" in result.columns
+    
+    def test_strict_mode_passes_when_all_columns_present(self):
+        """Test that strict mode works when all columns are present."""
+        df = pd.DataFrame({
+            TIMESTAMP: [1, 2, 3],
+            TICKER: ["A", "B", "C"],
+            "feature1": [10.0, 20.0, 30.0],
+            "feature2": [1.0, 2.0, 3.0],
+        })
+        
+        scaler_set = fit_scaler(df)
+        
+        # Transform with strict=True should work fine
+        result = transform_data(df, scaler_set, strict=True)
+        assert "feature1" in result.columns
+        assert "feature2" in result.columns

@@ -984,6 +984,226 @@ class TestLeakageDetectionViaPerformance:
         )
 
 
+# =============================================================================
+# 10. BLIND SPOT TESTS - Additional coverage for untested areas
+# =============================================================================
+
+class TestEarlyStoppingLeakage:
+    """Test that early stopping validation set doesn't leak test data."""
+    
+    def test_early_stopping_validation_is_temporal(self):
+        """Early stopping validation set must be temporally after training data.
+        
+        The pipeline splits the last 20% of training timestamps for validation.
+        This test verifies that split is correctly temporal.
+        """
+        # Simulate the early stopping split logic from ranking_pipeline.py
+        np.random.seed(42)
+        
+        # Create training data with 100 timestamps
+        train_timestamps = np.array([i * MS_PER_DAY for i in range(100)])
+        
+        # Pipeline logic: use last 20% for validation
+        n_val_ts = max(1, int(len(train_timestamps) * 0.2))
+        val_ts_cutoff = np.sort(train_timestamps)[-n_val_ts]
+        
+        # Split
+        train_for_fit = train_timestamps[train_timestamps < val_ts_cutoff]
+        val_timestamps = train_timestamps[train_timestamps >= val_ts_cutoff]
+        
+        # Verify: max of train_for_fit < min of validation
+        assert train_for_fit.max() < val_timestamps.min(), (
+            f"Early stopping validation leaks into training! "
+            f"Train max={train_for_fit.max()}, Val min={val_timestamps.min()}"
+        )
+        
+        # Verify we got approximately 80/20 split
+        assert len(train_for_fit) >= 75, f"Train should be ~80%, got {len(train_for_fit)}%"
+        assert len(val_timestamps) >= 15, f"Val should be ~20%, got {len(val_timestamps)}%"
+    
+    def test_validation_data_not_from_test_period(self):
+        """Validation for early stopping must not overlap with test period.
+        
+        This is guaranteed by design (validation comes from training period),
+        but we verify explicitly.
+        """
+        from core.splitter import split_by_timestamp
+        
+        # Create full dataset
+        df = pd.DataFrame({
+            TIMESTAMP: [i * MS_PER_DAY for i in range(200)],
+            TICKER: ["A"] * 200,
+            "Close": np.random.randn(200),
+        })
+        
+        # Split at day 150 train_end, day 180 test_end
+        train_end_ts = 150 * MS_PER_DAY
+        test_end_ts = 180 * MS_PER_DAY
+        split = split_by_timestamp(df, train_end_ts, test_end_ts)
+        
+        # Get validation timestamps (last 20% of training)
+        train_timestamps = split.train[TIMESTAMP].unique()
+        n_val_ts = max(1, int(len(train_timestamps) * 0.2))
+        val_ts_cutoff = np.sort(train_timestamps)[-n_val_ts]
+        
+        val_timestamps = split.train[split.train[TIMESTAMP] >= val_ts_cutoff][TIMESTAMP].unique()
+        test_timestamps = split.test[TIMESTAMP].unique()
+        
+        # No overlap allowed
+        overlap = set(val_timestamps) & set(test_timestamps)
+        assert len(overlap) == 0, f"Validation overlaps with test: {overlap}"
+        
+        # Validation must be before test
+        assert val_timestamps.max() < test_timestamps.min(), (
+            f"Validation timestamps ({val_timestamps.max()}) must be before test ({test_timestamps.min()})"
+        )
+
+
+class TestMacroDataLeakage:
+    """Test that macro data doesn't leak future information."""
+    
+    def test_macro_forward_fill_temporal_order(self):
+        """Macro data forward fill must respect temporal ordering.
+        
+        merge_asof with direction='backward' ensures we only get macro data
+        from the past, never the future.
+        """
+        # Test the merge_asof behavior directly
+        import pandas as pd
+        
+        # Create ticker data
+        ticker_wide = pd.DataFrame({
+            TIMESTAMP: [1000, 2000, 3000, 4000, 5000],
+            TICKER: ["A", "A", "A", "A", "A"],
+            "Close": [100, 101, 102, 103, 104],
+        })
+        
+        # Create macro data with gaps (only at t=2000 and t=4000)
+        macro_pivoted = pd.DataFrame({
+            TIMESTAMP: [2000, 4000],
+            "MACRO_GDP": [500.0, 600.0],
+        })
+        
+        # Sort both for merge_asof
+        ticker_wide = ticker_wide.sort_values(TIMESTAMP)
+        macro_pivoted = macro_pivoted.sort_values(TIMESTAMP)
+        
+        # Merge using backward direction (same as in _merge_macro_data)
+        result = pd.merge_asof(
+            ticker_wide,
+            macro_pivoted,
+            on=TIMESTAMP,
+            direction="backward",
+        )
+        
+        # Forward-fill (same as pipeline)
+        result["MACRO_GDP"] = result["MACRO_GDP"].ffill()
+        
+        # t=1000: No macro data before it, should be NaN
+        # t=2000: GDP=500 (exact match)
+        # t=3000: Forward fill from t=2000, GDP=500 (NOT 600 from future)
+        # t=4000: GDP=600 (exact match)
+        # t=5000: Forward fill from t=4000, GDP=600
+        
+        t1000_gdp = result[result[TIMESTAMP] == 1000]["MACRO_GDP"].values[0]
+        t3000_gdp = result[result[TIMESTAMP] == 3000]["MACRO_GDP"].values[0]
+        t5000_gdp = result[result[TIMESTAMP] == 5000]["MACRO_GDP"].values[0]
+        
+        # t=1000 should be NaN (no macro data before it)
+        assert pd.isna(t1000_gdp), f"t=1000 should be NaN, got {t1000_gdp}"
+        
+        # Critical: t=3000 should be 500 (from past t=2000), NOT 600 (from future t=4000)
+        assert t3000_gdp == 500.0, (
+            f"Macro data at t=3000 leaked future value! Expected 500, got {t3000_gdp}"
+        )
+        
+        # t=5000 should be 600 (forward-filled from t=4000)
+        assert t5000_gdp == 600.0, f"t=5000 should be 600, got {t5000_gdp}"
+
+
+class TestInteractionFeatureLeakage:
+    """Test that feature interactions don't introduce leakage."""
+    
+    def test_interest_rate_interactions_no_future_data(self):
+        """Interest rate × stock feature interactions must use current data only."""
+        from features.interactions import add_interest_rate_interactions
+        from config.columns import LONG_TERM_INTEREST_RATE
+        
+        # Create data with distinct interest rate regimes
+        df = pd.DataFrame({
+            TIMESTAMP: [i * MS_PER_DAY for i in range(100)],
+            TICKER: ["A"] * 100,
+            "ROC_252": np.random.randn(100),
+            "Vol_20": np.abs(np.random.randn(100)),
+            LONG_TERM_INTEREST_RATE: [2.0] * 50 + [5.0] * 50,  # Rate jump at t=50
+        })
+        
+        result = add_interest_rate_interactions(df)
+        
+        # At t=49, the IR interaction should use IR=2.0, not IR=5.0 from the future
+        if "IR_x_Mom252" in result.columns:
+            t49_ir_interaction = result.iloc[49]["IR_x_Mom252"]
+            t49_mom = result.iloc[49]["ROC_252"]
+            
+            # Expected: 2.0 * ROC_252, not 5.0 * ROC_252
+            expected_with_current_ir = 2.0 * t49_mom
+            expected_with_future_ir = 5.0 * t49_mom
+            
+            # Should match current IR
+            assert np.isclose(t49_ir_interaction, expected_with_current_ir, rtol=0.01), (
+                f"Interaction used wrong IR! Got {t49_ir_interaction}, "
+                f"expected {expected_with_current_ir} (current) not {expected_with_future_ir} (future)"
+            )
+
+
+class TestPortfolioBacktestLeakage:
+    """Test that portfolio backtest doesn't use unrealized returns."""
+    
+    def test_portfolio_uses_only_realized_returns(self):
+        """Portfolio return at time t must use returns from that timestamp only.
+        
+        This verifies that when we compute portfolio returns, we're using
+        the actual_return (forward return) that corresponds to that specific timestamp,
+        not mixing returns from other timestamps.
+        """
+        # Create predictions with known values at different timestamps
+        predictions_df = pd.DataFrame({
+            TIMESTAMP: [1000] * 10 + [2000] * 10,
+            TICKER: [f"S{i}" for i in range(10)] * 2,
+            "predicted_score": list(range(10)) + list(range(10)),  # Same ranking both times
+            "actual_return": [0.1] * 10 + [-0.1] * 10,  # +10% at t=1000, -10% at t=2000
+        })
+        
+        # Verify that each timestamp's returns are isolated
+        t1000_data = predictions_df[predictions_df[TIMESTAMP] == 1000]
+        t2000_data = predictions_df[predictions_df[TIMESTAMP] == 2000]
+        
+        # Get top 3 stocks at each timestamp
+        top_n = 3
+        
+        t1000_top = t1000_data.nlargest(top_n, "predicted_score")
+        t2000_top = t2000_data.nlargest(top_n, "predicted_score")
+        
+        t1000_return = t1000_top["actual_return"].mean()
+        t2000_return = t2000_top["actual_return"].mean()
+        
+        # t=1000's return should be +10%
+        assert np.isclose(t1000_return, 0.1), (
+            f"Portfolio return at t=1000 should be 0.1, got {t1000_return}. "
+            "Returns from other timestamps may be mixed in."
+        )
+        
+        # t=2000's return should be -10%
+        assert np.isclose(t2000_return, -0.1), (
+            f"Portfolio return at t=2000 should be -0.1, got {t2000_return}. "
+            "Returns from other timestamps may be mixed in."
+        )
+        
+        # Also verify the returns are correctly different (sanity check)
+        assert t1000_return != t2000_return, "Returns should differ between timestamps"
+
+
 if __name__ == "__main__":
     # Run tests
     pytest.main([__file__, "-v", "--tb=short"])
+

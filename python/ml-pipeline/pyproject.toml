@@ -26,3 +26,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v"
+markers = [
+    "benchmark: marks tests as benchmark/documentation tests (not critical failures)",
+]

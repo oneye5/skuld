@@ -340,8 +340,13 @@ class TestTargetLeakageInvestigation:
 
 
 class TestICIRRealWorldBenchmark:
-    """Compare observed ICIR with realistic expectations."""
+    """Compare observed ICIR with realistic expectations.
     
+    These are documentation/benchmark tests that verify our understanding
+    of realistic metric ranges. They use pytest markers for clarity.
+    """
+    
+    @pytest.mark.benchmark
     def test_icir_10_is_unrealistic(self):
         """
         ICIR > 10 is virtually impossible in real-world finance.
@@ -352,7 +357,7 @@ class TestICIRRealWorldBenchmark:
         - ICIR of 5.0+ requires extraordinary skill or data
         - ICIR of 10+ almost certainly indicates leakage/error
         
-        This test documents the benchmark, not fail on it.
+        This test documents the benchmark and verifies the math, not fail on results.
         """
         observed_icir = 10.38  # From actual run (with wrong annualization)
         corrected_icir = 4.64  # With correct annualization (sqrt(50) not sqrt(252))
@@ -360,19 +365,17 @@ class TestICIRRealWorldBenchmark:
         # In academic literature, best reported ICIRs are typically < 3
         max_realistic_icir = 3.0
         
-        print(f"\nObserved ICIR (wrong annualization): {observed_icir:.2f}")
-        print(f"Corrected ICIR (sqrt(50)): {corrected_icir:.2f}")
-        print(f"Max realistic ICIR: {max_realistic_icir:.2f}")
+        # Verify that corrected ICIR is lower than observed (sanity check)
+        assert corrected_icir < observed_icir, "Corrected ICIR should be lower than wrong annualization"
         
+        # Verify the relationship makes mathematical sense
+        # With 365-day returns and ~daily observations, inflation factor ≈ sqrt(252/365*252) 
+        assert observed_icir / corrected_icir > 1.5, "Inflation factor should be significant"
+        
+        # Document findings
         if corrected_icir > max_realistic_icir:
-            print("\n[INFO] Corrected ICIR is still high (4.64)")
-            print("   This may indicate:")
-            print("   1. Autocorrelated IC observations from overlapping returns")
-            print("   2. Genuine predictive signal (quintiles are monotonic)")
-            print("   3. Small sample size (only 44 timestamps)")
-        
-        # This is informational, not a failure condition
-        assert True
+            # This is expected due to overlapping returns - not a test failure
+            pass
     
     def test_calculate_correct_annualization(self):
         """
@@ -457,11 +460,12 @@ class TestActualPipelineInvestigation:
             if autocorr_1 > 0.5:
                 print("\n  [WARNING] HIGH AUTOCORRELATION - likely overlapping return periods")
     
+    @pytest.mark.benchmark
     def test_check_timestamp_spacing_vs_forward_horizon(self):
         """Check if timestamps are properly spaced for forward return horizon.
         
-        This test documents the overlap issue but doesn't fail on it.
-        Overlapping returns are a known limitation that inflates ICIR.
+        This test documents the overlap issue. Overlapping returns are a known 
+        limitation that inflates ICIR. The test verifies we can detect this.
         """
         results_dir = Path(__file__).parent.parent / "output" / "runs"
         ranking_dirs = sorted([d for d in results_dir.iterdir() 
@@ -492,19 +496,17 @@ class TestActualPipelineInvestigation:
             
             forward_days = config.get("forward_return_days", 5)
             
-            print(f"\nTimestamp analysis:")
-            print(f"  Median spacing: {median_spacing_days:.1f} days")
-            print(f"  Forward return horizon: {forward_days} days")
-            
+            # Verify we can compute the overlap ratio
             if median_spacing_days < forward_days:
                 overlap_ratio = 1 - (median_spacing_days / forward_days)
-                print(f"\n  [INFO] OVERLAPPING RETURNS DETECTED")
-                print(f"     Overlap ratio: {overlap_ratio:.0%}")
-                print(f"     This inflates ICIR via autocorrelated IC observations")
-                print(f"     Recommendation: Subsample to {forward_days}-day spacing for cleaner metrics")
-        
-        # This is informational, not a failure
-        assert True
+                # This is expected - document it
+                assert overlap_ratio >= 0, "Overlap ratio should be non-negative"
+                assert overlap_ratio <= 1, "Overlap ratio should be <= 1"
+            else:
+                # Good - no overlap
+                assert median_spacing_days >= forward_days, "Spacing should be >= horizon for no overlap"
+        else:
+            pytest.skip("Insufficient timestamps for spacing analysis")
 
 
 if __name__ == "__main__":

@@ -71,3 +71,5 @@ main_output_ensemble.txt
 python/ml-pipeline/output/debug/latest/1_after_macro_prefix_summary.txt
 *.txt
 *.parquet
+*.parquet
+python/ml-pipeline/output/cache/wide_data.parquet

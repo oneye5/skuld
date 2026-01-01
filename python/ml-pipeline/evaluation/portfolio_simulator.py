@@ -255,19 +255,24 @@ class BacktestResult:
             lines.append("")
             lines.append(self.annual_stats.summary())
         
-        # Add warnings for potential issues
-        warnings = []
+        # Add notes for context-specific interpretation
+        notes = []
         if self.num_rebalances < 10:
-            warnings.append(f"[!] Low sample size ({self.num_rebalances} periods) - metrics may be unreliable")
+            notes.append(f"[Note] Low sample size ({self.num_rebalances} periods) - confidence intervals wide")
         if self.max_drawdown == 0 and self.num_rebalances > 1:
-            warnings.append("[!] Max drawdown = 0 (all periods positive) - Calmar ratio undefined")
+            notes.append("[Note] No negative periods observed - Calmar ratio undefined")
         if not np.isnan(self.avg_holding_period_years) and self.avg_holding_period_years > 0.5:
-            warnings.append(f"[!] Long holding period ({self.avg_holding_period_years:.1f}y) - drawdown only at rebalance points")
+            notes.append(f"[Note] Annual holding ({self.avg_holding_period_years:.1f}y) - drawdown = period-end snapshot")
+            if self.true_daily_returns is not None and len(self.true_daily_returns) > 0:
+                # Calculate true drawdown from daily returns
+                cum = (1 + self.true_daily_returns).cumprod()
+                true_dd = ((cum / cum.cummax()) - 1).min()
+                notes.append(f"       True intra-period max drawdown: {true_dd:.1%}")
         
-        if warnings:
+        if notes:
             lines.append("")
-            lines.append("--- Warnings ---")
-            lines.extend(warnings)
+            lines.append("--- Notes ---")
+            lines.extend(notes)
         
         return "\n".join(lines)
 

@@ -31,7 +31,11 @@ from config.columns import TIMESTAMP, TICKER, CLOSE, TARGET
 def _to_json_serializable(obj):
     """Recursively convert numpy types to JSON-serializable Python types."""
     if isinstance(obj, dict):
-        return {k: _to_json_serializable(v) for k, v in obj.items()}
+        # Convert both keys and values - handle numpy int keys
+        return {
+            (int(k) if isinstance(k, (np.integer, np.int32, np.int64)) else k): _to_json_serializable(v) 
+            for k, v in obj.items()
+        }
     elif isinstance(obj, list):
         return [_to_json_serializable(item) for item in obj]
     elif isinstance(obj, (np.floating, np.float32, np.float64)):
@@ -143,6 +147,15 @@ class RankingWindowResult:
     train_stocks_per_ts: float
     test_stocks_per_ts: float
     feature_importances: Optional[dict] = None  # Feature importances from this window
+    cluster_map: Optional[dict] = None  # Cluster assignments from this window
+
+
+@dataclass
+class ClusterInfo:
+    """Cluster information for the pipeline result."""
+    cluster_map: dict[str, int]  # ticker -> cluster_id
+    cluster_report: dict  # Full report from get_cluster_membership_report
+    cluster_performance: Optional[pd.DataFrame] = None  # Performance by cluster
 
 
 @dataclass
@@ -161,6 +174,8 @@ class RankingPipelineResult:
     decile_returns: Optional[dict] = None
     # Random baseline comparison
     random_baseline: Optional['RandomBaselineResult'] = None
+    # Cluster analysis (NZX-focused)
+    cluster_info: Optional[ClusterInfo] = None
 
 
 # =============================================================================
@@ -468,6 +483,32 @@ def run_single_ranking_window(
     del train_with_returns, test_with_returns
     gc.collect()
     
+    # ==========================================================================
+    # CLUSTER FEATURES (computed per-window to prevent leakage)
+    # Clusters are fit on TRAINING DATA ONLY, then applied to test
+    # ==========================================================================
+    from features.cluster_fast import compute_clusters_fast, add_cluster_features_fast
+    
+    # Compute clusters using only training period data
+    # Use train_end_ts as the cutoff to ensure no future data is used
+    train_only_df = wide_df[wide_df[TIMESTAMP] <= train_end_ts].copy()
+    
+    # Get cluster assignments (14 clusters for ~10% of tickers per cluster)
+    cluster_map = compute_clusters_fast(
+        train_only_df, 
+        n_clusters=14,
+        lookback_days=500,  # Use up to 2 years of training data
+        min_obs=100,
+    )
+    logger.debug(f"Window {window_id}: Computed {len(set(cluster_map.values()))} clusters for {len(cluster_map)} tickers")
+    
+    # Apply cluster assignments to train and test
+    train_features = add_cluster_features_fast(train_features, cluster_map)
+    test_features = add_cluster_features_fast(test_features, cluster_map)
+    
+    del train_only_df
+    gc.collect()
+    
     # NOTE: Cross-sectional features disabled - they cause suspicious Sharpe inflation
     # from features.cross_sectional import add_cross_sectional_features
     # train_features = add_cross_sectional_features(train_features)
@@ -587,6 +628,7 @@ def run_single_ranking_window(
         train_stocks_per_ts=train_ts_counts.mean(),
         test_stocks_per_ts=test_ts_counts.mean(),
         feature_importances=feature_importances,
+        cluster_map=cluster_map,
     )
 
 
@@ -743,6 +785,7 @@ def run_ranking_pipeline(
     window_summaries: List[dict] = []
     windows_completed = 0
     windows_skipped = 0
+    last_cluster_map: Optional[dict] = None  # Store cluster map from most recent window
     
     for window_id, (train_end_ts, test_end_ts) in enumerate(window_timestamps):
         log_window_start(window_id, num_windows)
@@ -773,6 +816,10 @@ def run_ranking_pipeline(
             continue
         
         windows_completed += 1
+        
+        # Store cluster map from this window (last one will be used for reporting)
+        if result.cluster_map:
+            last_cluster_map = result.cluster_map
         
         # Add window_id to predictions
         result.predictions_df["window_id"] = window_id
@@ -975,6 +1022,41 @@ def run_ranking_pipeline(
     config["completed_at"] = pipeline_end_time.isoformat()
     config["duration_seconds"] = pipeline_duration
     
+    # Build cluster info from last window (most recent cluster assignments)
+    cluster_info = None
+    if last_cluster_map:
+        print("Building cluster analysis report...")
+        try:
+            from features.ticker_clusters import (
+                get_cluster_membership_report,
+                compute_ticker_characteristics,
+                get_cluster_performance_by_predictions,
+            )
+            
+            # Get ticker characteristics for the report
+            stats_df = compute_ticker_characteristics(wide_df, lookback_days=500)
+            
+            # Build full report
+            cluster_report = get_cluster_membership_report(last_cluster_map, stats_df)
+            
+            # Compute performance by cluster
+            cluster_perf = get_cluster_performance_by_predictions(
+                combined_predictions,
+                last_cluster_map,
+                ticker_col=TICKER,
+                actual_col="actual_return",
+                predicted_col="predicted_score",
+            )
+            
+            cluster_info = ClusterInfo(
+                cluster_map=last_cluster_map,
+                cluster_report=cluster_report,
+                cluster_performance=cluster_perf,
+            )
+            logger.info(f"Cluster report: {len(last_cluster_map)} tickers in {len(cluster_report['clusters'])} clusters")
+        except Exception as e:
+            logger.warning(f"Could not build cluster report: {e}")
+    
     # Log final summary
     log_pipeline_summary(
         mean_ic=metrics.mean_ic,
@@ -996,6 +1078,7 @@ def run_ranking_pipeline(
         feature_importances=feature_importances,
         decile_returns=decile_returns,
         random_baseline=random_baseline,
+        cluster_info=cluster_info,
     )
     
     # Save results
@@ -1107,6 +1190,33 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
     with open(output_dir / "window_summaries.json", "w") as f:
         json.dump(_to_json_serializable(window_summaries_clean), f, indent=2)
     
+    # Save cluster information (NZX-focused analysis)
+    if result.cluster_info is not None:
+        cluster_dir = output_dir / "clusters"
+        cluster_dir.mkdir(exist_ok=True)
+        
+        # Save cluster map
+        with open(cluster_dir / "cluster_map.json", "w") as f:
+            json.dump(_to_json_serializable(result.cluster_info.cluster_map), f, indent=2)
+        
+        # Save cluster report (membership and characteristics)
+        with open(cluster_dir / "cluster_report.json", "w") as f:
+            json.dump(_to_json_serializable(result.cluster_info.cluster_report), f, indent=2)
+        
+        # Save cluster performance
+        if result.cluster_info.cluster_performance is not None:
+            result.cluster_info.cluster_performance.to_csv(
+                cluster_dir / "cluster_performance.csv", index=False
+            )
+        
+        # Generate cluster text report
+        from features.ticker_clusters import format_cluster_report_text
+        cluster_report_text = format_cluster_report_text(result.cluster_info.cluster_report)
+        with open(cluster_dir / "cluster_membership.txt", "w") as f:
+            f.write(cluster_report_text)
+        
+        print(f"Saved cluster analysis to {cluster_dir}")
+    
     # Generate visualizations using the extended generator
     try:
         from evaluation.visualization import generate_all_figures_extended
@@ -1160,6 +1270,16 @@ def save_ranking_results(result: RankingPipelineResult) -> Path:
             predicted_col="predicted_score",
             actual_col="actual_return",
         )
+        
+        # Generate cluster figures if cluster info available
+        if result.cluster_info is not None:
+            from evaluation.visualization import generate_cluster_figures
+            cluster_figures = generate_cluster_figures(
+                cluster_report=result.cluster_info.cluster_report,
+                cluster_performance=result.cluster_info.cluster_performance,
+                output_dir=str(output_dir),
+            )
+            saved_figures.update(cluster_figures)
         
         # Save figure manifest
         with open(output_dir / "figures_manifest.json", "w") as f:
@@ -1289,12 +1409,56 @@ def print_ranking_summary(result: RankingPipelineResult) -> None:
         ic_sig = "Significant" if cm.ic_ttest_pvalue < 0.05 else "Not Significant"
         print(f"IC p-value:        {cm.ic_ttest_pvalue:.4f} ({ic_sig})" if not pd.isna(cm.ic_ttest_pvalue) else "IC p-value:        N/A")
     
+    # Print cluster analysis if available
+    if result.cluster_info is not None:
+        print("\n--- NZX Cluster Analysis ---")
+        report = result.cluster_info.cluster_report
+        clusters = report.get('clusters', {})
+        print(f"Total clusters:    {len(clusters)}")
+        print(f"Total tickers:     {len(result.cluster_info.cluster_map)}")
+        
+        # Show brief cluster summary
+        print("\nCluster Overview:")
+        for cluster_id in sorted(clusters.keys()):
+            c = clusters[cluster_id]
+            chars = c.get('characteristics', {})
+            vol_pct = chars.get('volatility', 0) * 100
+            ret_pct = chars.get('mean_return', 0) * 100
+            print(f"  C{cluster_id}: {c['label']:<20} ({c['n_stocks']:2} stocks, vol={vol_pct:5.1f}%, ret={ret_pct:+6.1f}%)")
+        
+        # Show model performance by cluster if available
+        if result.cluster_info.cluster_performance is not None and len(result.cluster_info.cluster_performance) > 0:
+            perf = result.cluster_info.cluster_performance
+            print("\nModel Performance by Cluster:")
+            for _, row in perf.iterrows():
+                ic = row['pearson_ic']
+                hr = row['hit_rate']
+                n = row['n_predictions']
+                print(f"  C{int(row['cluster'])}: IC={ic:+.3f}, Hit Rate={hr:.0%} (n={n})")
+    
     # Print top features if available
     if result.feature_importances:
         print("\n--- Top 10 Features ---")
         sorted_features = sorted(result.feature_importances.items(), key=lambda x: x[1], reverse=True)[:10]
         for i, (feature, importance) in enumerate(sorted_features, 1):
             print(f"  {i:2}. {feature:<30} {importance:.4f}")
+    
+    # Print NZX-specific annual implementation notes
+    config = result.config
+    forward_days = config.get('forward_return_days', 365)
+    if forward_days >= 200:
+        print("\n--- Annual Strategy Implementation Notes ---")
+        print(f"Rebalance frequency:   Annual ({forward_days}-day horizon)")
+        print(f"Positions:             Long {config.get('portfolio_top_n', 10)}, Short {config.get('portfolio_bottom_n', 10)}")
+        print(f"Transaction cost:      {config.get('transaction_cost_bps', 10)} bps round-trip")
+        
+        if result.backtest.annual_stats is not None:
+            stats = result.backtest.annual_stats
+            print(f"\nExpected Annual Range:")
+            print(f"  5th percentile:      {stats.pct_5_annual_return:+.1%}")
+            print(f"  Median:              {stats.median_annual_return:+.1%}")
+            print(f"  95th percentile:     {stats.pct_95_annual_return:+.1%}")
+            print(f"  Win probability:     {stats.pct_positive_years:.0%}")
     
     print("\n" + "=" * 60)
 

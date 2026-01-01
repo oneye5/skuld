@@ -2444,6 +2444,291 @@ def create_extended_dashboard(
 
 
 # =============================================================================
+# CLUSTER VISUALIZATIONS (NZX-focused analysis)
+# =============================================================================
+
+def plot_cluster_composition(
+    cluster_report: Dict,
+    title: str = "NZX Stock Cluster Composition",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (14, 8),
+) -> "plt.Figure":
+    """Bar chart showing cluster composition with ticker labels.
+    
+    Args:
+        cluster_report: Output from get_cluster_membership_report().
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    clusters = cluster_report.get('clusters', {})
+    if not clusters:
+        raise ValueError("Empty cluster report")
+    
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    
+    # Left: Bar chart of cluster sizes
+    ax1 = axes[0]
+    cluster_ids = sorted(clusters.keys())
+    sizes = [clusters[c]['n_stocks'] for c in cluster_ids]
+    labels = [f"C{c}: {clusters[c]['label'][:15]}" for c in cluster_ids]
+    
+    # Color by cluster characteristics
+    colors = []
+    for c in cluster_ids:
+        chars = clusters[c].get('characteristics', {})
+        vol = chars.get('volatility', 0.3)
+        ret = chars.get('mean_return', 0)
+        if ret > 0:
+            colors.append(COLORS['positive'] if vol < 0.3 else COLORS['secondary'])
+        else:
+            colors.append(COLORS['neutral'] if vol < 0.3 else COLORS['negative'])
+    
+    bars = ax1.barh(labels, sizes, color=colors, edgecolor='black', linewidth=0.5, alpha=0.8)
+    
+    # Add count labels
+    for bar, size in zip(bars, sizes):
+        ax1.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height()/2,
+                f'{size}', va='center', fontsize=9)
+    
+    ax1.set_xlabel("Number of Stocks", fontsize=10)
+    ax1.set_title("Cluster Size Distribution", fontsize=11, fontweight='bold')
+    ax1.invert_yaxis()
+    
+    # Right: Scatter of cluster characteristics
+    ax2 = axes[1]
+    
+    for c in cluster_ids:
+        chars = clusters[c].get('characteristics', {})
+        vol = chars.get('volatility', 0) * 100
+        ret = chars.get('mean_return', 0) * 100
+        n = clusters[c]['n_stocks']
+        label = clusters[c]['label']
+        
+        ax2.scatter(vol, ret, s=n*20, alpha=0.7, label=f"C{c}: {label} ({n})")
+    
+    ax2.axhline(0, color='black', linewidth=0.5, linestyle='--')
+    ax2.axvline(25, color='gray', linewidth=0.5, linestyle=':', alpha=0.5)
+    ax2.axvline(50, color='gray', linewidth=0.5, linestyle=':', alpha=0.5)
+    
+    ax2.set_xlabel("Avg Volatility (%)", fontsize=10)
+    ax2.set_ylabel("Avg Annual Return (%)", fontsize=10)
+    ax2.set_title("Cluster Risk/Return Profile", fontsize=11, fontweight='bold')
+    ax2.legend(loc='best', fontsize=8, ncol=2)
+    
+    # Add quadrant labels
+    ax2.text(10, ax2.get_ylim()[1]*0.85, "Quality", fontsize=9, ha='center', alpha=0.5)
+    ax2.text(60, ax2.get_ylim()[1]*0.85, "Speculative", fontsize=9, ha='center', alpha=0.5)
+    ax2.text(10, ax2.get_ylim()[0]*0.85, "Value", fontsize=9, ha='center', alpha=0.5)
+    ax2.text(60, ax2.get_ylim()[0]*0.85, "Distressed", fontsize=9, ha='center', alpha=0.5)
+    
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_cluster_performance(
+    cluster_performance_df: pd.DataFrame,
+    title: str = "Model Performance by Cluster",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (14, 10),
+) -> "plt.Figure":
+    """Visualize model performance broken down by cluster.
+    
+    Args:
+        cluster_performance_df: Output from get_cluster_performance_by_predictions().
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    df = cluster_performance_df.copy()
+    if df.empty:
+        raise ValueError("Empty cluster performance data")
+    
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    
+    clusters = df['cluster'].values
+    n_clusters = len(clusters)
+    x_pos = range(n_clusters)
+    cluster_labels = [f"C{c}" for c in clusters]
+    
+    # 1. IC by cluster (top-left)
+    ax1 = axes[0, 0]
+    colors_ic = [COLORS['positive'] if v > 0 else COLORS['negative'] for v in df['pearson_ic']]
+    ax1.bar(x_pos, df['pearson_ic'], color=colors_ic, alpha=0.7, edgecolor='black', label='Pearson IC')
+    ax1.scatter(x_pos, df['rank_ic'], color=COLORS['secondary'], s=80, marker='D', 
+                label='Rank IC', zorder=5)
+    ax1.axhline(0, color='black', linewidth=0.5)
+    ax1.axhline(df['pearson_ic'].mean(), color='gray', linestyle='--', 
+                label=f"Mean IC: {df['pearson_ic'].mean():.3f}")
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(cluster_labels)
+    ax1.set_ylabel("IC")
+    ax1.set_title("Information Coefficient by Cluster", fontsize=11)
+    ax1.legend(fontsize=8)
+    
+    # 2. Hit rate by cluster (top-right)
+    ax2 = axes[0, 1]
+    colors_hr = [COLORS['positive'] if v > 0.5 else COLORS['negative'] for v in df['hit_rate']]
+    bars = ax2.bar(x_pos, df['hit_rate'], color=colors_hr, alpha=0.7, edgecolor='black')
+    ax2.axhline(0.5, color='gray', linestyle='--', label='Random (50%)')
+    ax2.set_xticks(x_pos)
+    ax2.set_xticklabels(cluster_labels)
+    ax2.set_ylabel("Hit Rate")
+    ax2.set_title("Hit Rate by Cluster", fontsize=11)
+    ax2.set_ylim(0, 1)
+    ax2.legend(fontsize=8)
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+    
+    # Add hit rate labels
+    for bar, hr in zip(bars, df['hit_rate']):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
+                f'{hr:.0%}', ha='center', fontsize=8)
+    
+    # 3. Average return by cluster (bottom-left)
+    ax3 = axes[1, 0]
+    colors_ret = [COLORS['positive'] if v > 0 else COLORS['negative'] for v in df['avg_return']]
+    bars = ax3.bar(x_pos, df['avg_return'], color=colors_ret, alpha=0.7, edgecolor='black')
+    ax3.errorbar(x_pos, df['avg_return'], yerr=df['return_std'], fmt='none', 
+                 color='black', capsize=3, capthick=1, alpha=0.5)
+    ax3.axhline(0, color='black', linewidth=0.5)
+    ax3.set_xticks(x_pos)
+    ax3.set_xticklabels(cluster_labels)
+    ax3.set_ylabel("Avg Return")
+    ax3.set_title("Average Return by Cluster (±1 Std)", fontsize=11)
+    ax3.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+    
+    # 4. Sample size by cluster (bottom-right)
+    ax4 = axes[1, 1]
+    bars = ax4.bar(x_pos, df['n_predictions'], color=COLORS['primary'], 
+                   alpha=0.7, edgecolor='black')
+    ax4.set_xticks(x_pos)
+    ax4.set_xticklabels(cluster_labels)
+    ax4.set_ylabel("Number of Predictions")
+    ax4.set_title("Sample Size by Cluster", fontsize=11)
+    
+    # Add unique ticker count
+    for bar, (n_pred, n_tick) in zip(bars, zip(df['n_predictions'], df['n_unique_tickers'])):
+        ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(df['n_predictions'])*0.02,
+                f'{n_tick} tickers', ha='center', fontsize=8, rotation=45)
+    
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+def plot_cluster_ticker_grid(
+    cluster_report: Dict,
+    max_tickers_per_cluster: int = 15,
+    title: str = "Cluster Membership Grid",
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (16, 12),
+) -> "plt.Figure":
+    """Grid showing which tickers belong to which clusters.
+    
+    Args:
+        cluster_report: Output from get_cluster_membership_report().
+        max_tickers_per_cluster: Max tickers to show per cluster.
+        title: Chart title.
+        save_path: If provided, save figure to this path.
+        figsize: Figure size.
+    
+    Returns:
+        Matplotlib figure object.
+    """
+    _check_matplotlib()
+    
+    clusters = cluster_report.get('clusters', {})
+    if not clusters:
+        raise ValueError("Empty cluster report")
+    
+    n_clusters = len(clusters)
+    n_cols = min(4, n_clusters)
+    n_rows = (n_clusters + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    if n_rows == 1 and n_cols == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1:
+        axes = axes.reshape(1, -1)
+    elif n_cols == 1:
+        axes = axes.reshape(-1, 1)
+    
+    cluster_ids = sorted(clusters.keys())
+    
+    for idx, cluster_id in enumerate(cluster_ids):
+        row = idx // n_cols
+        col = idx % n_cols
+        ax = axes[row, col]
+        
+        cluster = clusters[cluster_id]
+        label = cluster['label']
+        tickers = cluster['tickers'][:max_tickers_per_cluster]
+        chars = cluster.get('characteristics', {})
+        
+        # Color based on characteristics
+        vol = chars.get('volatility', 0.3)
+        ret = chars.get('mean_return', 0)
+        if ret > 0:
+            bg_color = '#e6ffe6' if vol < 0.3 else '#fff9e6'  # Green/Yellow tint
+        else:
+            bg_color = '#f0f0f0' if vol < 0.3 else '#ffe6e6'  # Gray/Red tint
+        
+        ax.set_facecolor(bg_color)
+        
+        # Build ticker text
+        ticker_text = "\n".join([", ".join(tickers[i:i+4]) for i in range(0, len(tickers), 4)])
+        if len(cluster['tickers']) > max_tickers_per_cluster:
+            ticker_text += f"\n... +{len(cluster['tickers']) - max_tickers_per_cluster} more"
+        
+        # Display
+        ax.text(0.5, 0.95, f"Cluster {cluster_id}: {label}", 
+                transform=ax.transAxes, fontsize=11, fontweight='bold',
+                ha='center', va='top')
+        
+        ax.text(0.5, 0.75, f"N={cluster['n_stocks']} stocks", 
+                transform=ax.transAxes, fontsize=9, ha='center', va='top', alpha=0.7)
+        
+        if chars:
+            char_text = f"Vol: {chars.get('volatility', 0):.0%}  |  Ret: {chars.get('mean_return', 0):.0%}"
+            ax.text(0.5, 0.62, char_text, transform=ax.transAxes, fontsize=8, 
+                   ha='center', va='top', alpha=0.6)
+        
+        ax.text(0.5, 0.45, ticker_text, transform=ax.transAxes, fontsize=8,
+               ha='center', va='top', fontfamily='monospace')
+        
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+    
+    # Hide unused subplots
+    for idx in range(len(cluster_ids), n_rows * n_cols):
+        row = idx // n_cols
+        col = idx % n_cols
+        axes[row, col].axis('off')
+    
+    fig.suptitle(title, fontsize=16, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_figure(fig, save_path)
+    
+    return fig
+
+
+# =============================================================================
 # UPDATED COMPREHENSIVE FIGURE GENERATION
 # =============================================================================
 
@@ -2599,5 +2884,75 @@ def generate_all_figures_extended(
             print(f"    Warning: Could not generate cost impact chart: {e}")
     
     print(f"  Generated {len(saved_figures)} figures total in {figures_dir}")
+    
+    return saved_figures
+
+
+def generate_cluster_figures(
+    cluster_report: Dict,
+    cluster_performance: Optional[pd.DataFrame],
+    output_dir: str,
+) -> Dict[str, str]:
+    """Generate cluster-specific visualizations.
+    
+    Args:
+        cluster_report: Output from get_cluster_membership_report().
+        cluster_performance: Output from get_cluster_performance_by_predictions().
+        output_dir: Directory to save figures.
+    
+    Returns:
+        Dictionary mapping figure name to file path.
+    """
+    _check_matplotlib()
+    
+    figures_dir = Path(output_dir) / "figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_figures = {}
+    
+    print("  Generating cluster figures...")
+    
+    # Cluster composition chart
+    if cluster_report:
+        try:
+            fig = plot_cluster_composition(
+                cluster_report,
+                title="NZX Stock Cluster Composition",
+            )
+            path = str(figures_dir / "30_cluster_composition.png")
+            _save_figure(fig, path)
+            plt.close(fig)
+            saved_figures['cluster_composition'] = path
+        except Exception as e:
+            print(f"    Warning: Could not generate cluster composition: {e}")
+        
+        # Cluster ticker grid
+        try:
+            fig = plot_cluster_ticker_grid(
+                cluster_report,
+                title="Cluster Membership Grid",
+            )
+            path = str(figures_dir / "31_cluster_ticker_grid.png")
+            _save_figure(fig, path)
+            plt.close(fig)
+            saved_figures['cluster_ticker_grid'] = path
+        except Exception as e:
+            print(f"    Warning: Could not generate cluster ticker grid: {e}")
+    
+    # Cluster performance chart
+    if cluster_performance is not None and len(cluster_performance) > 0:
+        try:
+            fig = plot_cluster_performance(
+                cluster_performance,
+                title="Model Performance by Cluster",
+            )
+            path = str(figures_dir / "32_cluster_performance.png")
+            _save_figure(fig, path)
+            plt.close(fig)
+            saved_figures['cluster_performance'] = path
+        except Exception as e:
+            print(f"    Warning: Could not generate cluster performance: {e}")
+    
+    print(f"  Generated {len(saved_figures)} cluster figures")
     
     return saved_figures

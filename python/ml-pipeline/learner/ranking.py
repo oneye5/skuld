@@ -87,6 +87,8 @@ class RankerConfig:
         min_child_samples: Minimum samples in a leaf.
         subsample: Fraction of samples for each iteration.
         colsample_bytree: Fraction of features for each tree.
+        reg_alpha: L1 regularization term on weights.
+        reg_lambda: L2 regularization term on weights.
         objective: Ranking objective ('lambdarank', 'rank_xendcg', 'pairwise').
         metric: Evaluation metric ('ndcg', 'map').
         eval_at: Positions to evaluate NDCG at.
@@ -101,8 +103,8 @@ class RankerConfig:
     min_child_samples: int = 20
     subsample: float = 0.8
     colsample_bytree: float = 0.8
-    reg_alpha: float = 0.1
-    reg_lambda: float = 0.1
+    reg_alpha: float = 0.0
+    reg_lambda: float = 0.0
     objective: str = "lambdarank"
     metric: str = "ndcg"
     eval_at: Tuple[int, ...] = (5, 10, 20)
@@ -256,6 +258,8 @@ class LightGBMRankerWrapper(BaseRanker):
             "num_leaves": self.config.num_leaves,
             "max_depth": self.config.max_depth,
             "min_child_samples": self.config.min_child_samples,
+            "reg_alpha": self.config.reg_alpha,
+            "reg_lambda": self.config.reg_lambda,
             "subsample": self.config.subsample,
             "colsample_bytree": self.config.colsample_bytree,
             "objective": self.config.objective,

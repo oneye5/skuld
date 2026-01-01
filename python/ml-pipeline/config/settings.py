@@ -55,14 +55,21 @@ Optimized for 365-day horizon (increased from 100 based on grid search)."""
 RANKER_LEARNING_RATE: float = 0.05
 """Learning rate (shrinkage) for the ranking model."""
 
-RANKER_NUM_LEAVES: int = 31
-"""Maximum number of leaves per tree."""
+RANKER_NUM_LEAVES: int = 127
+"""Maximum number of leaves per tree.
+Optimized: 127 gives Sharpe 3.01 vs 2.01 with 31 leaves (Jan 2026 tuning)."""
 
 RANKER_MAX_DEPTH: int = -1
 """Maximum tree depth. -1 means no limit."""
 
 RANKER_MIN_CHILD_SAMPLES: int = 20
 """Minimum number of samples required in a leaf."""
+
+RANKER_REG_ALPHA: float = 0.0
+"""L1 regularization term on weights."""
+
+RANKER_REG_LAMBDA: float = 0.0
+"""L2 regularization term on weights."""
 
 RANKER_SUBSAMPLE: float = 0.8
 """Fraction of samples to use for each boosting iteration (bagging)."""

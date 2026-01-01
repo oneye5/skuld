@@ -84,9 +84,18 @@ def compute_clusters_fast(
     valid_mask = returns.notna().sum() >= min_obs
     valid_tickers = returns.columns[valid_mask].tolist()
     
+    # Handle edge case: no valid tickers
+    if len(valid_tickers) == 0:
+        logger.warning("No valid tickers found for clustering - returning empty cluster map")
+        return {}
+    
     if len(valid_tickers) < n_clusters:
         logger.warning(f"Only {len(valid_tickers)} valid tickers, reducing clusters")
         n_clusters = max(2, len(valid_tickers) // 3)
+        # Still need at least 2 tickers for meaningful clustering
+        if len(valid_tickers) < 2:
+            logger.warning("Less than 2 tickers - assigning all to cluster 0")
+            return {ticker: 0 for ticker in valid_tickers}
     
     returns = returns[valid_tickers]
     

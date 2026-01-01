@@ -1,103 +1,252 @@
 # Annual Statistics for Real-World Implementation
 
+> **Navigation:** [Main README](../README.md) | [Pipeline Guide](RANKING_PIPELINE_GUIDE.md) | [Features](FEATURES.md) | [Testing](TESTING.md)
+
+---
+
 ## Overview
 
-The ranking pipeline now includes **annual return distribution statistics** to help assess real-world implementation expectations and support Monte Carlo simulations.
+The ranking pipeline computes **annual return distribution statistics** to support real-world implementation decisions and Monte Carlo simulations.
 
-## What's Included
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                      ANNUAL STATISTICS COMPUTATION                          │
+└────────────────────────────────────────────────────────────────────────────┘
 
-When running the evaluation pipeline with `price_data` provided (for continuous daily returns), the system automatically computes:
+Portfolio Daily Returns (from backtest)
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ Group by Calendar Year                                         │
+│ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               │
+│ │ Year 1  │ │ Year 2  │ │ Year 3  │ │ ...     │               │
+│ │ Returns │ │ Returns │ │ Returns │ │         │               │
+│ └────┬────┘ └────┬────┘ └────┬────┘ └─────────┘               │
+│      │           │           │                                 │
+│      ▼           ▼           ▼                                 │
+│ ┌─────────────────────────────────┐                           │
+│ │ Compound to Annual Returns      │                           │
+│ │ R_annual = ∏(1 + r_daily) - 1   │                           │
+│ └─────────────────────────────────┘                           │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ STATISTICS                                                     │
+│                                                                │
+│  Distribution:      │  Risk:              │  Shape:           │
+│  • Mean             │  • Std Dev          │  • Skewness       │
+│  • Median           │  • Percentiles      │  • Kurtosis       │
+│  • Min/Max          │  • Win/Loss Profile │  • Annual Sharpe  │
+└───────────────────────────────────────────────────────────────┘
+```
+
+## What's Computed
 
 ### Return Distribution
-- **Mean Annual Return**: Average annual return across all years
-- **Median Annual Return**: Middle value of annual returns
-- **Std Dev (Annual)**: Standard deviation of annual returns
-- **Percentiles**: 5th, 25th, 75th, 95th percentiles
-- **Range**: Best and worst year
+| Metric | Description |
+|--------|-------------|
+| **Mean Annual Return** | Average annual return across all years |
+| **Median Annual Return** | Middle value (robust to outliers) |
+| **Std Dev (Annual)** | Volatility of annual returns |
+| **Percentiles** | 5th, 25th, 75th, 95th percentiles |
+| **Range** | Best and worst year |
 
 ### Win/Loss Profile
-- **% Positive Years**: Percentage of years with positive returns
-- **Avg Winning Year**: Average return in positive years
-- **Avg Losing Year**: Average return in negative years
+| Metric | Description |
+|--------|-------------|
+| **% Positive Years** | Percentage of years with positive returns |
+| **Avg Winning Year** | Average return in positive years |
+| **Avg Losing Year** | Average return in negative years |
 
 ### Shape Statistics
-- **Skewness**: Asymmetry of return distribution (positive = more upside)
-- **Excess Kurtosis**: Tail heaviness (higher = more extreme outcomes)
+| Metric | Description |
+|--------|-------------|
+| **Skewness** | Distribution asymmetry (positive = more upside) |
+| **Excess Kurtosis** | Tail heaviness (higher = more extreme outcomes) |
+| **Avg Annual Sharpe** | Risk-adjusted performance per year |
 
-### Risk-Adjusted
-- **Avg Annual Sharpe**: Average Sharpe ratio computed per year
+## Usage
 
-## How to Use
-
-### 1. Run Pipeline with Price Data
-
-The pipeline automatically computes annual statistics when it has access to daily price data:
+### 1. Run the Pipeline
 
 ```bash
+cd python/ml-pipeline
 uv run python scripts/run_model_evaluation.py
 ```
 
-No additional flags needed - if the raw data includes daily prices, annual statistics will be computed automatically.
+Annual statistics are computed automatically when daily price data is available.
 
 ### 2. View Results
 
 **Console Output:**
 ```
 === Annual Return Statistics ===
-Years Covered:        3.5
-Complete Years:       3
+Years Covered:        5.0
+Complete Years:       5
 
 --- Return Distribution ---
-Mean Annual Return:     8.50%
-Median Annual Return:   9.00%
-Std Dev (Annual):      12.00%
+Mean Annual Return:    12.50%
+Median Annual Return:  11.00%
+Std Dev (Annual):      18.00%
 
 --- Percentiles ---
-5th Percentile:        -5.00%
-25th Percentile (Q1):   2.00%
-75th Percentile (Q3):  15.00%
-95th Percentile:       22.00%
+5th Percentile:        -8.00%
+25th Percentile (Q1):   3.00%
+75th Percentile (Q3):  22.00%
+95th Percentile:       35.00%
 
 --- Range ---
-Best Year:             25.00%
-Worst Year:            -8.00%
+Best Year:             42.00%
+Worst Year:           -12.00%
 
 --- Win/Loss Profile ---
-% Positive Years:      75.0%
-Avg Winning Year:      12.00%
-Avg Losing Year:       -6.00%
+% Positive Years:      80.0%
+Avg Winning Year:      18.00%
+Avg Losing Year:       -8.00%
 
 --- Shape ---
-Skewness:              0.25
-Excess Kurtosis:       1.50
+Skewness:              0.35
+Excess Kurtosis:       0.80
 
 --- Risk-Adjusted ---
-Avg Annual Sharpe:     0.75
+Avg Annual Sharpe:     0.85
 ```
 
-**JSON Output:**
-
-Results are saved to `output/runs/ranking_<timestamp>/backtest_metrics.json`:
+**JSON Output:** (in `output/runs/ranking_<timestamp>/backtest_metrics.json`)
 
 ```json
 {
   "annual_statistics": {
-    "mean_annual_return": 0.085,
-    "median_annual_return": 0.09,
-    "std_annual_return": 0.12,
-    "min_annual_return": -0.08,
-    "max_annual_return": 0.25,
-    "pct_5_annual_return": -0.05,
-    "pct_25_annual_return": 0.02,
-    "pct_75_annual_return": 0.15,
-    "pct_95_annual_return": 0.22,
-    "pct_positive_years": 0.75,
-    "avg_positive_year": 0.12,
-    "avg_negative_year": -0.06,
-    "skewness_annual": 0.25,
-    "kurtosis_annual": 1.5,
-    "sharpe_annual_avg": 0.75,
-    "num_years": 3,
+    "mean_annual_return": 0.125,
+    "median_annual_return": 0.11,
+    "std_annual_return": 0.18,
+    "min_annual_return": -0.12,
+    "max_annual_return": 0.42,
+    "pct_5_annual_return": -0.08,
+    "pct_25_annual_return": 0.03,
+    "pct_75_annual_return": 0.22,
+    "pct_95_annual_return": 0.35,
+    "pct_positive_years": 0.80,
+    "avg_positive_year": 0.18,
+    "avg_negative_year": -0.08,
+    "skewness_annual": 0.35,
+    "kurtosis_annual": 0.80,
+    "sharpe_annual_avg": 0.85,
+    "num_years": 5,
+    "years_sampled": 5.0
+  }
+}
+```
+
+### 3. Monte Carlo Simulation
+
+```python
+import json
+import numpy as np
+
+# Load statistics
+with open("output/runs/ranking_<timestamp>/backtest_metrics.json") as f:
+    metrics = json.load(f)
+
+stats = metrics["annual_statistics"]
+
+# Parametric simulation (normal distribution)
+mean = stats["mean_annual_return"]
+std = stats["std_annual_return"]
+
+# Simulate 1000 paths over 10 years
+simulated = np.random.normal(mean, std, size=(1000, 10))
+
+# Compute terminal wealth
+wealth_paths = np.cumprod(1 + simulated, axis=1)
+terminal_wealth = wealth_paths[:, -1]
+
+print(f"Median 10-year wealth: {np.median(terminal_wealth):.2f}x")
+print(f"5th percentile: {np.percentile(terminal_wealth, 5):.2f}x")
+print(f"95th percentile: {np.percentile(terminal_wealth, 95):.2f}x")
+```
+
+## Interpreting Results
+
+### Skewness Guide
+
+```
+Positive Skew (> 0)        │ Zero Skew (≈ 0)          │ Negative Skew (< 0)
+                           │                          │
+     ╱╲                    │      ╱╲                  │         ╱╲
+    ╱  ╲___                │     ╱  ╲                 │     ___╱  ╲
+   ╱      ╲__              │    ╱    ╲                │    __╱    ╲
+──────────────►            │ ──────────►              │ ──────────────►
+                           │                          │
+More extreme positive      │ Symmetric                │ More extreme negative
+returns (occasional        │ distribution             │ returns (tail risk)
+big winners)               │                          │
+```
+
+### Kurtosis Guide
+
+| Value | Interpretation |
+|-------|----------------|
+| < 3 | Thin tails, fewer extremes, more predictable |
+| ≈ 3 | Normal distribution (baseline) |
+| > 3 | Fat tails, more extremes, higher tail risk |
+
+### Win Rate Analysis
+
+| Pattern | Implication |
+|---------|-------------|
+| High win rate + low avg winner | "Picking up nickels" — steady but limited upside |
+| Low win rate + high avg winner | "Lottery" — volatile, requires discipline |
+| 60-70% win + decent avg both | Healthy, sustainable profile |
+
+## Practical Applications
+
+### Capital Requirements
+Use **worst-year return** to size positions conservatively:
+```python
+max_loss_per_year = abs(stats["min_annual_return"])
+capital_at_risk = portfolio_value * max_loss_per_year
+```
+
+### Risk Budgeting
+Use **std dev** for position sizing:
+```python
+target_portfolio_vol = 0.15  # 15% target volatility
+position_size = target_portfolio_vol / stats["std_annual_return"]
+```
+
+### Strategy Comparison
+Compare multiple strategies:
+```python
+strategies = {"A": stats_a, "B": stats_b, "C": stats_c}
+for name, s in strategies.items():
+    print(f"{name}: Sharpe={s['sharpe_annual_avg']:.2f}, "
+          f"Skew={s['skewness_annual']:.2f}")
+```
+
+## Requirements
+
+- **Minimum data:** 252 days of continuous daily returns
+- **Minimum years:** 2 complete calendar years (200+ trading days each)
+- **Data source:** Daily price data from backtest
+
+## Limitations
+
+| Limitation | Description |
+|------------|-------------|
+| **Partial Years** | First/last years with <200 days excluded |
+| **Calendar Grouping** | Assumes Jan-Dec years |
+| **Sample Size** | Few years = high estimation error |
+| **Stationarity** | Assumes return distribution is stable |
+
+## Related Documentation
+
+- [Ranking Pipeline Guide](RANKING_PIPELINE_GUIDE.md) — Full pipeline documentation
+- [Testing](TESTING.md) — Test coverage including annual statistics tests
+- `evaluation/portfolio_simulator.py` — Implementation details
+- `tests/test_annual_statistics.py` — Unit tests and examples
+
     "years_sampled": 3.5
   }
 }

@@ -4,10 +4,10 @@
 
 ---
 
-A comprehensive machine learning pipeline for **Learning-to-Rank** stock prediction, focusing on the New Zealand Stock Exchange (NZX). The system consists of two main components:
+A comprehensive machine learning pipeline for **Learning-to-Rank** asset prediction, focusing on the New Zealand Exchange (NZX). The system consists of two main components:
 
-1. **Java Data Ingestion** (`java/`) — Fetches and consolidates financial data from multiple sources
-2. **Python ML Pipeline** (`python/ml-pipeline/`) — Implements ranking-based stock prediction using LightGBM
+1. **Java Data Ingestion** (`java/`) — Fetches and consolidates data from multiple sources
+2. **Python ML Pipeline** (`python/ml-pipeline/`) — Implements ranking-based asset prediction using LightGBM
 
 ```
                     ┌─────────────────────────────────────────────────────────────┐
@@ -34,7 +34,7 @@ A comprehensive machine learning pipeline for **Learning-to-Rank** stock predict
                                     └─────────────────────┘
 ```
 
-## 📊 Key Metrics (Latest Results)
+## Key Metrics (Latest Results)
 
 | Metric | Value | Description |
 |--------|-------|-------------|
@@ -43,7 +43,7 @@ A comprehensive machine learning pipeline for **Learning-to-Rank** stock predict
 | **Sharpe Ratio** | 3.0+ | Risk-adjusted returns (annualized) |
 | **Quintile Spread** | 5-10% | Return gap between top and bottom quintiles |
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -55,7 +55,7 @@ A comprehensive machine learning pipeline for **Learning-to-Rank** stock predict
 ### 1. Clone and Setup
 
 ```bash
-git clone https://github.com/yourusername/skuld.git
+git clone https://github.com/oneye5/skuld.git
 cd skuld
 ```
 
@@ -77,7 +77,7 @@ uv sync                                    # Install dependencies
 uv run python scripts/run_model_evaluation.py    # Run evaluation
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 skuld/
@@ -109,10 +109,10 @@ skuld/
     ├── evaluation/                   # Metrics & backtesting
     ├── pipeline/                     # Main pipeline
     ├── scripts/                      # Entry points
-    └── tests/                        # Unit tests (386 tests)
+    └── tests/                        # Unit tests 
 ```
 
-## 📖 Documentation
+## Documentation
 
 ### Core Guides
 
@@ -132,7 +132,7 @@ skuld/
 | [Java Data Sources](java/docs/DATA_SOURCES.md) | Data source configuration |
 | [Java Architecture](java/docs/ARCHITECTURE.md) | Ingestion architecture |
 
-## 🔧 Configuration
+## Configuration
 
 ### Python ML Pipeline
 
@@ -157,7 +157,7 @@ TRANSACTION_COST_BPS = 10        # Trading costs
 
 Data sources configured in `java/src/main/java/lazic/sources/config/Tickers.java`.
 
-## 🧪 Testing
+## Testing
 
 ### Python Tests
 
@@ -168,7 +168,7 @@ uv run pytest -x -q                   # Stop on first failure
 uv run pytest tests/test_leakage_*.py # Run leakage tests
 ```
 
-**Test Coverage:** 386 tests covering:
+**Test Coverage:** 300+ tests covering:
 - Data leakage prevention (comprehensive)
 - Feature engineering correctness
 - Pipeline integration
@@ -182,7 +182,7 @@ cd java
 mvn test
 ```
 
-## 📈 Pipeline Overview
+## Pipeline Overview
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -244,7 +244,7 @@ Raw Data (data_long.csv)
 └───────────────────┘
 ```
 
-## 🛡️ Data Leakage Prevention
+## Data Leakage Prevention
 
 The pipeline implements multiple safeguards:
 
@@ -256,7 +256,7 @@ The pipeline implements multiple safeguards:
 
 See [Data Leakage Guide](docs/DATA_LEAKAGE.md) for details.
 
-## 📝 Development Philosophy
+## Development Philosophy
 
 1. **Research-Driven** — Features based on academic finance literature
 2. **Iterate Fast** — Use debug scripts before full pipeline runs (~15 min)
@@ -264,13 +264,13 @@ See [Data Leakage Guide](docs/DATA_LEAKAGE.md) for details.
 4. **No Leakage** — Multiple safeguards and dedicated tests
 5. **Reproducible** — Experiment tracking with git commit hashes
 
-## 🔗 References
+## References
 
 - [LightGBM Documentation](https://lightgbm.readthedocs.io/)
 - Gu, Kelly, Xiu (2020) - "Empirical Asset Pricing via Machine Learning"
 - Ang et al. (2006) - "The Cross-Section of Volatility and Expected Returns"
 
-## 📄 License
+## License
 
 This project is for educational and research purposes.
 

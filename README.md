@@ -259,10 +259,9 @@ See [Data Leakage Guide](docs/DATA_LEAKAGE.md) for details.
 ## Development Philosophy
 
 1. **Research-Driven** — Features based on academic finance literature
-2. **Iterate Fast** — Use debug scripts before full pipeline runs (~15 min)
-3. **Test First** — 386 comprehensive tests for correctness
-4. **No Leakage** — Multiple safeguards and dedicated tests
-5. **Reproducible** — Experiment tracking with git commit hashes
+2. **Test First** — 300+ comprehensive tests for correctness
+3. **Avoid Leakage** — Multiple safeguards and dedicated tests
+4. **Reproducible** — Experiment tracking with git commit hashes
 
 ## References
 
@@ -270,10 +269,4 @@ See [Data Leakage Guide](docs/DATA_LEAKAGE.md) for details.
 - Gu, Kelly, Xiu (2020) - "Empirical Asset Pricing via Machine Learning"
 - Ang et al. (2006) - "The Cross-Section of Volatility and Expected Returns"
 
-## License
 
-This project is for educational and research purposes.
-
----
-
-<sub>Built with LightGBM, pandas, scikit-learn, and Maven.</sub>

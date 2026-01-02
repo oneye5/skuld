@@ -1,6 +1,6 @@
 # Java Data Ingestion Architecture
 
-> **Navigation:** [Main README](../../README.md) | [Data Sources](DATA_SOURCES.md) | [Python Pipeline](../../docs/RANKING_PIPELINE_GUIDE.md)
+> **Navigation:** [Main README](../../README.md) | [Pipeline Guide](../../docs/RANKING_PIPELINE_GUIDE.md) | [Java Architecture](ARCHITECTURE.md) | [Java Data Sources](DATA_SOURCES.md) | [TODO](../../docs/TODO.md)
 
 ---
 

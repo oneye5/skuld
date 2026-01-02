@@ -115,6 +115,12 @@ skuld/
 
 ## Documentation
 
+### Development
+
+| Document | Description |
+|----------|-------------|
+| [Project TODO](docs/TODO.md) | Active tasks and project roadmap |
+
 ### Core Guides
 
 | Document | Description |

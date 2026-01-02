@@ -1,6 +1,6 @@
 # Ranking Pipeline User Guide
 
-> **Navigation:** [Main README](../README.md) | [Annual Statistics](ANNUAL_STATISTICS.md) | [Features](FEATURES.md) | [Testing](TESTING.md) | [Clustering](CLUSTERING.md)
+> **Navigation:** [Main README](../README.md) | [Pipeline Guide](RANKING_PIPELINE_GUIDE.md) | [Features](FEATURES.md) | [Clustering](CLUSTERING.md) | [Testing](TESTING.md) | [Annual Statistics](ANNUAL_STATISTICS.md) | [Data Leakage](DATA_LEAKAGE.md) | [TODO](TODO.md)
 
 ---
 

@@ -367,6 +367,12 @@ def get_feature_columns_for_ranking(df: pd.DataFrame) -> List[str]:
                 'AdjClose',   # Raw price level - no cross-sectional meaning, used only for returns
                 'Dividend',   # Point-in-time dividend - could encode future events
                 'Split',      # Stock split indicator - could encode future events
+                # Cluster features - Rank_InCluster uses raw Close price which implicitly
+                # encodes dividend/split history (AdjClose vs Close divergence).
+                # This creates spurious correlation with survival/returns.
+                # Cluster ID also correlates with volatility regimes and survivorship.
+                'Cluster',         # Raw cluster ID - correlates with volatility/survival
+                'Rank_InCluster',  # Uses Close price which encodes div/split history
                 }
     
     feature_cols = [

@@ -357,11 +357,37 @@ def test_clusters_use_only_train_data():
 
 ### Suspiciously Good Results
 
+**Global Market Benchmarks (S&P 500, FTSE, etc.):**
+
 | Metric | Normal | Suspect Leakage |
 |--------|--------|-----------------|
 | IC | 0.03 - 0.10 | > 0.15 |
 | Sharpe | 0.5 - 2.0 | > 3.0 |
 | Hit Rate | 52% - 60% | > 70% |
+
+**NZX-Specific Benchmarks:**
+
+The NZX is a small, less efficient market (~130 stocks) where well-documented
+factor premiums (low volatility, dividend yield, illiquidity) are more persistent.
+Higher metrics may be legitimate rather than leakage:
+
+| Metric | Expected Range | Investigate If |
+|--------|----------------|----------------|
+| IC | 0.10 - 0.30 | > 0.40 or negative |
+| Sharpe | 1.0 - 4.0 | > 6.0 |
+| Hit Rate | 55% - 75% | > 85% |
+
+**Why NZX metrics differ:**
+- Smaller universe allows clearer quality tiers
+- Less institutional coverage means factors persist longer
+- 365-day horizon gives factors time to express
+- Low volatility and dividend yield anomalies are strong in NZX
+
+**When high metrics ARE suspicious (even for NZX):**
+- IC consistently above 0.5 across all windows
+- Single features dominate (>30% of total importance)
+- Top quintile returns hit winsorization cap repeatedly
+- Metrics much higher for early windows than recent ones
 
 ### Debug Steps
 

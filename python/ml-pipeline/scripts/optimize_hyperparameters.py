@@ -453,6 +453,7 @@ def run_single_experiment(
             metrics['sharpe_ratio'] = float(summary.backtest.sharpe_ratio)
             metrics['mean_ic'] = float(summary.metrics.mean_ic)
             metrics['icir'] = float(summary.metrics.icir)
+            metrics['raw_icir'] = float(summary.metrics.raw_icir)  # Non-annualized ICIR
             metrics['hit_rate'] = float(summary.metrics.hit_rate_top_n)
             metrics['quintile_spread'] = float(summary.metrics.quintile_spread)
             metrics['total_return'] = float(summary.backtest.total_return)
@@ -469,7 +470,7 @@ def run_single_experiment(
         checkpoint_mgr.add_result(params, metrics, run_dir, duration)
         
         logger.info(f"\n{'='*80}")
-        logger.info(f"✅ [{experiment_num}/{total_experiments}] SUCCESS: {config.short_desc()}")
+        logger.info(f"[{experiment_num}/{total_experiments}] SUCCESS: {config.short_desc()}")
         logger.info(f"   Sharpe: {metrics.get('sharpe_ratio', 'N/A'):.3f} | IC: {metrics.get('mean_ic', 'N/A'):.4f} | Duration: {duration/60:.1f}min")
         logger.info(f"{'='*80}\n")
         
@@ -480,7 +481,7 @@ def run_single_experiment(
         
     except KeyboardInterrupt:
         # Re-raise keyboard interrupt to allow clean shutdown
-        logger.info("\n⚠️ Keyboard interrupt received, saving progress...")
+        logger.info("\nKeyboard interrupt received, saving progress...")
         raise
         
     except Exception as e:
@@ -488,7 +489,7 @@ def run_single_experiment(
         error_msg = str(e)
         
         logger.error(f"\n{'='*80}")
-        logger.error(f"❌ [{experiment_num}/{total_experiments}] FAILED: {config.short_desc()}")
+        logger.error(f"[{experiment_num}/{total_experiments}] FAILED: {config.short_desc()}")
         logger.error(f"   Error: {error_msg}")
         logger.error(f"   Duration: {duration/60:.1f}min")
         logger.error(f"{'='*80}\n")
@@ -520,13 +521,13 @@ def print_optimization_report(checkpoint_mgr: CheckpointManager):
     df = checkpoint_mgr.get_results_df()
     
     if df.empty:
-        print("\n❌ No results found. Run experiments first.")
+        print("\nNo results found. Run experiments first.")
         return
     
     # Check if we have any successful experiments
     if 'metric_sharpe_ratio' not in df.columns:
-        print("\n❌ No successful experiments found. All experiments failed.")
-        print("\n📋 Failed Experiments:")
+        print("\nNo successful experiments found. All experiments failed.")
+        print("\nFailed Experiments:")
         for idx, row in df.iterrows():
             print(f"\n   Experiment {idx + 1}:")
             params = {k.replace('param_', ''): v for k, v in row.items() if k.startswith('param_')}
@@ -540,7 +541,7 @@ def print_optimization_report(checkpoint_mgr: CheckpointManager):
     df_failed = df[df['metric_sharpe_ratio'].isna()].copy()
     
     if df_success.empty:
-        print("\n❌ No successful experiments found.")
+        print("\nNo successful experiments found.")
         return
     
     print("\n" + "="*100)
@@ -548,11 +549,11 @@ def print_optimization_report(checkpoint_mgr: CheckpointManager):
     print("="*100)
     
     stats = checkpoint_mgr.get_stats()
-    print(f"\n📊 Total Experiments: {stats['total']}")
-    print(f"✅ Successful: {stats['successful']}")
-    print(f"❌ Failed: {stats['failed']}")
+    print(f"\nTotal Experiments: {stats['total']}")
+    print(f"Successful: {stats['successful']}")
+    print(f"Failed: {stats['failed']}")
     if stats['avg_duration_seconds'] > 0:
-        print(f"⏱️  Avg Duration: {stats['avg_duration_seconds']/60:.1f} minutes")
+        print(f"Avg Duration: {stats['avg_duration_seconds']/60:.1f} minutes")
     
     # Sort by Sharpe ratio
     df_sorted = df_success.sort_values('metric_sharpe_ratio', ascending=False)
@@ -562,8 +563,12 @@ def print_optimization_report(checkpoint_mgr: CheckpointManager):
     print("="*100)
     
     for i, (idx, row) in enumerate(df_sorted.head(10).iterrows(), 1):
-        print(f"\n🏆 Rank {i}: Sharpe = {row['metric_sharpe_ratio']:.3f}")
-        print(f"   IC = {row['metric_mean_ic']:.4f}, ICIR = {row['metric_icir']:.2f}, Hit Rate = {row['metric_hit_rate']:.2%}")
+        print(f"\nRank {i}: Sharpe = {row['metric_sharpe_ratio']:.3f}")
+        # Use raw_icir if available (more meaningful for long horizons), fallback to icir
+        icir_val = row.get('metric_raw_icir', row.get('metric_icir', np.nan))
+        icir_label = "Raw ICIR" if 'metric_raw_icir' in row else "ICIR"
+        print(f"   IC = {row['metric_mean_ic']:.4f}, {icir_label} = {icir_val:.2f}, Hit Rate = {row['metric_hit_rate']:.2%}")
+        print(f"   Total Return = {row['metric_total_return']:.2%}, Max Drawdown = {row['metric_max_drawdown']:.2%}")
         print(f"   n_estimators={row['param_n_estimators']:.0f}, lr={row['param_learning_rate']:.3f}, "
               f"leaves={row['param_num_leaves']:.0f}, depth={row['param_max_depth']:.0f}")
         print(f"   min_samples={row['param_min_child_samples']:.0f}, reg_alpha={row['param_reg_alpha']:.2f}, "
@@ -571,7 +576,7 @@ def print_optimization_report(checkpoint_mgr: CheckpointManager):
         print(f"   top_n={row['param_top_n']:.0f}, forward_days={row['param_forward_days']:.0f}, "
               f"return_type={row['param_return_type']}")
         if pd.notna(row.get('run_dir')):
-            print(f"   📁 {row['run_dir']}")
+            print(f"   Run Dir: {row['run_dir']}")
     
     print("\n" + "="*100)
     print("PARAMETER SENSITIVITY ANALYSIS")
@@ -585,13 +590,13 @@ def print_optimization_report(checkpoint_mgr: CheckpointManager):
         unique_values = df_success[param_col].unique()
         
         if len(unique_values) > 1:
-            print(f"\n📈 {param_name}:")
+            print(f"\n{param_name}:")
             grouped = df_success.groupby(param_col)['metric_sharpe_ratio'].agg(['mean', 'std', 'count'])
             grouped = grouped.sort_values('mean', ascending=False)
             
             for value, row_stats in grouped.iterrows():
-                std_str = f"± {row_stats['std']:.3f}" if pd.notna(row_stats['std']) else ""
-                print(f"   {value:>10} → Sharpe: {row_stats['mean']:6.3f} {std_str} (n={row_stats['count']:.0f})")
+                std_str = f"+/- {row_stats['std']:.3f}" if pd.notna(row_stats['std']) else ""
+                print(f"   {value:>10} -> Sharpe: {row_stats['mean']:6.3f} {std_str} (n={row_stats['count']:.0f})")
     
     print("\n" + "="*100)
     print("BEST CONFIGURATION SUMMARY")
@@ -599,18 +604,22 @@ def print_optimization_report(checkpoint_mgr: CheckpointManager):
     
     best = checkpoint_mgr.get_best_result('sharpe_ratio')
     if best:
-        print(f"\n🎯 Best Sharpe Ratio: {best['metrics']['sharpe_ratio']:.3f}")
+        print(f"\nBest Sharpe Ratio: {best['metrics']['sharpe_ratio']:.3f}")
         print(f"\nOptimal Parameters:")
         for k, v in best['params'].items():
             print(f"   {k}: {v}")
         print(f"\nAll Metrics:")
         for k, v in best['metrics'].items():
             if isinstance(v, float):
-                print(f"   {k}: {v:.4f}")
+                # Format return-like metrics as percentages
+                if k in ('total_return', 'max_drawdown', 'quintile_spread', 'hit_rate', 'avg_turnover'):
+                    print(f"   {k}: {v:.2%}")
+                else:
+                    print(f"   {k}: {v:.4f}")
             else:
                 print(f"   {k}: {v}")
         if best.get('run_dir'):
-            print(f"\n📁 Run Directory: {best['run_dir']}")
+            print(f"\nRun Directory: {best['run_dir']}")
     
     print("\n" + "="*100)
 
@@ -626,25 +635,25 @@ def print_status(checkpoint_mgr: CheckpointManager, total_configs: int):
     completed = stats['successful'] + stats['failed']
     remaining = total_configs - completed
     
-    print(f"\n📊 Progress: {completed}/{total_configs} ({100*completed/total_configs:.1f}%)")
-    print(f"✅ Successful: {stats['successful']}")
-    print(f"❌ Failed: {stats['failed']}")
-    print(f"⏳ Remaining: {remaining}")
+    print(f"\nProgress: {completed}/{total_configs} ({100*completed/total_configs:.1f}%)")
+    print(f"Successful: {stats['successful']}")
+    print(f"Failed: {stats['failed']}")
+    print(f"Remaining: {remaining}")
     
     if stats['avg_duration_seconds'] > 0:
         eta_seconds = remaining * stats['avg_duration_seconds']
         eta = timedelta(seconds=int(eta_seconds))
-        print(f"\n⏱️  Avg Duration: {stats['avg_duration_seconds']/60:.1f} minutes")
-        print(f"🕐 Estimated Time Remaining: {eta}")
+        print(f"\nAvg Duration: {stats['avg_duration_seconds']/60:.1f} minutes")
+        print(f"Estimated Time Remaining: {eta}")
     
     if stats['start_time']:
         elapsed = datetime.now() - stats['start_time']
-        print(f"⏰ Elapsed: {elapsed}")
+        print(f"Elapsed: {elapsed}")
     
     # Show best so far
     best = checkpoint_mgr.get_best_result('sharpe_ratio')
     if best:
-        print(f"\n🏆 Best Sharpe So Far: {best['metrics']['sharpe_ratio']:.3f}")
+        print(f"\nBest Sharpe So Far: {best['metrics']['sharpe_ratio']:.3f}")
         print(f"   Config: n_est={best['params']['n_estimators']}, top_n={best['params']['top_n']}, fwd={best['params']['forward_days']}")
     
     print("\n" + "="*60)
@@ -735,7 +744,7 @@ Examples:
                 
     except KeyboardInterrupt:
         logger.info("\n" + "="*80)
-        logger.info("⚠️ OPTIMIZATION INTERRUPTED BY USER")
+        logger.info("OPTIMIZATION INTERRUPTED BY USER")
         logger.info("Progress has been saved. Run the same command to resume.")
         logger.info("="*80 + "\n")
     

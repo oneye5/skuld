@@ -44,6 +44,8 @@ A comprehensive machine learning pipeline for **Learning-to-Rank** asset predict
 | **Sharpe Ratio** | 3.0+ | Risk-adjusted returns (annualized) |
 | **Quintile Spread** | 5-10% | Return gap between top and bottom quintiles |
 
+I am aware these results seem unrealistic when compared to typical values. The many tests suggest no leakage, perhaps NZX is just a very inefficient market. I will continue to investigate this.
+
 ## Quick Start
 
 ### Prerequisites

@@ -1,6 +1,6 @@
 # Data Leakage Prevention Guide
 
-> **Navigation:** [Main README](../README.md) | [Pipeline Guide](RANKING_PIPELINE_GUIDE.md) | [Features](FEATURES.md) | [Clustering](CLUSTERING.md) | [Testing](TESTING.md) | [Annual Statistics](ANNUAL_STATISTICS.md) | [Data Leakage](DATA_LEAKAGE.md) | [TODO](TODO.md)
+> **Navigation:** [Main README](../README.md) | [Pipeline Guide](RANKING_PIPELINE_GUIDE.md) | [Features](FEATURES.md) | [Clustering](CLUSTERING.md) | [Testing](TESTING.md) | [Annual Statistics](ANNUAL_STATISTICS.md) | [Data Leakage](DATA_LEAKAGE.md) | [Data Audit](data-audit/README.md) | [TODO](TODO.md)
 
 ---
 
@@ -357,18 +357,21 @@ def test_clusters_use_only_train_data():
 
 ### Suspiciously Good Results
 
-**Global Market Benchmarks (S&P 500, FTSE, etc.):**
+**Efficient Markets (S&P 500, FTSE, etc.):**
+
+Large, heavily-analyzed markets where alpha is hard to find. Use these thresholds
+for US, UK, EU, and other developed market strategies:
 
 | Metric | Normal | Suspect Leakage |
 |--------|--------|-----------------|
-| IC | 0.03 - 0.10 | > 0.15 |
-| Sharpe | 0.5 - 2.0 | > 3.0 |
-| Hit Rate | 52% - 60% | > 70% |
+| IC | 0.02 - 0.08 | > 0.12 |
+| Sharpe | 0.3 - 1.5 | > 2.5 |
+| Hit Rate | 51% - 56% | > 65% |
 
-**NZX-Specific Benchmarks:**
+**Inefficient Markets (NZX, small-caps, frontier):**
 
-The NZX is a small, less efficient market (~130 stocks) where well-documented
-factor premiums (low volatility, dividend yield, illiquidity) are more persistent.
+Small, less-analyzed markets (~130 stocks for NZX) where well-documented
+factor premiums (low volatility, dividend yield, illiquidity) persist longer.
 Higher metrics may be legitimate rather than leakage:
 
 | Metric | Expected Range | Investigate If |

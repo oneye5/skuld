@@ -138,6 +138,7 @@ skuld/
 |----------|-------------|
 | [Testing](docs/TESTING.md) | Test coverage and methodology |
 | [Data Leakage](docs/DATA_LEAKAGE.md) | Leakage prevention strategies |
+| [Data Audit Reports](docs/data-audit/README.md) | Third-party price validation |
 | [Java Data Sources](java/docs/DATA_SOURCES.md) | Data source configuration |
 | [Java Architecture](java/docs/ARCHITECTURE.md) | Ingestion architecture |
 

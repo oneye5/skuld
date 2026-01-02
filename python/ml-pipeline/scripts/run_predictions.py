@@ -32,11 +32,13 @@ Important Notes:
 import argparse
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.experiment_tracking import get_git_info
 
 from config.columns import TIMESTAMP, TICKER, CLOSE
 from config.settings import (
@@ -54,6 +56,78 @@ from core.logging_config import setup_logging, get_logger, log_timing
 
 
 logger = get_logger(__name__)
+
+
+def save_predictions_with_metadata(
+    result_df: "pd.DataFrame",
+    csv_path: Path,
+    prediction_date: datetime,
+    forward_days: int,
+    training_samples: int,
+    n_features: int,
+    model_config: dict | None = None,
+) -> None:
+    """Save predictions CSV with metadata header for traceability.
+    
+    The CSV includes comment lines (prefixed with #) at the top containing:
+    - Generation timestamp
+    - Target prediction date (when predictions should be evaluated)
+    - Git commit and branch information
+    - Model configuration summary
+    
+    To read the CSV in Python, use:
+        pd.read_csv(path, comment='#')
+    
+    Args:
+        result_df: DataFrame with predictions to save.
+        csv_path: Path to save the CSV file.
+        prediction_date: Date the predictions are made for.
+        forward_days: Forward return horizon.
+        training_samples: Number of samples used in training.
+        n_features: Number of features used.
+        model_config: Optional model configuration dict.
+    """
+    import pandas as pd
+    
+    # Get git info for traceability
+    git_info = get_git_info()
+    
+    # Compute target date (when predictions should be evaluated)
+    target_date = prediction_date + timedelta(days=forward_days)
+    
+    # Build metadata header lines (prefixed with #)
+    metadata_lines = [
+        "# SKULD PREDICTION OUTPUT",
+        "#",
+        f"# Generated:          {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"# Prediction Date:    {prediction_date.strftime('%Y-%m-%d')}",
+        f"# Target Date:        ~{target_date.strftime('%Y-%m-%d')} (+{forward_days} days)",
+        "#",
+        f"# Git Commit:         {git_info.get('git_commit', 'unknown') or 'unknown'}",
+        f"# Git Branch:         {git_info.get('git_branch', 'unknown') or 'unknown'}",
+        f"# Uncommitted Changes:{' Yes' if git_info.get('git_dirty') else ' No'}",
+        "#",
+        f"# Training Samples:   {training_samples:,}",
+        f"# Features Used:      {n_features}",
+        f"# Stocks Ranked:      {len(result_df)}",
+    ]
+    
+    # Add model config if provided
+    if model_config:
+        metadata_lines.append("#")
+        metadata_lines.append("# Model Config:")
+        for key, value in model_config.items():
+            if key not in ('device',):  # Skip non-essential config
+                metadata_lines.append(f"#   {key}: {value}")
+    
+    metadata_lines.append("#")
+    metadata_lines.append("# " + "=" * 50)
+    metadata_lines.append("")
+    
+    # Write metadata header followed by CSV data
+    with open(csv_path, 'w', newline='') as f:
+        f.write('\n'.join(metadata_lines))
+        result_df.to_csv(f, index=False)
 
 
 def train_and_predict(
@@ -312,10 +386,18 @@ def train_and_predict(
     
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save predictions CSV
+    # Save predictions CSV with metadata
     csv_filename = f"predictions_{prediction_date.strftime('%Y%m%d')}.csv"
     csv_path = output_dir / csv_filename
-    result_df.to_csv(csv_path, index=False)
+    save_predictions_with_metadata(
+        result_df=result_df,
+        csv_path=csv_path,
+        prediction_date=prediction_date,
+        forward_days=forward_days,
+        training_samples=len(X_train),
+        n_features=len(feature_cols),
+        model_config=ranker_config.__dict__,
+    )
     print(f"\n✓ Predictions saved to: {csv_path}")
     
     # Save model if requested
@@ -528,7 +610,15 @@ def load_and_predict(
     
     csv_filename = f"predictions_{latest_date.strftime('%Y%m%d')}.csv"
     csv_path = output_dir / csv_filename
-    result_df.to_csv(csv_path, index=False)
+    save_predictions_with_metadata(
+        result_df=result_df,
+        csv_path=csv_path,
+        prediction_date=latest_date,
+        forward_days=forward_days,
+        training_samples=bundle.config.get("training_samples", 0),
+        n_features=len(bundle.feature_columns),
+        model_config=bundle.config,
+    )
     print(f"\n✓ Predictions saved to: {csv_path}")
     
     return result

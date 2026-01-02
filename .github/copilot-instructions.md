@@ -4,7 +4,7 @@ This repo contains:
 - **Python ML pipeline** in `python/ml-pipeline/` (primary day-to-day work).
 - **Java ingestion** in `java/` (Maven project).
 
-## 🚨 CRITICAL: Development Philosophy 🚨
+## CRITICAL: Development Philosophy
 
 **1. Purpose: Improve Ranking Model Performance**
 - The goal is to **improve the ranking model's performance** (Sharpe ratio, Precision, etc.) on the validation set.
@@ -27,18 +27,42 @@ This repo contains:
 
 ---
 
-## Canonical docs to read first
+## Documentation
 
-The project blueprint and guides are in:
-- [docs/RANKING_PIPELINE_GUIDE.md](../docs/RANKING_PIPELINE_GUIDE.md) — How to run evaluation & predictions
+### Reference documentation
 
-Before changing pipeline semantics, review the guide's sections on:
-- **Data format** (`skuld/data/data_long.csv`) and long→wide conversion rules
-- **Leakage prevention** (fit scalers on training only; rolling-window isolation)
-- **Validation utilities** (`core/validation.py`) for data quality checks
-- **Experiment tracking** (`core/experiment_tracking.py`) for reproducibility
-- **Macro vs ticker handling** via the `MACRO_` prefix
-- **Rolling window** approach and model config defaults
+Read relevant docs before making changes:
+
+| Document | When to read |
+|----------|--------------|
+| [README.md](../README.md) | Project overview, quick start, key metrics |
+| [docs/RANKING_PIPELINE_GUIDE.md](../docs/RANKING_PIPELINE_GUIDE.md) | Pipeline architecture, running evaluation, configuration |
+| [docs/FEATURES.md](../docs/FEATURES.md) | Adding or modifying features |
+| [docs/CLUSTERING.md](../docs/CLUSTERING.md) | Cluster methodology and leakage-safe workflow |
+| [docs/DATA_LEAKAGE.md](../docs/DATA_LEAKAGE.md) | Leakage prevention strategies (read before any data flow changes) |
+| [docs/TESTING.md](../docs/TESTING.md) | Test patterns, adding new tests |
+| [docs/ANNUAL_STATISTICS.md](../docs/ANNUAL_STATISTICS.md) | Performance metrics and Monte Carlo usage |
+| [java/docs/ARCHITECTURE.md](../java/docs/ARCHITECTURE.md) | Java ingestion architecture |
+| [java/docs/DATA_SOURCES.md](../java/docs/DATA_SOURCES.md) | Adding or modifying data sources |
+
+### Documentation maintenance
+
+**When to update docs:**
+- Adding a new feature category → update `FEATURES.md`
+- Changing pipeline stages or config → update `RANKING_PIPELINE_GUIDE.md`
+- Adding leakage safeguards → update `DATA_LEAKAGE.md`
+- Adding new data sources → update `DATA_SOURCES.md`
+- Changing test patterns → update `TESTING.md`
+
+**When to create new docs:**
+- New major subsystem that doesn't fit existing docs
+- Complex methodology that needs its own reference (like clustering)
+
+**Documentation style:**
+- No emojis
+- Use ranges instead of exact counts (e.g., "300+ tests" not "386 tests")
+- Use ASCII diagrams for architecture/flow visualization
+- Keep navigation links at the top of each doc
 
 ---
 

@@ -10,28 +10,14 @@ A comprehensive machine learning pipeline for **Learning-to-Rank** asset predict
 2. **Python ML Pipeline** (`python/ml-pipeline/`) — Implements ranking-based asset prediction using LightGBM
 
 ```
-                    ┌─────────────────────────────────────────────────────────────┐
-                    │                       SKULD PIPELINE                         │
-                    └─────────────────────────────────────────────────────────────┘
-                                                 │
-          ┌──────────────────────────────────────┼──────────────────────────────────────┐
-          │                                      │                                      │
-          ▼                                      │                                      ▼
-┌──────────────────────┐                         │                      ┌──────────────────────┐
-│    JAVA INGESTION    │                         │                      │   PYTHON ML PIPELINE  │
-│                      │                         │                      │                      │
-│  • Yahoo Finance     │                         │                      │  • Feature Engineering│
-│  • NZ Statistics     │     data_long.csv       │                      │  • LGBMRanker        │
-│  • RBNZ Data         │ ──────────────────────► │                      │  • Rolling Backtest  │
-│  • Macroeconomic     │                         │                      │  • Portfolio Metrics │
-└──────────────────────┘                         │                      └──────────────────────┘
-                                                 │
-                                                 ▼
-                                    ┌─────────────────────┐
-                                    │   Predictions &     │
-                                    │   Performance       │
-                                    │   Metrics           │
-                                    └─────────────────────┘
+┌─────────────────────┐          ┌─────────────────────┐
+│   JAVA INGESTION    │          │  PYTHON ML PIPELINE │
+│                     │          │                     │
+│  Yahoo Finance      │          │  Feature Engineer   │
+│  NZ Statistics      │  ─────►  │  LGBMRanker Model   │  ─────►  Predictions
+│  RBNZ Data          │  CSV     │  Rolling Backtest   │          & Metrics
+│  Macroeconomic      │          │  Portfolio Analysis │
+└─────────────────────┘          └─────────────────────┘
 ```
 
 ## Key Metrics (Latest Results)

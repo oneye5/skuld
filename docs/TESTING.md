@@ -6,7 +6,7 @@
 
 ## Overview
 
-The pipeline includes **386 comprehensive tests** covering data leakage prevention, feature correctness, pipeline integration, and metric calculations.
+The pipeline includes **300+ comprehensive tests** covering data leakage prevention, feature correctness, pipeline integration, and metric calculations.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -30,12 +30,10 @@ The pipeline includes **386 comprehensive tests** covering data leakage preventi
 │ • Cluster    │            │ • Portfolio  │            │              │
 └──────────────┘            └──────────────┘            └──────────────┘
       │                           │                           │
-      │     27 files              │     15 files              │     5 files
-      │     ~150 tests            │     ~180 tests            │     ~50 tests
       └───────────────────────────┴───────────────────────────┘
                                       │
                                       ▼
-                              386 Total Tests
+                              300+ Total Tests
 ```
 
 ## Running Tests
@@ -119,7 +117,7 @@ uv run pytest --cov=. --cov-report=html
 ```
 
 **Key Test Files:**
-- `test_comprehensive_leakage.py` — 23 comprehensive leakage tests
+- `test_comprehensive_leakage.py` — Comprehensive leakage tests
 - `test_cluster_leakage.py` — Cluster-specific leakage tests
 - `test_leakage_investigation.py` — Deep leakage analysis
 

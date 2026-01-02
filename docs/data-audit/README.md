@@ -19,6 +19,7 @@ Before deploying the ranking model for live trading, data integrity must be veri
 | Date | Report | Summary |
 |------|--------|---------|
 | 2026-01-02 | [Price Validation](2026-01-02_price_validation.md) | 19/19 tickers match Google Finance (100%) |
+| 2026-01-02 | [Macro Validation](2026-01-02_macro_validation.md) | Interest rates match RBNZ OCR (8/8 periods) |
 
 ## Methodology
 

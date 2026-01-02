@@ -4,6 +4,19 @@ This repo contains:
 - **Python ML pipeline** in `python/ml-pipeline/` (primary day-to-day work).
 - **Java ingestion** in `java/` (Maven project).
 
+## Table of Contents
+
+1. [Development Philosophy](#critical-development-philosophy)
+2. [Documentation](#documentation)
+3. [Python: How to Run Code](#python-how-to-run-code-windows--uv)
+4. [Python: How to Run Tests](#python-how-to-run-tests)
+5. [Where to Find Results](#where-to-find-results)
+6. [Codebase Conventions](#codebase-conventions-to-respect)
+7. [Key Modules](#key-modules)
+8. [Java](#java-secondary)
+
+---
+
 ## CRITICAL: Development Philosophy
 
 **1. Purpose: Improve Ranking Model Performance**
@@ -63,6 +76,7 @@ Read relevant docs before making changes:
 - Use ranges instead of exact counts (e.g., "300+ tests" not "386 tests")
 - Use ASCII diagrams for architecture/flow visualization
 - Keep navigation links at the top of each doc
+- Include a Table of Contents after the navigation links
 
 ---
 

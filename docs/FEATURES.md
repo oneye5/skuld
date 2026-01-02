@@ -4,6 +4,18 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Feature Categories](#feature-categories)
+3. [Leakage Prevention](#leakage-prevention)
+4. [Feature Selection](#feature-selection)
+5. [Performance Optimization](#performance-optimization)
+6. [Adding New Features](#adding-new-features)
+7. [Related Documentation](#related-documentation)
+
+---
+
 ## Overview
 
 The pipeline computes features from raw OHLCV data using research-backed methodologies. Features are organized into categories and computed per-ticker to avoid cross-asset leakage.

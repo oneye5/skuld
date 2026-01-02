@@ -4,6 +4,19 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Why Clustering?](#why-clustering)
+3. [Implementation](#implementation)
+4. [Leakage Prevention](#leakage-prevention)
+5. [Cluster Features](#cluster-features)
+6. [Configuration](#configuration)
+7. [Validation](#validation)
+8. [Related Documentation](#related-documentation)
+
+---
+
 ## Overview
 
 The pipeline implements **statistical sector clustering** for NZX stocks since official sector classifications are sparse. Clusters are based on return correlation patterns and risk/return characteristics.

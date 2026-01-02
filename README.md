@@ -4,6 +4,21 @@
 
 ---
 
+## Table of Contents
+
+1. [Key Metrics](#key-metrics-latest-results)
+2. [Quick Start](#quick-start)
+3. [Project Structure](#project-structure)
+4. [Documentation](#documentation)
+5. [Configuration](#configuration)
+6. [Testing](#testing)
+7. [Pipeline Overview](#pipeline-overview)
+8. [Data Leakage Prevention](#data-leakage-prevention)
+9. [Development Philosophy](#development-philosophy)
+10. [References](#references)
+
+---
+
 A comprehensive machine learning pipeline for **Learning-to-Rank** asset prediction, focusing on the New Zealand Exchange (NZX). The system consists of two main components:
 
 1. **Java Data Ingestion** (`java/`) — Fetches and consolidates data from multiple sources

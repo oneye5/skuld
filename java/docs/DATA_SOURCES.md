@@ -4,6 +4,20 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Market Data Sources](#market-data-sources)
+3. [Ticker Configuration](#ticker-configuration)
+4. [Macroeconomic Sources](#macroeconomic-sources)
+5. [Alternative Data Sources](#alternative-data-sources)
+6. [Data Format](#data-format)
+7. [Adding a New Source](#adding-a-new-source)
+8. [Error Handling](#error-handling)
+9. [Related Documentation](#related-documentation)
+
+---
+
 ## Overview
 
 The Java ingestion module fetches data from multiple sources to provide comprehensive market data for the ML pipeline.

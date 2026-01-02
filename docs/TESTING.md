@@ -4,6 +4,19 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Running Tests](#running-tests)
+3. [Test Categories](#test-categories)
+4. [Test Patterns](#test-patterns)
+5. [Test Data Generation](#test-data-generation)
+6. [Continuous Integration](#continuous-integration)
+7. [Adding New Tests](#adding-new-tests)
+8. [Related Documentation](#related-documentation)
+
+---
+
 ## Overview
 
 The pipeline includes **300+ comprehensive tests** covering data leakage prevention, feature correctness, pipeline integration, and metric calculations.

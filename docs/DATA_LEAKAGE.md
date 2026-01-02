@@ -4,6 +4,17 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Prevention Strategies](#prevention-strategies)
+3. [Validation Framework](#validation-framework)
+4. [Testing for Leakage](#testing-for-leakage)
+5. [Warning Signs](#warning-signs)
+6. [Related Documentation](#related-documentation)
+
+---
+
 ## Overview
 
 Data leakage occurs when information from the future (test set) bleeds into training. This guide documents the pipeline's leakage prevention strategies.

@@ -4,6 +4,20 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Core Components](#core-components)
+3. [Data Flow](#data-flow)
+4. [Project Structure](#project-structure)
+5. [Building and Running](#building-and-running)
+6. [Adding a New Data Source](#adding-a-new-data-source)
+7. [Error Handling](#error-handling)
+8. [Dependencies](#dependencies)
+9. [Related Documentation](#related-documentation)
+
+---
+
 ## Overview
 
 The Java module fetches and consolidates financial data from multiple sources into a unified long-format CSV for the Python ML pipeline.

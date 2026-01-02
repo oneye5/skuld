@@ -4,6 +4,19 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [What's Computed](#whats-computed)
+3. [Usage](#usage)
+4. [Interpreting Results](#interpreting-results)
+5. [Practical Applications](#practical-applications)
+6. [Requirements](#requirements)
+7. [Limitations](#limitations)
+8. [Related Documentation](#related-documentation)
+
+---
+
 ## Overview
 
 The ranking pipeline computes **annual return distribution statistics** to support real-world implementation decisions and Monte Carlo simulations.

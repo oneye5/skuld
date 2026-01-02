@@ -272,7 +272,7 @@ See [Data Leakage Guide](docs/DATA_LEAKAGE.md) for details.
 2. **Test First** — 300+ comprehensive tests for correctness
 3. **Avoid Leakage** — Multiple safeguards and dedicated tests
 4. **Reproducible** — Experiment tracking with git commit hashes
-
+5. **Worst case scenario** — Config values such as fees are higher than they would be if implmeneted. (eg ignoring sharesies plans & fee caps opting for the high flat percent fee)
 ## References
 
 - [LightGBM Documentation](https://lightgbm.readthedocs.io/)

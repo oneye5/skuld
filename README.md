@@ -273,8 +273,11 @@ See [Data Leakage Guide](docs/DATA_LEAKAGE.md) for details.
 3. **Avoid Leakage** — Multiple safeguards and dedicated tests
 4. **Reproducible** — Experiment tracking with git commit hashes
 5. **Worst case scenario** — Config values such as fees are higher than they would be if implmeneted. (eg ignoring sharesies plans & fee caps opting for the high flat percent fee)
-## References
+   
+## Model trends:
+The model appears to prefer volatile illiquid dividend paying assets with consistent trends. Some of the top industries are manufacturing, agriculture and seafood.
 
+## References
 - [LightGBM Documentation](https://lightgbm.readthedocs.io/)
 - Gu, Kelly, Xiu (2020) - "Empirical Asset Pricing via Machine Learning"
 - Ang et al. (2006) - "The Cross-Section of Volatility and Expected Returns"

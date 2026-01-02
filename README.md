@@ -274,7 +274,7 @@ See [Data Leakage Guide](docs/DATA_LEAKAGE.md) for details.
 4. **Reproducible** — Experiment tracking with git commit hashes
 5. **Worst case scenario** — Config values such as fees are higher than they would be if implmeneted. (eg ignoring sharesies plans & fee caps opting for the high flat percent fee)
    
-## Model trends:
+## Model trends
 The model appears to prefer volatile illiquid dividend paying assets with consistent trends. Some of the top industries are manufacturing, agriculture and seafood.
 
 ## References

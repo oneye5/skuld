@@ -25,6 +25,7 @@ public class Main {
 		new NzPensions();
 		new NzTaxRevenue();
 		new NzBalanceOfPayments();
+		new WikimediaPageviews();
 
 
 		IngestManager.INSTANCE.fetchDataFromSources();

@@ -38,6 +38,7 @@ build/
 .DS_Store
 /.idea
 *.csv
+!**/src/main/resources/**/*.csv
 /java/.idea
 /python-ml/src/utils/__pycache__
 /python-ml/.idea

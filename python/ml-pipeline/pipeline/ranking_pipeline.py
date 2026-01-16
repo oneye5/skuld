@@ -344,6 +344,14 @@ def add_all_features(
     from features.alpha_factors import add_alpha_factors
     df = add_alpha_factors(df)
     
+    # Add configurable lag/MA features (Wikipedia attention, macro data, etc.)
+    from features.lag_ma_features import add_lag_ma_features
+    df = add_lag_ma_features(df)
+    
+    # Add aggregate attention features (fear indicators, etc.)
+    from features.attention_features import add_aggregate_attention_features
+    df = add_aggregate_attention_features(df)
+    
     # Apply additional experimental features if requested
     if experimental_features and "alpha_fast" in experimental_features:
         from features.alpha_factors_fast import add_alpha_factors_fast

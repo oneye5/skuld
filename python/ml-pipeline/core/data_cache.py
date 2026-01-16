@@ -44,7 +44,7 @@ FEATURE_DATA_CACHE = CACHE_DIR / "wide_data_with_features.parquet"
 FEATURE_DATA_METADATA = CACHE_DIR / "wide_data_features_meta.json"
 
 # Version for cache invalidation when feature logic changes
-FEATURE_CACHE_VERSION = "1.0.0"
+FEATURE_CACHE_VERSION = "1.2.0"  # Bumped: added diff features (current-MA, MA-MA)
 
 
 def _get_source_file_hash(path: Path) -> str:
@@ -285,10 +285,14 @@ def load_cached_wide_data_with_features(
     from features.ratios import add_financial_ratios
     from features.technical import add_technical_features
     from features.alpha_factors import add_alpha_factors
+    from features.lag_ma_features import add_lag_ma_features
+    from features.attention_features import add_aggregate_attention_features
     
     wide_df = add_financial_ratios(wide_df)
     wide_df = add_technical_features(wide_df)
     wide_df = add_alpha_factors(wide_df)
+    wide_df = add_lag_ma_features(wide_df)
+    wide_df = add_aggregate_attention_features(wide_df)
     
     # Apply experimental features if requested
     if experimental_features:

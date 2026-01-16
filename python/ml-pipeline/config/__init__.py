@@ -67,6 +67,16 @@ from config.paths import (
     ensure_output_dirs,
 )
 
+from config.lag_ma_config import (
+    FeatureLagMAConfig,
+    get_enabled_configs,
+    get_ticker_configs,
+    get_macro_configs,
+    ALL_LAG_MA_CONFIGS,
+    TICKER_CONFIGS,
+    MACRO_CONFIGS,
+)
+
 __all__ = [
     # Enums
     "ReturnType",
@@ -123,4 +133,12 @@ __all__ = [
     "OUTPUT_DIR",
     "get_run_dir",
     "ensure_output_dirs",
+    # Lag/MA config
+    "FeatureLagMAConfig",
+    "get_enabled_configs",
+    "get_ticker_configs",
+    "get_macro_configs",
+    "ALL_LAG_MA_CONFIGS",
+    "TICKER_CONFIGS",
+    "MACRO_CONFIGS",
 ]

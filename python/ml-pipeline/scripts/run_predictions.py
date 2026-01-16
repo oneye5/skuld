@@ -250,10 +250,18 @@ def train_and_predict(
     
     # Split the data
     train_df = wide_df[wide_df[TIMESTAMP].isin(train_timestamps)].copy()
-    predict_df = wide_df[wide_df[TIMESTAMP] == latest_ts].copy()
+    
+    # Get each ticker's most recent row for prediction
+    # (Different tickers may have different latest timestamps due to data fetch timing)
+    idx_latest_per_ticker = wide_df.groupby(TICKER)[TIMESTAMP].idxmax()
+    predict_df = wide_df.loc[idx_latest_per_ticker].copy()
+    
+    # Filter to only include recent data (within 7 days of latest)
+    min_acceptable_ts = latest_ts - (7 * 24 * 60 * 60 * 1000)  # 7 days in ms
+    predict_df = predict_df[predict_df[TIMESTAMP] >= min_acceptable_ts]
     
     print(f"  Training rows: {len(train_df):,}")
-    print(f"  Prediction rows: {len(predict_df):,}")
+    print(f"  Prediction rows (stocks with recent data): {len(predict_df):,}")
     
     # Step 4: Prepare training data with forward returns
     print("\n[4/6] Computing forward returns for training...")
@@ -463,7 +471,7 @@ def load_and_predict(
     from features.alpha_factors import add_alpha_factors
     from pipeline.ranking_pipeline import get_feature_columns_for_ranking
     from config.settings import YEAR_2000_MS, FILTER_ANOMALIES, ANOMALY_RETURN_THRESHOLD
-    from config.columns import CLOSE
+    from config.columns import CLOSE, TICKER
     
     print("=" * 60)
     print("PREDICTION PIPELINE - Load and Predict")
@@ -510,13 +518,21 @@ def load_and_predict(
             if wide_df[col].dtype == 'float64':
                 wide_df[col] = wide_df[col].astype('float32')
     
-    # Get latest timestamp for prediction
+    # Get each ticker's most recent row for prediction
+    # (Different tickers may have different latest timestamps due to data fetch timing)
     latest_ts = wide_df[TIMESTAMP].max()
     latest_date = datetime.fromtimestamp(latest_ts / 1000)
     
-    predict_df = wide_df[wide_df[TIMESTAMP] == latest_ts].copy()
-    print(f"  Predicting for: {latest_date.strftime('%Y-%m-%d')}")
-    print(f"  Stocks: {len(predict_df)}")
+    # Get the most recent row per ticker
+    idx_latest_per_ticker = wide_df.groupby(TICKER)[TIMESTAMP].idxmax()
+    predict_df = wide_df.loc[idx_latest_per_ticker].copy()
+    
+    # Filter to only include recent data (within 7 days of latest)
+    min_acceptable_ts = latest_ts - (7 * 24 * 60 * 60 * 1000)  # 7 days in ms
+    predict_df = predict_df[predict_df[TIMESTAMP] >= min_acceptable_ts]
+    
+    print(f"  Latest data date: {latest_date.strftime('%Y-%m-%d')}")
+    print(f"  Stocks with recent data: {len(predict_df)}")
     
     # Preprocess and scale
     print("\n[4/4] Generating predictions...")

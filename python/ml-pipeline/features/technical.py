@@ -64,7 +64,9 @@ def _add_technical_features_vectorized(df: pd.DataFrame) -> pd.DataFrame:
     df_valid = _add_roc_vectorized(df_valid, windows=[10, 252])
     
     # --- Volatility Features ---
-    df_valid = _add_atr_vectorized(df_valid, window=14)
+    # ATR at multiple horizons: short (14), medium (63), long (126, 252)
+    for atr_window in [14, 63, 126, 252]:
+        df_valid = _add_atr_vectorized(df_valid, window=atr_window)
     df_valid = _add_bollinger_width_vectorized(df_valid, window=20, num_std=2)
     df_valid = _add_rolling_volatility_vectorized(df_valid, windows=[20, 252])
     df_valid = _add_garman_klass_vol_vectorized(df_valid, window=20)

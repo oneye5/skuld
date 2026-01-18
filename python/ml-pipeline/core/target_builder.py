@@ -119,7 +119,7 @@ def _compute_forward_returns_vectorized(
     """Vectorized implementation of forward return computation.
     
     Uses merge_asof per ticker group for efficient lookups.
-    While this still loops over tickers, merge_asof within each group is fast.
+    Memory optimized: minimizes copies within the loop.
     
     Args:
         price_column: Column to use for price data (e.g., 'Close' or 'AdjClose').
@@ -129,37 +129,40 @@ def _compute_forward_returns_vectorized(
         result[FORWARD_RETURN] = np.nan
         return result
     
-    # Prepare the main dataframe
+    # Prepare the main dataframe - compute target timestamp
     result = df.copy()
     result["_target_ts"] = result[TIMESTAMP] + lookahead_ms
     
-    # Prepare lookup dataframe
+    # Prepare lookup dataframe - only keep columns we need (memory optimization)
     lookup_for_merge = lookup_df[[TICKER, TIMESTAMP, price_column]].copy()
+    lookup_for_merge = lookup_for_merge.rename(columns={price_column: "_future_price"})
     
     # Process each ticker group using vectorized merge_asof
-    # This is much faster than the original loop because merge_asof is optimized
     result_dfs = []
+    tickers = result[TICKER].unique()
     
-    for ticker in result[TICKER].unique():
-        ticker_result = result[result[TICKER] == ticker].copy()
-        ticker_lookup = lookup_for_merge[lookup_for_merge[TICKER] == ticker].copy()
+    for ticker in tickers:
+        ticker_mask = result[TICKER] == ticker
+        ticker_result = result.loc[ticker_mask]  # View first
+        
+        lookup_mask = lookup_for_merge[TICKER] == ticker
+        ticker_lookup = lookup_for_merge.loc[lookup_mask]
         
         if ticker_lookup.empty:
-            ticker_result[FORWARD_RETURN] = np.nan
-            result_dfs.append(ticker_result.drop(columns=["_target_ts"]))
+            # Just add NaN column without copy
+            ticker_out = ticker_result.copy()
+            ticker_out[FORWARD_RETURN] = np.nan
+            result_dfs.append(ticker_out.drop(columns=["_target_ts"]))
             continue
         
-        # Sort for merge_asof
-        ticker_result = ticker_result.sort_values("_target_ts")
-        ticker_lookup = ticker_lookup.sort_values(TIMESTAMP)
-        
-        # Rename for merge
-        ticker_lookup = ticker_lookup.rename(columns={price_column: "_future_price"})
+        # Sort for merge_asof (need copies here for sorting)
+        ticker_result_sorted = ticker_result.sort_values("_target_ts")
+        ticker_lookup_sorted = ticker_lookup.sort_values(TIMESTAMP)
         
         # merge_asof finds future price
         merged = pd.merge_asof(
-            ticker_result,
-            ticker_lookup[[TIMESTAMP, "_future_price"]],
+            ticker_result_sorted,
+            ticker_lookup_sorted[[TIMESTAMP, "_future_price"]],
             left_on="_target_ts",
             right_on=TIMESTAMP,
             direction="forward",
@@ -181,11 +184,13 @@ def _compute_forward_returns_vectorized(
         
         # Clean up temp columns
         cols_to_drop = ["_target_ts", "_future_price"]
-        # Also drop any _lookup columns that might have been created
         cols_to_drop.extend([c for c in merged.columns if c.endswith("_lookup")])
         merged = merged.drop(columns=[c for c in cols_to_drop if c in merged.columns])
         
         result_dfs.append(merged)
+    
+    # Free intermediate memory
+    del lookup_for_merge
     
     if not result_dfs:
         result = df.copy()
@@ -194,6 +199,7 @@ def _compute_forward_returns_vectorized(
     
     # Combine all tickers
     result = pd.concat(result_dfs, ignore_index=True)
+    del result_dfs  # Free list memory
     
     # Apply winsorization if specified
     if winsorize_limits is not None:

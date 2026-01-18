@@ -449,6 +449,8 @@ def prepare_ranking_data(
     Sorts data by timestamp and builds the group parameter required by LGBMRanker.
     Drops rows with NaN in target column to ensure valid labels.
     
+    Memory optimized: Avoids unnecessary DataFrame copies.
+    
     Args:
         df: DataFrame with features, target, and timestamp.
         feature_cols: List of feature column names.
@@ -466,19 +468,21 @@ def prepare_ranking_data(
         >>> ranker.fit(X, y, groups)
     """
     # Drop rows with NaN in target - LGBMRanker requires valid labels
-    df_clean = df.dropna(subset=[target_col]).copy()
+    # Memory optimization: Use boolean mask instead of dropna().copy()
+    valid_mask = df[target_col].notna()
+    n_dropped = (~valid_mask).sum()
     
-    if len(df_clean) < len(df):
-        dropped = len(df) - len(df_clean)
+    if n_dropped > 0:
         import warnings
-        warnings.warn(f"Dropped {dropped} rows with NaN in target column '{target_col}'")
+        warnings.warn(f"Dropped {n_dropped} rows with NaN in target column '{target_col}'")
     
-    # Sort by timestamp
-    df_sorted = df_clean.sort_values(timestamp_col).reset_index(drop=True)
+    # Sort by timestamp (creates new DataFrame, but unavoidable for correct ordering)
+    df_sorted = df.loc[valid_mask].sort_values(timestamp_col).reset_index(drop=True)
     
-    # Extract features and target
-    X = df_sorted[feature_cols].copy()
-    y = df_sorted[target_col].copy()
+    # Extract features and target - use views where possible
+    # LightGBM can handle DataFrame directly, so we provide a view
+    X = df_sorted[feature_cols]
+    y = df_sorted[target_col]
     
     # Build groups
     groups = build_group_from_timestamps(df_sorted, timestamp_col)

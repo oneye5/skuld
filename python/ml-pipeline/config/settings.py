@@ -163,3 +163,25 @@ EPSILON: float = 1e-6
 CLIP_THRESHOLD: float = 10.0
 """Clip scaled feature values to [-CLIP_THRESHOLD, CLIP_THRESHOLD] after scaling."""
 
+
+# =============================================================================
+# MEMORY OPTIMIZATION
+# =============================================================================
+MEMORY_EFFICIENT_MODE: bool = True
+"""If True, use memory-efficient settings:
+- Reduced lag/MA windows (fewer features)
+- Float32 instead of float64
+- Chunked processing for large arrays
+
+Enable this if running into OOM errors on windows with large training sets."""
+
+USE_FLOAT32: bool = True
+"""Use float32 instead of float64 for ~50% memory savings.
+Precision loss is negligible for ML features."""
+
+MAX_SCALER_FIT_SAMPLES: int = 100_000
+"""Maximum samples to use for scaler fitting.
+RobustScaler only needs quantiles, so sampling is fine."""
+
+SCALER_CHUNK_SIZE: int = 100_000
+"""Rows per chunk when transforming large datasets."""

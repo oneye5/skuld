@@ -44,7 +44,7 @@ FEATURE_DATA_CACHE = CACHE_DIR / "wide_data_with_features.parquet"
 FEATURE_DATA_METADATA = CACHE_DIR / "wide_data_features_meta.json"
 
 # Version for cache invalidation when feature logic changes
-FEATURE_CACHE_VERSION = "1.4.0"  
+FEATURE_CACHE_VERSION = "1.5.0"  
 
 
 def _get_source_file_hash(path: Path) -> str:

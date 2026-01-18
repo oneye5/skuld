@@ -75,187 +75,174 @@ class FeatureLagMAConfig:
 # TICKER-LEVEL FEATURES (computed per-ticker using groupby)
 # =============================================================================
 
-# Dollar volume - tracks liquidity trends
-# Research: Amihud (2002) - illiquidity predicts returns
-# VERY HIGH IMPORTANCE: DolVol_MA_126 = 807, DolVol_MA_63 = 439, DolVol_MA_21 = 230
-# Focus on the configurations that showed highest importance
 TICKER_VOLUME_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^DollarVolume$",
     output_prefix="DolVol",
-    lags=[63, 126, 252],       # Quarterly, semi-annual, annual lags
-    mas=[21, 63, 126, 252, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Medium-term volume momentum
-    diffs=[(0, 126), (0, 252), (63, 252), (252, 756)],  # Volume vs historical norms
+    lags=[63, 126],             # Reduced: removed 252-day lag
+    mas=[21, 63, 126, 252, 504, 1008],     # Reduced: removed 756, 1260-day MAs
+    momentum=[63, 126],         # Medium-term volume momentum
+    diffs=[(0, 126)], # Reduced: keep only top 2 diffs
     scope="ticker",
     include_spike=True,
     include_volatility=True,
-    volatility_window=21,      # 21-day vol showed high importance (299)
+    volatility_window=21,       # 21-day vol showed high importance (299)
 )
 
-# Amihud illiquidity - one of the top features, add temporal dynamics
-# HIGH IMPORTANCE: Illiq_MA_63 = 394, Illiq_Lag_63 = 289, Illiq_MA_21 = 202
-# Extend to 126-day windows for annual horizon
 TICKER_AMIHUD_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^Amihud_21d$|^Amihud_63d$",
     output_prefix="Illiq",
-    lags=[21, 63, 126],        # Add 126-day lag
-    mas=[21, 63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Medium to long-term illiquidity momentum
-    diffs=[(0, 63), (0, 126), (63, 252)],  # Illiquidity vs historical
+    lags=[21, 63],             
+    mas=[21, 63, 252, 504, 1008],        
+    momentum=[63, 252],              
+    diffs=[(0, 63)],            
     scope="ticker",
     include_spike=True,
 )
 
-# Volatility features - Vol_252 is top feature, track its dynamics
-# VERY HIGH IMPORTANCE: VolDyn_Lag_126 = 450, VolDyn_MA_126 = 374, VolDyn_Mom_126 = 364
-# VolDyn_MA_63 = 299, Vol_252 raw = 370
-# 126-day windows dominate - add 252-day for full annual cycle
 TICKER_VOLATILITY_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^Vol_252$|^Vol_20$",
     output_prefix="VolDyn",
-    lags=[63, 126, 252],       # Focus on semi-annual and annual lags
-    mas=[63, 126, 252, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126, 252],   # Add annual momentum
-    diffs=[(0, 252), (0, 756), (126, 756), (252, 1260)],  # Vol regime changes
+    lags=[126],             
+    mas=[63, 126, 252],         
+    momentum=[63, 126],        
+    diffs=[(0, 252)],           
     scope="ticker",
 )
 
-# Trend persistence - 3rd most important feature
-# IMPORTANCE: TrendPersist_252d = 294, Trend_MA_63 = 444, Trend_Lag_63 = 350
-# Trend_Mom_63 = 141 - extend to 126-day windows
 TICKER_TREND_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^TrendPersist_252d$|^Trend_RSq_",
     output_prefix="Trend",
-    lags=[63, 126],            # Track trend quality shifts over quarters
-    mas=[63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Trend quality momentum
-    diffs=[(0, 126), (0, 756), (126, 756)],  # Trend quality vs historical
+    lags=[63],                  
+    mas=[63, 126, 252, 504, 1004],             
+    momentum=[63],             
+    diffs=[(0, 126)],           
     scope="ticker",
 )
 
-# Higher moments features - HIGH IMPORTANCE
-# Skew_126d = 435, Kurt_126d = 390, Skew_60d = 151, Kurt_60d = 138
-# Add dynamics for these important features
 TICKER_HIGHER_MOMENTS_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^Skew_126d$|^Kurt_126d$|^Skew_60d$|^Kurt_60d$",
     output_prefix="Moment",
-    lags=[63, 126],            # Track how moments have shifted
-    mas=[63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Momentum of distribution shape changes
-    diffs=[(0, 126), (0, 756), (126, 756)],  # Distribution shape vs historical
+    lags=[63],                  
+    mas=[63, 252, 504, 1008],              
+    momentum=[63],              
+    diffs=[(0, 126)],           
     scope="ticker",
 )
 
-# Trailing Dividend Yield - 2nd highest feature (650 importance)
-# Add lag/MA dynamics since yield changes predict returns
 TICKER_DIVIDEND_YIELD_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^TrailingDivYield_252d$",
     output_prefix="DivYld",
-    lags=[63, 126, 252],       # How yield has changed over time
-    mas=[63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Yield momentum (increasing/decreasing dividends)
-    diffs=[(0, 252), (0, 756), (252, 1260)],  # Yield vs historical norms
+    lags=[252],             
+    mas=[63, 126, 252, 504, 1008],         
+    momentum=[1008],             
+    diffs=[(0, 252), (0, 1008)],          
     scope="ticker",
+)
+
+TICKER_ATR_CONFIG = FeatureLagMAConfig(
+    feature_pattern=r"^ATR_|^NATR_",
+    output_prefix="ATR",
+    lags=[63, 126],            # Track lagged volatility regimes
+    mas=[63, 126, 252],        # Medium to long-term volatility averages
+    momentum=[63, 126],        # Volatility acceleration/deceleration
+    diffs=[(0, 126), (0, 252)],  # Deviation from 6mo/12mo mean volatility
+    scope="ticker",
+    include_spike=True,        # Detect volatility spikes
 )
 
 
 # =============================================================================
 # MACRO FEATURES (global, timestamp-level only)
+# MEMORY OPTIMIZED: Reduced all windows significantly
 # =============================================================================
-
-# OECD Confidence indicators - top macro features (CCICP: 102, BCICP: 72 importance)
-# Monthly releases, focus on longer lags for annual horizon
-# Research: Stock & Watson (2003) - leading indicators for business cycles
 MACRO_OECD_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^MACRO_OECD_",
     output_prefix=None,
-    lags=[63, 126, 252],       # Quarterly, semi-annual, annual (252 showed ~102 importance)
-    mas=[63, 126, 252, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Medium-term confidence shifts
-    diffs=[(0, 252), (0, 756), (252, 756)],  # Confidence vs historical norms
+    lags=[126, 252],            
+    mas=[126, 252],             
+    momentum=[126],             
+    diffs=[(0, 252)],           
     scope="global",
-    include_spike=True,        # Detect sudden confidence shifts
+    include_spike=True,
 )
 
-# Interest rates - highly important (ranks 28-29 in feature importance)
-# Research: Fama & French (1989) - term structure predicts returns
-# Long-term rate L252 = 58, Short-term L252 = 54 - annual lags important
 MACRO_INTEREST_RATES_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"interest rate|Interest rate",
     output_prefix=None,
-    lags=[63, 126, 252],       # Focus on longer periods for annual prediction
-    mas=[63, 126, 252, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Rate direction over quarters
-    diffs=[(0, 252), (0, 756), (252, 756), (252, 1260)],  # Rate vs historical levels
+    lags=[126, 252],           
+    mas=[126, 252],            
+    momentum=[126],            
+    diffs=[(0, 252)],          
     scope="global",
     include_spike=True,
-    include_volatility=True,   # Interest rate volatility is predictive
-    volatility_window=63,      # Quarterly volatility
+    include_volatility=True,
+    volatility_window=63,
 )
 
-# BOP (Balance of Payments) - quarterly data, need longer windows
-# Multiple BOP features showing ~5-14 importance - moderate value
 MACRO_BOP_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^MACRO_BOP",
     output_prefix=None,
-    lags=[126, 252],           # Semi-annual, annual (longer is better for BOP)
-    mas=[126, 252, 756, 1260], # Up to 5-year MA
-    momentum=[126, 252],       # Long-term BOP trends
+    lags=[126, 252],           
+    mas=[126, 252],            
+    momentum=[126],            
     scope="global",
 )
 
-# International indices (FTSE: importance ~89-105, Shanghai: ~33-72)
-# FTSE Volume = 105, FTSE Open = 102 - strong predictive value
-# Research: Rapach et al. (2013) - international return predictability
 MACRO_INDEX_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^\^FTSE|^000001\.SS|^\^TNX",
     output_prefix=None,
-    lags=[63, 126, 252],       # Focus on longer lags for annual horizon
-    mas=[63, 126, 252, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # International momentum
-    diffs=[(0, 252), (0, 756), (252, 756)],  # Index vs historical levels
+    lags=[63, 126],             
+    mas=[63, 126, 252],         
+    momentum=[63],              
+    diffs=[(0, 252)],           
     scope="global",
     include_spike=True,
     include_volatility=True,
-    volatility_window=63,      # Quarterly volatility
+    volatility_window=63,
 )
 
-# Commodity futures - track commodity cycles
-# Research: Hong & Yogo (2012) - commodity fundamentals predict returns
-# Various commodities showing 4-36 importance, focus on longer windows
 MACRO_COMMODITY_CONFIG = FeatureLagMAConfig(
-    feature_pattern=r"=F_",    # Futures pattern
+    feature_pattern=r"=F_",    
     output_prefix=None,
-    lags=[63, 126],            # Quarterly, semi-annual for cycles
-    mas=[63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Commodity momentum
-    diffs=[(0, 126), (0, 756), (126, 756)],  # Deviation from historical levels
+    lags=[63, 126],            
+    mas=[63, 126],             
+    momentum=[63],             
+    diffs=[(0, 126)],          
     scope="global",
     include_spike=True,
 )
 
-# NZ Dollar exchange rates - currency dynamics affect NZX
-# Moderate importance - simplify configuration
 MACRO_FX_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^MACRO_NZD.*=X_",
     output_prefix=None,
-    lags=[63, 126],            # Currency cycles over quarters
-    mas=[63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # FX momentum
+    lags=[63, 126],            
+    mas=[63, 126],             
+    momentum=[63],             
     scope="global",
     include_volatility=True,
-    volatility_window=63,      # Quarterly FX volatility
+    volatility_window=63,
 )
 
-# NZ GDP/Government expenditure data - quarterly, need long lags
-# NZL features showing 7-15 importance at 252-day windows
 MACRO_NZ_GDP_CONFIG = FeatureLagMAConfig(
     feature_pattern=r"^MACRO_NZL_",
     output_prefix=None,
-    lags=[126, 252],           # Semi-annual to annual
-    mas=[126, 252, 756, 1260], # Up to 5-year MA
-    momentum=[126, 252],       # Long-term GDP trends
+    lags=[126, 252],           
+    mas=[126, 252],            
+    momentum=[126],            
     scope="global",
+)
+
+MACRO_FAO_FOOD_CONFIG = FeatureLagMAConfig(
+    feature_pattern=r"^MACRO_FAO_",
+    output_prefix=None,
+    lags=[63, 126, 252],       
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
 )
 
 # =============================================================================
@@ -270,6 +257,7 @@ TICKER_CONFIGS: List[FeatureLagMAConfig] = [
     TICKER_TREND_CONFIG,
     TICKER_HIGHER_MOMENTS_CONFIG,
     TICKER_DIVIDEND_YIELD_CONFIG,
+    TICKER_ATR_CONFIG,
 ]
 
 # All macro/global configs  
@@ -281,6 +269,7 @@ MACRO_CONFIGS: List[FeatureLagMAConfig] = [
     MACRO_COMMODITY_CONFIG,
     MACRO_FX_CONFIG,
     MACRO_NZ_GDP_CONFIG,
+    MACRO_FAO_FOOD_CONFIG,
 ]
 
 # Combined list of all configs

@@ -1,4 +1,10 @@
-"""Module for scaling features."""
+"""Module for scaling features.
+
+Memory-optimized implementation:
+- Uses float32 instead of float64 to halve memory usage
+- Processes data in chunks for large datasets
+- Avoids creating full DataFrame copies
+"""
 
 from dataclasses import dataclass
 import pandas as pd
@@ -7,6 +13,11 @@ from sklearn.preprocessing import RobustScaler
 
 from config.columns import TIMESTAMP, TICKER, TARGET
 from core.target_builder import FORWARD_RETURN
+
+
+# Memory optimization constants
+CHUNK_SIZE = 100_000  # Rows per chunk for transformation
+USE_FLOAT32 = True    # Use float32 for ~50% memory savings
 
 
 @dataclass
@@ -25,6 +36,8 @@ def fit_scaler(df: pd.DataFrame) -> ScalerSet:
     Binary features are not scaled.
     
     Fits ONLY on the provided DataFrame (typically training data) to avoid leakage.
+    
+    Memory optimization: Fits on a sample if data is very large.
     
     Args:
         df: DataFrame to fit scalers on.
@@ -57,9 +70,21 @@ def fit_scaler(df: pd.DataFrame) -> ScalerSet:
             continuous_cols.append(col)
     
     # Fit RobustScaler on continuous columns
+    # For large datasets, sample to reduce memory during fit
     scaler = RobustScaler()
     if continuous_cols:
-        scaler.fit(df[continuous_cols].values)
+        n_rows = len(df)
+        max_fit_samples = 100_000  # RobustScaler needs only sample for quantiles
+        
+        if n_rows > max_fit_samples:
+            # Sample for fitting - RobustScaler uses quantiles so sampling is fine
+            sample_idx = np.random.choice(n_rows, max_fit_samples, replace=False)
+            fit_data = df.iloc[sample_idx][continuous_cols].values.astype(np.float32)
+        else:
+            fit_data = df[continuous_cols].values.astype(np.float32)
+        
+        scaler.fit(fit_data)
+        del fit_data  # Free memory immediately
     
     return ScalerSet(
         continuous_scaler=scaler,
@@ -76,6 +101,8 @@ def transform_data(
 ) -> pd.DataFrame:
     """Transform data using fitted scalers.
     
+    Memory-optimized: Uses chunked processing for large datasets and float32.
+    
     Args:
         df: DataFrame to transform.
         scaler_set: Fitted ScalerSet from fit_scaler().
@@ -89,7 +116,8 @@ def transform_data(
     Raises:
         ValueError: If strict=True and required columns are missing.
     """
-    result = df.copy()
+    # Avoid full copy - modify in place where possible
+    result = df
     
     if scaler_set.continuous_cols:
         # Check which columns exist
@@ -106,16 +134,33 @@ def transform_data(
             )
         
         if cols_to_transform:
-            # If all fitted columns exist, use the scaler directly (most efficient)
-            if cols_to_transform == scaler_set.continuous_cols:
+            n_rows = len(result)
+            
+            # For large datasets, process in chunks to limit memory
+            if n_rows > CHUNK_SIZE and cols_to_transform == scaler_set.continuous_cols:
+                # Chunked transformation - more memory efficient
+                result = df.copy()  # Now we need the copy for in-place modification
+                
+                for start_idx in range(0, n_rows, CHUNK_SIZE):
+                    end_idx = min(start_idx + CHUNK_SIZE, n_rows)
+                    chunk_data = result.iloc[start_idx:end_idx][cols_to_transform].values.astype(np.float32)
+                    transformed_chunk = scaler_set.continuous_scaler.transform(chunk_data).astype(np.float32)
+                    result.iloc[start_idx:end_idx, result.columns.get_indexer(cols_to_transform)] = transformed_chunk
+                    del chunk_data, transformed_chunk  # Free chunk memory immediately
+                    
+            elif cols_to_transform == scaler_set.continuous_cols:
+                # All columns present - use the scaler directly
+                result = df.copy()
                 transformed = scaler_set.continuous_scaler.transform(
-                    result[cols_to_transform].values
+                    result[cols_to_transform].values.astype(np.float32)
                 ).astype(np.float32)
                 result[cols_to_transform] = transformed
+                del transformed
             else:
                 # Only some columns exist - transform column by column using the 
                 # fitted parameters for each column
                 # WARNING: This path should rarely be used - indicates potential issues
+                result = df.copy()
                 import warnings
                 warnings.warn(
                     f"Partial column transform: {len(missing_cols)} columns missing from scaler. "

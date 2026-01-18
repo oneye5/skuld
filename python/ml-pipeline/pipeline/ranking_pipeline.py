@@ -435,8 +435,11 @@ def run_single_ranking_window(
     logger.debug(f"Window {window_id}: train_end_ts={train_end_ts}, test_end_ts={test_end_ts}")
     
     # Slice data with buffer for forward returns
+    # Memory optimization: Only copy when absolutely necessary (for forward return computation)
     buffer_end = test_end_ts + lookahead_ms
-    wide_slice = wide_df[wide_df[TIMESTAMP] < buffer_end].copy()
+    wide_slice_mask = wide_df[TIMESTAMP] < buffer_end
+    wide_slice = wide_df.loc[wide_slice_mask].copy()  # Copy needed for compute_forward_returns modification
+    del wide_slice_mask
     logger.debug(f"Window {window_id}: Data slice has {len(wide_slice):,} rows")
     
     # Split data
@@ -507,7 +510,9 @@ def run_single_ranking_window(
     
     # Compute clusters using only training period data
     # Use train_end_ts as the cutoff to ensure no future data is used
-    train_only_df = wide_df[wide_df[TIMESTAMP] <= train_end_ts].copy()
+    # Memory optimization: Use view instead of copy for cluster computation
+    train_only_mask = wide_df[TIMESTAMP] <= train_end_ts
+    train_only_df = wide_df.loc[train_only_mask]  # View, not copy
     
     # Get cluster assignments (14 clusters for ~10% of tickers per cluster)
     cluster_map = compute_clusters_fast(
@@ -522,7 +527,7 @@ def run_single_ranking_window(
     train_features = add_cluster_features_fast(train_features, cluster_map)
     test_features = add_cluster_features_fast(test_features, cluster_map)
     
-    del train_only_df
+    del train_only_df, train_only_mask
     gc.collect()
     
     # NOTE: Cross-sectional features disabled - they cause suspicious Sharpe inflation

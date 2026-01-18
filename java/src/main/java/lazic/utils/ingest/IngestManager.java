@@ -33,7 +33,7 @@ public enum IngestManager {
 		asList.subList(0, Math.min(asList.size(), count))
 						.forEach(dp-> System.out.println(dp.toString()));
 	}
-	}
+}
 
 	/**
 	 * datapoint contents:
@@ -43,4 +43,4 @@ public enum IngestManager {
 	 * 									 String featureName,
 	 * 									 Double value)
 	 */
-}
+

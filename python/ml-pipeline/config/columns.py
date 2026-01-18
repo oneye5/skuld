@@ -82,3 +82,44 @@ DEPRECIATION_RATIO: str = "DepreciationRatio"
 COMMISSION_EFFICIENCY: str = "CommissionEfficiency"
 IMMEDIATE_INTEREST_VOLATILITY: str = "ImmediateInterestVolatility"
 SHORT_TERM_INTEREST_VOLATILITY: str = "ShortTermInterestVolatility"
+
+
+# =============================================================================
+# DERIVED RATIO FEATURES
+# =============================================================================
+YIELD_CURVE_SPREAD: str = "YieldCurveSpread"
+"""Long-term interest rate minus short-term interest rate."""
+
+VOL_TERM_STRUCTURE: str = "VolTermStructure"
+"""Short-term volatility (20d) divided by long-term volatility (252d)."""
+
+GOLD_OIL_RATIO: str = "GoldOilRatio"
+"""Gold price divided by oil price - macro risk indicator."""
+
+FX_ADJUSTED_RETURN: str = "FX_Adjusted_Return"
+"""Stock return adjusted for NZD/USD currency movements."""
+
+RELATIVE_TO_MARKET: str = "RelativeToMarket"
+"""Stock return relative to market index return."""
+
+DOLLAR_VOL_MARKET_SHARE: str = "DollarVolMarketShare"
+"""Stock's dollar volume as percentage of total market volume."""
+
+FEAR_RATIO: str = "FearRatio"
+"""Aggregated fear indicator from Wiki fear terms."""
+
+EARNINGS_QUALITY: str = "EarningsQuality"
+"""Operating cash flow relative to net income."""
+
+AQUACULTURE_TREND: str = "AquacultureTrend"
+"""NZ aquaculture production trend."""
+
+
+# =============================================================================
+# MACRO COLUMN NAMES (for derived features)
+# =============================================================================
+MACRO_GOLD_ADJCLOSE: str = "MACRO_GC=F_AdjClose"
+MACRO_OIL_ADJCLOSE: str = "MACRO_CL=F_AdjClose"
+MACRO_NZDUSD: str = "MACRO_NZDUSD=X_AdjClose"
+MACRO_NZSE_ADJCLOSE: str = "MACRO_%5ENZSE_AdjClose"
+MACRO_TNX: str = "MACRO_%5ETNX_AdjClose"

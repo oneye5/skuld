@@ -11,7 +11,7 @@ import lazic.utils.ingest.IngestManager;
 public class Main {
 	public static void main(String[] args) {
 		// Register data sources
-
+		
 		new NzBusinessConfidence();
 		new NzGdp();
 		new NzRatesFx();
@@ -26,7 +26,7 @@ public class Main {
 		new NzTaxRevenue();
 		new NzBalanceOfPayments();
 		new WikimediaPageviews();
-
+		new GlobalFoodPrices();
 
 		IngestManager.INSTANCE.fetchDataFromSources();
 		IngestManager.INSTANCE.printSubset(100);

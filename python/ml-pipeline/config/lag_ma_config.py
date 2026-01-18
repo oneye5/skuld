@@ -75,23 +75,6 @@ class FeatureLagMAConfig:
 # TICKER-LEVEL FEATURES (computed per-ticker using groupby)
 # =============================================================================
 
-# Wikipedia attention - for 365-day horizon, need longer windows
-# Research: Da, Engelberg, Gao (2011) - "In Search of Attention"
-# Note: Attention features showing low importance (~33) - simplify to focus on
-# long-term smoothing relevant for annual predictions
-TICKER_ATTENTION_CONFIG = FeatureLagMAConfig(
-    feature_pattern=r"^Wiki_Views$|^Wiki_Views_Desktop$|^Wiki_Views_Mobile$",
-    output_prefix="Attn",
-    lags=[63, 126, 252],       # Quarterly, semi-annual, annual lags
-    mas=[63, 126, 252, 756, 1260],  # Up to 5-year MA for market cycles
-    momentum=[63, 126],        # Longer momentum windows
-    diffs=[(0, 252), (0, 756), (252, 756)],  # Deviation from 1yr/3yr mean, trend regime
-    scope="ticker",
-    include_spike=True,
-    include_volatility=True,
-    volatility_window=63,      # Quarterly volatility for stability
-)
-
 # Dollar volume - tracks liquidity trends
 # Research: Amihud (2002) - illiquidity predicts returns
 # VERY HIGH IMPORTANCE: DolVol_MA_126 = 807, DolVol_MA_63 = 439, DolVol_MA_21 = 230
@@ -210,17 +193,6 @@ MACRO_INTEREST_RATES_CONFIG = FeatureLagMAConfig(
     volatility_window=63,      # Quarterly volatility
 )
 
-# Road fatalities - economic activity proxy (importance: 38 at L126)
-# Simplify - not a top driver
-MACRO_FATALITIES_CONFIG = FeatureLagMAConfig(
-    feature_pattern=r"road_fatalities",
-    output_prefix=None,
-    lags=[63, 126],            # Quarterly to semi-annual lags
-    mas=[63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Activity momentum
-    scope="global",
-)
-
 # BOP (Balance of Payments) - quarterly data, need longer windows
 # Multiple BOP features showing ~5-14 importance - moderate value
 MACRO_BOP_CONFIG = FeatureLagMAConfig(
@@ -257,6 +229,7 @@ MACRO_COMMODITY_CONFIG = FeatureLagMAConfig(
     lags=[63, 126],            # Quarterly, semi-annual for cycles
     mas=[63, 126, 756, 1260],  # Up to 5-year MA
     momentum=[63, 126],        # Commodity momentum
+    diffs=[(0, 126), (0, 756), (126, 756)],  # Deviation from historical levels
     scope="global",
     include_spike=True,
 )
@@ -285,29 +258,12 @@ MACRO_NZ_GDP_CONFIG = FeatureLagMAConfig(
     scope="global",
 )
 
-# Fear/sentiment Wikipedia indicators - market psychology
-# Research: Da, Engelberg, Gao (2015) - "The Sum of All FEARS"
-# Limited appearance in top features - simplify to longer windows
-MACRO_WIKI_FEAR_CONFIG = FeatureLagMAConfig(
-    feature_pattern=r"MACRO_.*_(Recession|Financial_crisis|Stock_market_crash|"
-                    r"Bear_market|Credit_crunch|Bankruptcy|Panic_selling|"
-                    r"Economic_bubble|Inflation|Unemployment)_Wiki_Views$",
-    output_prefix=None,
-    lags=[63, 126],            # Quarterly to semi-annual fear lags
-    mas=[63, 126, 756, 1260],  # Up to 5-year MA
-    momentum=[63, 126],        # Fear momentum over longer periods
-    scope="global",
-    include_spike=True,        # Sudden fear spikes are predictive
-)
-
-
 # =============================================================================
 # AGGREGATE CONFIGS
 # =============================================================================
 
 # All ticker-level configs
 TICKER_CONFIGS: List[FeatureLagMAConfig] = [
-    TICKER_ATTENTION_CONFIG,
     TICKER_VOLUME_CONFIG,
     TICKER_AMIHUD_CONFIG,
     TICKER_VOLATILITY_CONFIG,
@@ -320,13 +276,11 @@ TICKER_CONFIGS: List[FeatureLagMAConfig] = [
 MACRO_CONFIGS: List[FeatureLagMAConfig] = [
     MACRO_OECD_CONFIG,
     MACRO_INTEREST_RATES_CONFIG,
-    MACRO_FATALITIES_CONFIG,
     MACRO_BOP_CONFIG,
     MACRO_INDEX_CONFIG,
     MACRO_COMMODITY_CONFIG,
     MACRO_FX_CONFIG,
     MACRO_NZ_GDP_CONFIG,
-    MACRO_WIKI_FEAR_CONFIG,
 ]
 
 # Combined list of all configs

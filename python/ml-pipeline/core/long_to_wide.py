@@ -66,7 +66,7 @@ def clean_and_classify_tickers(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_macro_prefix(df: pd.DataFrame) -> pd.DataFrame:
-    """Add MACRO_ prefix to features with empty ticker.
+    """Add MACRO_ prefix to features with empty or NaN ticker.
     
     This distinguishes global/macro features from ticker-specific features
     after pivoting to wide format.
@@ -75,12 +75,12 @@ def add_macro_prefix(df: pd.DataFrame) -> pd.DataFrame:
         df: Long format DataFrame with ticker and feature columns.
     
     Returns:
-        DataFrame with prefixed feature names for empty-ticker rows.
+        DataFrame with prefixed feature names for empty/NaN-ticker rows.
     """
     df = df.copy()
     
-    # Identify rows with empty ticker (macro/global features)
-    is_macro = df[TICKER] == ""
+    # Identify rows with empty or NaN ticker (macro/global features)
+    is_macro = (df[TICKER] == "") | df[TICKER].isna()
     
     # Add prefix to feature names for macro rows
     df.loc[is_macro, FEATURE] = MACRO_PREFIX + df.loc[is_macro, FEATURE]

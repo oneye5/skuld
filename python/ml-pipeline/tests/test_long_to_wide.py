@@ -151,6 +151,31 @@ class TestAddMacroPrefix:
         add_macro_prefix(df)
         
         assert df[FEATURE].iloc[0] == original_feature
+    
+    def test_adds_prefix_to_nan_ticker(self):
+        """Test that MACRO_ prefix is added for NaN ticker rows.
+        
+        This is important for global/macro features that come from the Java
+        ingestion with null tickers (e.g., Wikipedia pageviews for fear indicators).
+        """
+        df = pd.DataFrame({
+            TIMESTAMP: [1, 2, 3],
+            TICKER: [None, float('nan'), "ANZ.NZ"],
+            FEATURE: ["Recession_Wiki_Views", "GDP_Growth", "Close"],
+            VALUE: [1000.0, 2.5, 25.0],
+        })
+        
+        result = add_macro_prefix(df)
+        
+        # NaN ticker rows should have prefixed feature
+        macro_rows = result[result[TICKER].isna()]
+        assert all(f.startswith("MACRO_") for f in macro_rows[FEATURE])
+        assert "MACRO_Recession_Wiki_Views" in macro_rows[FEATURE].values
+        assert "MACRO_GDP_Growth" in macro_rows[FEATURE].values
+        
+        # Non-NaN ticker row should be unchanged
+        ticker_row = result[result[TICKER] == "ANZ.NZ"]
+        assert ticker_row[FEATURE].iloc[0] == "Close"
 
 
 class TestLongToWide:

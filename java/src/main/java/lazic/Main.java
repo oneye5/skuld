@@ -11,7 +11,7 @@ import lazic.utils.ingest.IngestManager;
 public class Main {
 	public static void main(String[] args) {
 		// Register data sources
-		
+
 		new NzBusinessConfidence();
 		new NzGdp();
 		new NzRatesFx();

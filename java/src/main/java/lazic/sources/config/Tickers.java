@@ -23,28 +23,8 @@ public class Tickers {
 					"RYM.NZ", "SAN.NZ", "SCL.NZ", "SCT.NZ", "SDL.NZ", "SEK.NZ", "SKC.NZ", "SKL.NZ", "SKO.NZ", "SKT.NZ",
 					"SMI.NZ", "SML.NZ", "SPG.NZ", "SPK.NZ", "SPN.NZ", "SPY.NZ", "STU.NZ", "SUM.NZ", "SVR.NZ", "TAH.NZ",
           // NON NZX TICKERS, FOR PROVIDING INFORMATION REGARDING OTHER MARKETS
-          "%5EGSP", // US INDEX
           "%5EFTSE", // UK INDEX
-          "%5EN225", // JPN INDEX
-          "000001.SS", // CHN INDEX
-          // COMMODITIES =============================
-          "CL=F", // CRUDE OIL
-          "NG=F", // NATURAL GAS
-          "GC=F", // GOLD
-          "SI=F", // SILVER
-          "HG=F", // COPPER
-          "PL=F", // PLATINUM
-          "ZC=F", // CORN
-          "ZW=F", // WHEAT
           "ZS=F", // SOYBEANS
-          "LBS=F",// LUMBER
-          "UX=F", // URANIUM
-          // FOREX =============================
-          "NZDUSD=X",
-          "NZDAUD=X",
-          "NZDEUR=X",
-          "NZDJPY=X",
-          // 10Y US TREASURY BOND YIELD
           "%5ETNX"
 	};
 }

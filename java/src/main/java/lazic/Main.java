@@ -20,13 +20,13 @@ public class Main {
 		new YfPrices();
 		new NzLaborStats();
  		new NzRoadFatalities();
-		new GlobalAquacultureProduction();
 		new NzLaborTaxation();
 		new NzPensions();
-		new NzTaxRevenue();
+		//new NzTaxRevenue(); low importance feature
 		new NzBalanceOfPayments();
 		new WikimediaPageviews();
 		new GlobalFoodPrices();
+		// new GlobalAquacultureProduction(); disabled, features have low importance
 
 		IngestManager.INSTANCE.fetchDataFromSources();
 		IngestManager.INSTANCE.printSubset(100);

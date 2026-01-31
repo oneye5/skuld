@@ -245,6 +245,94 @@ MACRO_FAO_FOOD_CONFIG = FeatureLagMAConfig(
     volatility_window=63,      
 )
 
+#############################################################################
+# Human added
+
+MACRO_ROAD_FATALITIES = FeatureLagMAConfig(
+    feature_pattern="MACRO_nz_road_fatalities_monthly",
+    output_prefix=None,      
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
+)
+
+MACRO_NEW_REGISTRATIONS = FeatureLagMAConfig(
+    feature_pattern="MACRO_New Registrations - Goods road motor vehicles",
+    output_prefix=None,      
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
+)
+
+MACRO_DAIRY_PRICE_INDEX = FeatureLagMAConfig(
+    feature_pattern="MACRO_FAO_DairyPriceIndex",
+    output_prefix=None,      
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
+)
+
+MACRO_SUGAR_PRICE_INDEX = FeatureLagMAConfig(
+    feature_pattern="MACRO_FAO_SugarPriceIndex",
+    output_prefix=None,      
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
+)
+
+
+MACRO_OILS_PRICE_INDEX = FeatureLagMAConfig(
+    feature_pattern="MACRO_FAO_OilsPriceIndex",
+    output_prefix=None,      
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
+)
+
+MACRO_MEAT_PRICE_INDEX = FeatureLagMAConfig(
+    feature_pattern="MACRO_FAO_MeatPriceIndex",
+    output_prefix=None,      
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
+)
+
+MACRO_CEREALS_PRICE_INDEX = FeatureLagMAConfig(
+    feature_pattern="MACRO_FAO_CerealsPriceIndex",
+    output_prefix=None,      
+    mas=[63, 126, 252,1200],   
+    momentum=[63, 126, 365],   
+    diffs=[(0, 126), (0, 252)],
+    scope="global",
+    include_spike=True,        
+    include_volatility=True,   
+    volatility_window=63,      
+)
+
 # =============================================================================
 # AGGREGATE CONFIGS
 # =============================================================================
@@ -270,6 +358,13 @@ MACRO_CONFIGS: List[FeatureLagMAConfig] = [
     MACRO_FX_CONFIG,
     MACRO_NZ_GDP_CONFIG,
     MACRO_FAO_FOOD_CONFIG,
+    MACRO_ROAD_FATALITIES,
+    MACRO_NEW_REGISTRATIONS,
+    MACRO_DAIRY_PRICE_INDEX,
+    MACRO_SUGAR_PRICE_INDEX,
+    MACRO_OILS_PRICE_INDEX,
+    MACRO_MEAT_PRICE_INDEX,
+    MACRO_CEREALS_PRICE_INDEX,
 ]
 
 # Combined list of all configs

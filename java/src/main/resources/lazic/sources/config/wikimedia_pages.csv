@@ -1,9 +1,9 @@
 ticker,wikipedia_page
-# ============================================================================
-# NZX COMPANY PAGES - Direct company attention/sentiment signals
-# Research: Wikipedia attention spikes often precede stock price movements
-# (Moat et al. 2013 - "Quantifying Wikipedia Usage Patterns Before Stock Market Moves")
-# ============================================================================
+# ============================================================================,
+# NZX COMPANY PAGES - Direct company attention/sentiment signals,
+# Research: Wikipedia attention spikes often precede stock price movements,
+"# (Moat et al. 2013 - ""Quantifying Wikipedia Usage Patterns Before Stock Market Moves"")",
+# ============================================================================,
 AIR.NZ,Air_New_Zealand
 ANZ.NZ,ANZ_Bank_New_Zealand
 FPH.NZ,Fisher_%26_Paykel_Healthcare
@@ -51,9 +51,9 @@ IFT.NZ,Infratil
 KPG.NZ,Kiwi_Property_Group
 PCT.NZ,Precinct_Properties_New_Zealand
 ARG.NZ,Argosy_Property
-# ============================================================================
-# NEW ZEALAND MACRO/ECONOMIC PAGES - Country-level sentiment
-# ============================================================================
+# ============================================================================,
+# NEW ZEALAND MACRO/ECONOMIC PAGES - Country-level sentiment,
+# ============================================================================,
 ,Reserve_Bank_of_New_Zealand
 ,Economy_of_New_Zealand
 ,New_Zealand_dollar
@@ -66,11 +66,11 @@ ARG.NZ,Argosy_Property
 ,Tourism_in_New_Zealand
 ,Immigration_to_New_Zealand
 ,New_Zealand_housing_bubble
-# ============================================================================
-# FEAR/CRISIS INDICATORS - Spike during market stress
-# Research: Preis et al. (2013) - "Quantifying Trading Behavior in Financial Markets
-# Using Google Trends" - found "debt" searches predict market declines
-# ============================================================================
+# ============================================================================,
+# FEAR/CRISIS INDICATORS - Spike during market stress,
+"# Research: Preis et al. (2013) - ""Quantifying Trading Behavior in Financial Markets",
+"# Using Google Trends"" - found ""debt"" searches predict market declines",
+# ============================================================================,
 ,Financial_crisis
 ,Stock_market_crash
 ,Recession
@@ -90,9 +90,9 @@ ARG.NZ,Argosy_Property
 ,Black_Monday_(1987)
 ,Panic_selling
 ,Economic_bubble
-# ============================================================================
-# INTEREST RATE / MONETARY POLICY - Central bank attention
-# ============================================================================
+# ============================================================================,
+# INTEREST RATE / MONETARY POLICY - Central bank attention,
+# ============================================================================,
 ,Interest_rate
 ,Federal_Reserve
 ,European_Central_Bank
@@ -106,9 +106,9 @@ ARG.NZ,Argosy_Property
 ,Treasury_security
 ,Yield_curve
 ,Inverted_yield_curve
-# ============================================================================
-# COMMODITY PAGES - Relevant to NZX export economy
-# ============================================================================
+# ============================================================================,
+# COMMODITY PAGES - Relevant to NZX export economy,
+# ============================================================================,
 ,Dairy
 ,Milk
 ,Whole_milk_powder
@@ -126,9 +126,9 @@ ARG.NZ,Argosy_Property
 ,Iron_ore
 ,Lithium
 ,Uranium
-# ============================================================================
-# GLOBAL TRADE / GEOPOLITICS - External shock indicators
-# ============================================================================
+# ============================================================================,
+# GLOBAL TRADE / GEOPOLITICS - External shock indicators,
+# ============================================================================,
 ,Trade_war
 ,Tariff
 ,China%E2%80%93United_States_trade_war
@@ -139,36 +139,36 @@ ARG.NZ,Argosy_Property
 ,Global_supply_chain_crisis
 ,Free_trade_agreement
 ,Trans-Pacific_Partnership
-# ============================================================================
-# TECHNOLOGY / INNOVATION - Growth sector sentiment
-# ============================================================================
+# ============================================================================,
+# TECHNOLOGY / INNOVATION - Growth sector sentiment,
+# ============================================================================,
 ,Artificial_intelligence
 ,Machine_learning
-,Electric_vehicle
-,Tesla,_Inc.
-,Cryptocurrency
-,Bitcoin
-,Blockchain
 ,Cloud_computing
-,Renewable_energy
-,Solar_power
-,Wind_power
-,Hydrogen_economy
-# ============================================================================
-# CONSUMER SENTIMENT / RETAIL PROXIES
-# Research: Google searches for brands correlate with sales
-# ============================================================================
-,Black_Friday_(shopping)
-,Cyber_Monday
-,Christmas_shopping
-,Consumer_confidence
-,Retail_sales
-,E-commerce
-,Amazon_(company)
-# ============================================================================
-# REAL ESTATE - Housing market sentiment
-# Research: Searches for real estate terms correlate with housing activity
-# ============================================================================
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+# ============================================================================,
+# REAL ESTATE - Housing market sentiment,
+# Research: Searches for real estate terms correlate with housing activity,
+# ============================================================================,
 ,Real_estate
 ,Housing_market
 ,Mortgage_loan
@@ -176,19 +176,19 @@ ARG.NZ,Argosy_Property
 ,Property_bubble
 ,Foreclosure
 ,First-time_buyer
-# ============================================================================
-# EMPLOYMENT / LABOR MARKET
-# ============================================================================
+# ============================================================================,
+# EMPLOYMENT / LABOR MARKET,
+# ============================================================================,
 ,Employment
 ,Job_hunting
 ,Resume
 ,LinkedIn
 ,Minimum_wage
-,Gig_economy
+,
 ,Remote_work
-# ============================================================================
-# HEALTH / PANDEMIC - Major market disruptors
-# ============================================================================
+# ============================================================================,
+# HEALTH / PANDEMIC - Major market disruptors,
+# ============================================================================,
 ,COVID-19
 ,COVID-19_pandemic
 ,Pandemic
@@ -196,36 +196,36 @@ ARG.NZ,Argosy_Property
 ,World_Health_Organization
 ,Lockdown
 ,Travel_restrictions
-# ============================================================================
-# CLIMATE / ENVIRONMENT - ESG relevance
-# ============================================================================
-,Climate_change
-,Carbon_footprint
-,Net_zero_emissions
-,Extreme_weather
-,Flood
-,Drought
-,Wildfire
-# ============================================================================
-# AUSTRALIA/PACIFIC REGION - NZ's major trading partner
-# ============================================================================
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+# ============================================================================,
+# AUSTRALIA/PACIFIC REGION - NZ's major trading partner,
+# ============================================================================,
 ,Economy_of_Australia
 ,Reserve_Bank_of_Australia
 ,Australian_dollar
 ,China%E2%80%93Australia_relations
 ,Trans-Tasman_travel_arrangement
-# ============================================================================
-# CHINA - NZ's largest trading partner
-# ============================================================================
+# ============================================================================,
+# CHINA - NZ's largest trading partner,
+# ============================================================================,
 ,Economy_of_China
 ,Chinese_yuan
 ,Belt_and_Road_Initiative
 ,China%E2%80%93New_Zealand_relations
 ,Alibaba_Group
-# ============================================================================
-# INVESTMENT / TRADING BEHAVIOR INDICATORS
-# Research: Searches for financial terms indicate market participation
-# ============================================================================
+# ============================================================================,
+# INVESTMENT / TRADING BEHAVIOR INDICATORS,
+# Research: Searches for financial terms indicate market participation,
+# ============================================================================,
 ,Stock_market
 ,Day_trading
 ,Index_fund
@@ -239,32 +239,32 @@ ARG.NZ,Argosy_Property
 ,Initial_public_offering
 ,Stock_split
 ,Share_buyback
-# ============================================================================
-# SPECIFIC ECONOMIC INDICATORS PEOPLE SEARCH WHEN WORRIED
-# ============================================================================
-,Gross_domestic_product
-,Balance_of_trade
-,Current_account
-,Purchasing_power_parity
-,Consumer_price_index
-,Producer_price_index
-# ============================================================================
-# MAJOR GLOBAL COMPANIES - Market sentiment proxies
-# ============================================================================
-,Apple_Inc.
-,Microsoft
-,Alphabet_Inc.
-,Meta_Platforms
-,NVIDIA
-,Berkshire_Hathaway
-,JPMorgan_Chase
-,Exxon_Mobil
-,Johnson_%26_Johnson
-,Walmart
-# ============================================================================
-# BEHAVIORAL FINANCE - Search terms that spike with market psychology
-# Research: Da et al. (2011) showed retail attention predicts short-term returns
-# ============================================================================
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+,
+# ============================================================================,
+# BEHAVIORAL FINANCE - Search terms that spike with market psychology,
+# Research: Da et al. (2011) showed retail attention predicts short-term returns,
+# ============================================================================,
 ,FOMO
 ,Bull_market
 ,Market_sentiment
@@ -273,9 +273,9 @@ ARG.NZ,Argosy_Property
 ,Greater_fool_theory
 ,Herd_behavior
 ,Loss_aversion
-# ============================================================================
-# AUDIT 2026-01-14: NEW ZEALAND SECTORS & GLOBAL MACRO ADDITIONS
-# ============================================================================
+# ============================================================================,
+# AUDIT 2026-01-14: NEW ZEALAND SECTORS & GLOBAL MACRO ADDITIONS,
+# ============================================================================,
 MFB.NZ,My_Food_Bag
 MCK.NZ,Millennium_%26_Copthorne_Hotels
 ,Housing_in_New_Zealand
@@ -284,11 +284,26 @@ MCK.NZ,Millennium_%26_Copthorne_Hotels
 ,KiwiSaver
 ,Economy_of_China
 ,Economy_of_Australia
-# Weather Events
+# Weather Events,
 ,Cyclone_Gabrielle
-# Geopolitics
+# Geopolitics,
 ,Russo-Ukrainian_War
 ,Israel-Hamas_war
-# Innovation
+# Innovation,
 ,Rocket_Lab
 ,Weta_Digital
+# ============================================================================,
+"# OTHER, HUMAN ADDED, common search terms",
+# ============================================================================,
+,Bunnings
+,Facebook
+,Google
+,Youtube
+,Stuff
+,News
+,Trade
+,Trade_me
+,The_New_Zealand_Herald
+,Sovereign_citizen_movement
+,Commonwealth_Bank
+,Maori_people

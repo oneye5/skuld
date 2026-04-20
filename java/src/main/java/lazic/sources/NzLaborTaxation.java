@@ -1,13 +1,17 @@
 package lazic.sources;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.google.gson.Gson;
+
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
 
 public class NzLaborTaxation extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,DSD_TAX_WAGES_COU@DF_TW_COU,2.1/NZL...S_C0+S_C2.AW167+AW100+AW67._Z.A?startPeriod=2000&dimensionAtObservation=AllDimensions";
@@ -16,6 +20,9 @@ public class NzLaborTaxation extends DataSourceBase {
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
 	 * There are multiple DataPoint's in a time-series feature, and there may be multiple features returned overall.
 	 */
+	@Override
+	public String getSourceName() { return "nz_labor_taxation"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		Set<DataPoint> dataPoints = new HashSet<>();

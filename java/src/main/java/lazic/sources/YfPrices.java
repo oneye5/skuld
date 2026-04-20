@@ -1,18 +1,18 @@
 package lazic.sources;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import com.google.gson.Gson;
+
 import lazic.sources.config.Tickers;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
-
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 public class YfPrices extends DataSourceBase {
 
@@ -21,6 +21,9 @@ public class YfPrices extends DataSourceBase {
 	/**
 	 * Returns a set of DataPoint's.
 	 */
+	@Override
+	public String getSourceName() { return "yf_prices"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		Set<DataPoint> dataPoints = new HashSet<>();

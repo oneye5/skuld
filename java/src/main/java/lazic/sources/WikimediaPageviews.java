@@ -73,6 +73,9 @@ public class WikimediaPageviews extends DataSourceBase {
         DateTimeFormatter.ofPattern("yyyyMMddHH");
 
     @Override
+    public String getSourceName() { return "wikimedia_pageviews"; }
+
+    @Override
     public Set<DataPoint> getDataPoints() {
         Set<DataPoint> dataPoints = new HashSet<>();
         Gson gson = new Gson();

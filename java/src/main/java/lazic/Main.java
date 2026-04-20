@@ -22,20 +22,18 @@ public class Main {
  		new NzRoadFatalities();
 		new NzLaborTaxation();
 		new NzPensions();
-		//new NzTaxRevenue(); low importance feature
+		new NzTaxRevenue(); //low importance feature
 		new NzBalanceOfPayments();
 		new WikimediaPageviews();
 		new GlobalFoodPrices();
-		// new GlobalAquacultureProduction(); disabled, features have low importance
+		 new GlobalAquacultureProduction(); //disabled, features have low importance
 
 		IngestManager.INSTANCE.fetchDataFromSources();
 		IngestManager.INSTANCE.printSubset(100);
 
-		String out = Path.of("")
-						.toAbsolutePath()
-						.getParent()
-						.toString()
-						+ "\\data\\data_long.csv";
+		Path dataDir = Path.of("").toAbsolutePath().resolve("data");
+		dataDir.toFile().mkdirs();
+		String out = dataDir.resolve("data_long.csv").toString();
 
 		CsvLongParser.saveCsv(out);
 	}

@@ -1,21 +1,22 @@
 package lazic.sources;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import lazic.utils.ingest.DataPoint;
-import lazic.utils.ingest.DataSourceBase;
-import lazic.utils.ingest.WebHtmlGetter;
-
 import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import lazic.utils.ingest.DataPoint;
+import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzRoadFatalities extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.ITF,DSD_ST@DF_STFAT,1.0/NZL.M...ROAD...?dimensionAtObservation=AllDimensions";
@@ -25,6 +26,9 @@ public class NzRoadFatalities extends DataSourceBase {
 	 * such as macroeconomic data for example. There are multiple DataPoint's in a time-series feature,
 	 * and there may be multiple features returned overall.
 	 */
+	@Override
+	public String getSourceName() { return "nz_road_fatalities"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		String[] tickers = lazic.sources.config.Tickers.TICKERS;

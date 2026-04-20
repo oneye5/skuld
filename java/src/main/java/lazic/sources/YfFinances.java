@@ -1,19 +1,20 @@
 package lazic.sources;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import lazic.sources.config.Tickers;
-import lazic.utils.ingest.DataPoint;
-import lazic.utils.ingest.DataSourceBase;
-import lazic.utils.ingest.WebHtmlGetter;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.Set;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import lazic.sources.config.Tickers;
+import lazic.utils.ingest.DataPoint;
+import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.WebHtmlGetter;
 
 public class YfFinances extends DataSourceBase {
 
@@ -22,6 +23,9 @@ public class YfFinances extends DataSourceBase {
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker.
 	 */
+	@Override
+	public String getSourceName() { return "yf_finances"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		Set<DataPoint> points = new HashSet<>();

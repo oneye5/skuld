@@ -1,18 +1,25 @@
 package lazic.sources;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.google.gson.Gson;
+
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
 
 public class NzRatesFx extends DataSourceBase {
 
 	// Note: The URL fetches Financial Market data (Interest rates, Exchange rates).
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/NZL.M..PA.....?dimensionAtObservation=AllDimensions&format=jsondata";
+
+	@Override
+	public String getSourceName() { return "nz_rates_fx"; }
 
 	@Override
 	public Set<DataPoint> getDataPoints() {

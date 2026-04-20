@@ -1,33 +1,33 @@
 package lazic.utils.ingest;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 // singleton
 public enum IngestManager {
 	INSTANCE;
 	public final Set<DataSourceBase> sources = new HashSet<>();
-	// Use ConcurrentHashMap-backed Set for thread-safe parallel writes
-	public final Set<DataPoint> data = ConcurrentHashMap.newKeySet();
+	public final List<DataPoint> data = Collections.synchronizedList(new ArrayList<>());
 
 	public void fetchDataFromSources() {
 		data.clear();
 		sources.parallelStream().forEach(source -> {
 			var dataPoints = source.getDataPoints();
-			dataPoints = dataPoints.stream()
-							.filter(dp->dp.getValue() != null)
-							.collect(Collectors.toSet());
-
-			this.data.addAll(dataPoints);
+			String sourceName = source.getSourceName();
+			dataPoints.stream()
+							.filter(dp -> dp.getValue() != null)
+							.forEach(dp -> {
+								dp.setSource(sourceName);
+								data.add(dp);
+							});
 		});
 	}
 
 	public void printSubset(int count) {
-		// Create a snapshot to avoid concurrent modification
-		var asList = new java.util.ArrayList<>(new HashSet<>(data));
+		var asList = new ArrayList<>(data);
 		Collections.shuffle(asList);
 
 		asList.subList(0, Math.min(asList.size(), count))

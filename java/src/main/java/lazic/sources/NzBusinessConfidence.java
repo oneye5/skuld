@@ -1,20 +1,22 @@
 package lazic.sources;
 
-import lazic.utils.ingest.DataPoint;
-import lazic.utils.ingest.DataSourceBase;
-import lazic.utils.ingest.WebHtmlGetter;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
-
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.Set;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
+
+import lazic.utils.ingest.DataPoint;
+import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzBusinessConfidence extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI,4.1/NZL.M.......?dimensionAtObservation=AllDimensions&format=genericdata";
@@ -23,6 +25,9 @@ public class NzBusinessConfidence extends DataSourceBase {
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
 	 * There are multiple DataPoint's in a time-series feature, and there may be multiple features returned overall.
 	 */
+	@Override
+	public String getSourceName() { return "nz_business_confidence"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		Set<DataPoint> result = new HashSet<>();

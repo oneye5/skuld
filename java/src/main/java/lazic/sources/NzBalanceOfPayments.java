@@ -1,28 +1,29 @@
 package lazic.sources;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import lazic.utils.ingest.DataPoint;
-import lazic.utils.ingest.DataSourceBase;
-import lazic.utils.ingest.WebHtmlGetter;
-
 import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import lazic.utils.ingest.DataPoint;
+import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzBalanceOfPayments extends DataSourceBase {
 	// The query includes "+Y" to fetch seasonally adjusted data as well
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.TPS,DSD_BOP@DF_BOP,1.0/NZL.....Q.XDC.N+Y?startPeriod=2000-Q1&dimensionAtObservation=AllDimensions";
+
+	@Override
+	public String getSourceName() { return "nz_balance_of_payments"; }
 
 	@Override
 	public Set<DataPoint> getDataPoints() {

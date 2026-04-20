@@ -1,21 +1,25 @@
 package lazic.sources;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
 
-import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.Map;
-import java.util.HashMap;
-
 public class NzTaxRevenue extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,DSD_REV_COMP_GLOBAL@DF_RSGLOBAL,2.1/NZL...T_1000+T_2000+T_3000+T_4000+T_5000+T_6000+_T..USD+XDC+PT_OTR_SECTOR+PT_B1GQ.A?startPeriod=2000&dimensionAtObservation=AllDimensions";
+
+	@Override
+	public String getSourceName() { return "nz_tax_revenue"; }
 
 	@Override
 	public Set<DataPoint> getDataPoints() {

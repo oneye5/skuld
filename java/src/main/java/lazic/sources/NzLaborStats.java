@@ -1,20 +1,20 @@
 package lazic.sources;
 
 import java.io.FileWriter;
+import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
-import java.io.IOException;
 
 public class NzLaborStats extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.CFE.EDS,DSD_REG_LABOUR@DF_LAB,2.0/A..NZL..POP+LF+EMP+UNE+LF_RATE+UNE_RATE+LF_RATE_SEXDIF+EMP_RATIO_SEXDIF+UNE_LT+UNE_LT_RATE+UNE_RATE_SEXDIF+EMP_RATIO.Y15T24+Y_GT15+Y15T64.M+F+_T.?startPeriod=1996&dimensionAtObservation=AllDimensions";
@@ -40,10 +40,19 @@ public class NzLaborStats extends DataSourceBase {
 			JsonObject dataSet = dataSets.get(0).getAsJsonObject();
 			JsonObject observations = dataSet.getAsJsonObject("observations");
 
-			// Get the prepared date from header
-			JsonObject header = root.getAsJsonObject("header");
-			String preparedDate = header.get("prepared").getAsString();
-			LocalDateTime timestamp = LocalDateTime.parse(preparedDate.substring(0, 19));
+			// Parse dimension structure to resolve TIME_PERIOD values
+			JsonObject structure = root.getAsJsonObject("structure");
+			JsonArray obsDims = structure.getAsJsonObject("dimensions").getAsJsonArray("observation");
+
+			// Find TIME_PERIOD dimension and extract its values
+			JsonArray timePeriodValues = null;
+			for (int i = 0; i < obsDims.size(); i++) {
+				JsonObject dim = obsDims.get(i).getAsJsonObject();
+				if ("TIME_PERIOD".equals(dim.get("id").getAsString())) {
+					timePeriodValues = dim.getAsJsonArray("values");
+					break;
+				}
+			}
 
 			// Parse each observation
 			for (Map.Entry<String, JsonElement> entry : observations.entrySet()) {
@@ -57,9 +66,19 @@ public class NzLaborStats extends DataSourceBase {
 					// Parse the dimension key (format: "dim1:dim2:dim3:...")
 					String[] dimensions = key.split(":");
 
-					// Build a feature name from the dimensions
-					// Based on SDMX structure: FREQ:MEASURE:REF_AREA:SECTOR:MEASURE_TYPE:AGE:SEX:UNIT_MEASURE:TIME_PERIOD
+					// Build a feature name from the dimensions (without time period)
 					String featureName = buildFeatureName(dimensions);
+
+					// Resolve timestamp from TIME_PERIOD dimension
+					LocalDateTime timestamp;
+					if (dimensions.length > 8 && timePeriodValues != null) {
+						int timeIdx = Integer.parseInt(dimensions[8]);
+						String year = timePeriodValues.get(timeIdx).getAsJsonObject().get("id").getAsString();
+						timestamp = LocalDateTime.of(Integer.parseInt(year), 1, 1, 0, 0);
+					} else {
+						// Fallback: use current time if structure is missing
+						timestamp = LocalDateTime.now();
+					}
 
 					// Ticker is null for macroeconomic data
 					DataPoint dp = new DataPoint(timestamp, null, featureName, value);
@@ -82,6 +101,9 @@ public class NzLaborStats extends DataSourceBase {
 		return dataPoints;
 	}
 
+	@Override
+	public String getSourceName() { return "nz_labor_stats"; }
+
 	private String buildFeatureName(String[] dimensions) {
 		// Map dimension codes to readable names
 		// Common SDMX dimensions for labor statistics
@@ -100,11 +122,6 @@ public class NzLaborStats extends DataSourceBase {
 		// Add sex (dimension 6)
 		if (dimensions.length > 6) {
 			name.append(getSexLabel(dimensions[6]));
-		}
-
-		// Add time period (dimension 8)
-		if (dimensions.length > 8) {
-			name.append("_").append(dimensions[8]);
 		}
 
 		return name.toString().replaceAll("_+$", ""); // Remove trailing underscores

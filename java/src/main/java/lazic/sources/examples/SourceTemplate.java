@@ -1,14 +1,15 @@
 package lazic.sources.examples;
 
-import com.google.gson.Gson;
-import lazic.utils.ingest.DataPoint;
-import lazic.utils.ingest.DataSourceBase;
-import lazic.utils.ingest.WebHtmlGetter;
-
 import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Set;
+
+import com.google.gson.Gson;
+
+import lazic.utils.ingest.DataPoint;
+import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.WebHtmlGetter;
 
 public class SourceTemplate extends DataSourceBase {
 	private final String URL = "";
@@ -17,6 +18,9 @@ public class SourceTemplate extends DataSourceBase {
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
 	 * There are multiple DataPoint's in a time-series feature, and there may be multiple features returned overall.
 	 */
+	@Override
+	public String getSourceName() { return "source_template"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		DataPoint example = new DataPoint(LocalDateTime.now(), "Ticker", "Feature name", Double.valueOf(1));

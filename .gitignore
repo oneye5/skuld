@@ -1,18 +1,35 @@
+# ── Java / Maven ─────────────────────────────────────────────────
 target/
-!.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+
+# ── Data (large / machine-generated) ─────────────────────────────
+data/*.csv
+sample_data.txt
+*.parquet
+*.pkl
+
+# ── Generated outputs ─────────────────────────────────────────────
+*.png
+*.log
+
+# ── IntelliJ IDEA ────────────────────────────────────────────────
+.idea/
 *.iws
 *.iml
 *.ipr
 
-### Eclipse ###
+# ── Eclipse ──────────────────────────────────────────────────────
 .apt_generated
 .classpath
 .factorypath
@@ -21,56 +38,13 @@ target/
 .springBeans
 .sts4-cache
 
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
+# ── VS Code ──────────────────────────────────────────────────────
 .vscode/
 
-### Mac OS ###
+# ── OS ───────────────────────────────────────────────────────────
 .DS_Store
-/.idea
-*.csv
-!**/src/main/resources/**/*.csv
-/java/.idea
-/python-ml/src/utils/__pycache__
-/python-ml/.idea
-/python-ml/.idea
-python-ml/.idea/vcs.xml
-/python-ml/.idea/inspectionProfiles
-python-ml/.idea/inspectionProfiles/profiles_settings.xml
-/python-ml/src/config/__pycache__
-python-ml/data/model.pkl
-python-ml/src/learner/__pycache__/__init__.cpython-311.pyc
-python-ml/src/learner/__pycache__/learner.cpython-311.pyc
-/python-ml/src/evaluation/__pycache__
-/python-ml/src/preprocessing/__pycache__
-/python-ml/.continue
-python-ml/.continue/rules/new-rule.md
-/python-ml/src/__pycache__
-*.pyc
-*.pkl
-python/ml-pipeline/output/evaluation/figures/accuracy_by_window.png
-*.png
-java/sample_data.txt
-python/ml-pipeline/output/runs/21-12-2025-1013/config.json
-*.json
-*.json
-python/ml-pipeline/output/evaluation/rolling_window_results.json
 desktop.ini
-*.log
-*.tsv
-/python/ml-pipeline/catboost_info
-main_output_ensemble.txt
-python/ml-pipeline/output/debug/latest/1_after_macro_prefix_summary.txt
-*.txt
-*.parquet
-*.parquet
-python/ml-pipeline/output/cache/wide_data.parquet
+Thumbs.db
+
+# ── Agent tooling ─────────────────────────────────────────────────
+.agents/

@@ -49,6 +49,9 @@ public class GlobalFoodPrices extends DataSourceBase {
 	 * Ticker is null as this is macroeconomic data.
 	 */
 	@Override
+	public String getSourceName() { return "global_food_prices"; }
+
+	@Override
 	public Set<DataPoint> getDataPoints() {
 		String rawData = fetchDataWithFallback();
 		

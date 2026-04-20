@@ -1,23 +1,21 @@
 package lazic.sources;
 
-import com.google.gson.Gson;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 public class NzVehicleRegistrations extends DataSourceBase {
 	// The URL provided in the snippet
@@ -27,6 +25,9 @@ public class NzVehicleRegistrations extends DataSourceBase {
 	 * Returns a set of DataPoint's.
 	 * Ticker is null as this is macroeconomic data (New Zealand Vehicle Registrations).
 	 */
+	@Override
+	public String getSourceName() { return "nz_vehicle_registrations"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		Set<DataPoint> dataPoints = new HashSet<>();

@@ -8,6 +8,7 @@ public class DataPoint implements Serializable {
 	private String ticker;          // optional, may be null for macro data
 	private String featureName;     // e.g. "close_price", "inflation", "EPS"
 	private Double value;           // exactly one feature
+	private String source;          // data source identifier, set by IngestManager
 
 	public DataPoint() {}
 
@@ -33,11 +34,14 @@ public class DataPoint implements Serializable {
 	public Double getValue() { return value; }
 	public void setValue(double value) { this.value = value; }
 
+	public String getSource() { return source; }
+	public void setSource(String source) { this.source = source; }
+
 	@Override
 	public String toString() {
 		return String.format(
-						"DataPoint(timestamp=%s, ticker=%s, feature=%s, value=%s)",
-						timestamp, ticker, featureName, value
+						"DataPoint(timestamp=%s, ticker=%s, feature=%s, value=%s, source=%s)",
+						timestamp, ticker, featureName, value, source
 		);
 	}
 }

@@ -1,13 +1,17 @@
 package lazic.sources;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.google.gson.Gson;
+
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.WebHtmlGetter;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
 
 public class NzPensions extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.DAF.CM,DSD_FP@DF_FPS,1.0/NZL.A.1121+1131+1141+1151+1210+1215+1230+1240+1245+1250+1255+1270+1000.._T._T._T?startPeriod=2001&dimensionAtObservation=AllDimensions";
@@ -16,6 +20,9 @@ public class NzPensions extends DataSourceBase {
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
 	 * There are multiple DataPoint's in a time-series feature, and there may be multiple features returned overall.
 	 */
+	@Override
+	public String getSourceName() { return "nz_pensions"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		Set<DataPoint> dataPoints = new HashSet<>();

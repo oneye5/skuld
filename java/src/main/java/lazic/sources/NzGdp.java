@@ -1,14 +1,14 @@
 package lazic.sources;
 
-import lazic.utils.ingest.DataPoint;
-import lazic.utils.ingest.DataSourceBase;
-import lazic.utils.ingest.WebHtmlGetter;
-
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import lazic.utils.ingest.DataPoint;
+import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzGdp extends DataSourceBase {
 	final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_NATIO_CURR,1.1/Q..NZL.S13+S14.........?startPeriod=2000-Q1&dimensionAtObservation=AllDimensions&format=genericdata";
@@ -17,6 +17,9 @@ public class NzGdp extends DataSourceBase {
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
 	 * There are multiple DataPoint's in a time-series feature, and there may be multiple features returned overall.
 	 */
+	@Override
+	public String getSourceName() { return "nz_gdp"; }
+
 	@Override
 	public Set<DataPoint> getDataPoints() {
 		String rawData = WebHtmlGetter.get(URL);

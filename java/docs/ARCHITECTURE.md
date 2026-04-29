@@ -1,23 +1,5 @@
 # Java Data Ingestion Architecture
 
-> **Navigation:** [Main README](../../README.md) | [Pipeline Guide](../../docs/RANKING_PIPELINE_GUIDE.md) | [Java Architecture](ARCHITECTURE.md) | [Java Data Sources](DATA_SOURCES.md) | [TODO](../../docs/TODO.md)
-
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Core Components](#core-components)
-3. [Data Flow](#data-flow)
-4. [Project Structure](#project-structure)
-5. [Building and Running](#building-and-running)
-6. [Adding a New Data Source](#adding-a-new-data-source)
-7. [Error Handling](#error-handling)
-8. [Dependencies](#dependencies)
-9. [Related Documentation](#related-documentation)
-
----
-
 ## Overview
 
 The Java module fetches and consolidates financial data from multiple sources into a unified long-format CSV for the Python ML pipeline.
@@ -39,7 +21,7 @@ The Java module fetches and consolidates financial data from multiple sources in
                          │   (Singleton)       │
                          │                     │
                          │ • sources: Set      │
-                         │ • data: Set         │
+                         │ • data: List        │
                          └──────────┬──────────┘
                                     │
                    ┌────────────────┼────────────────┐
@@ -115,21 +97,26 @@ Singleton that orchestrates data collection:
 public enum IngestManager {
     INSTANCE;
     
-    public Set<DataSourceBase> sources = new HashSet<>();
-    public Set<DataPoint> data = new HashSet<>();
+    public final Set<DataSourceBase> sources = new HashSet<>();
+    public final List<DataPoint> data = Collections.synchronizedList(new ArrayList<>());
     
     public void fetchDataFromSources() {
         data.clear();
         sources.parallelStream().forEach(source -> {
             var dataPoints = source.getDataPoints();
-            dataPoints = dataPoints.stream()
+            String sourceName = source.getSourceName();
+            dataPoints.stream()
                 .filter(dp -> dp.getValue() != null)
-                .collect(Collectors.toSet());
-            this.data.addAll(dataPoints);
+                .forEach(dp -> {
+                    dp.setSource(sourceName);
+                    data.add(dp);
+                });
         });
     }
 }
 ```
+
+> **Note on self-registration:** `DataSourceBase`'s constructor registers `this` into `IngestManager.INSTANCE.sources`. This means every `new SomeSource()` call in `Main.java` automatically wires the source into the manager with no separate registration step, which keeps `Main.java` compact. The trade-off is that construction has a side effect: an unconstructed or partially-constructed source can be added if a subclass constructor throws. Keep source constructors trivial (no I/O) to avoid this.
 
 ### CsvLongParser
 
@@ -142,43 +129,6 @@ public class CsvLongParser {
         // Write: timestamp,ticker,feature,value
     }
 }
-```
-
-## Data Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DATA FLOW                                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  1. REGISTRATION                                                        │
-│     ─────────────                                                       │
-│     new YfPrices();     // Registers with IngestManager                 │
-│     new NzGdp();        // Each source self-registers                   │
-│     ...                                                                  │
-│                                                                          │
-│  2. PARALLEL FETCH                                                      │
-│     ──────────────                                                      │
-│     IngestManager.fetchDataFromSources()                                │
-│     → sources.parallelStream() → source.getDataPoints()                 │
-│                                                                          │
-│  3. DATA POINTS                                                         │
-│     ────────────                                                        │
-│     {                                                                    │
-│       timestamp: 2024-01-15 00:00:00,                                   │
-│       ticker: "AIR.NZ",                                                 │
-│       feature: "Close",                                                 │
-│       value: 0.65                                                       │
-│     }                                                                    │
-│                                                                          │
-│  4. CSV OUTPUT                                                          │
-│     ──────────                                                          │
-│     timestamp,ticker,feature,value                                      │
-│     1705276800000,AIR.NZ,Close,0.65                                     │
-│     1705276800000,AIR.NZ,Volume,1234567                                 │
-│     ...                                                                  │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
@@ -244,58 +194,6 @@ Or from IDE: Run `Main.java`
 
 Data is written to `data/data_long.csv` (relative to project root).
 
-## Adding a New Data Source
-
-### Step 1: Create Source Class
-
-```java
-package lazic.sources;
-
-import lazic.utils.ingest.DataPoint;
-import lazic.utils.ingest.DataSourceBase;
-import java.util.*;
-
-public class MyNewSource extends DataSourceBase {
-    
-    @Override
-    public Set<DataPoint> getDataPoints() {
-        Set<DataPoint> dataPoints = new HashSet<>();
-        
-        // Fetch data from API/file
-        String rawData = WebHtmlGetter.get(url);
-        
-        // Parse and create DataPoints
-        for (var item : parseData(rawData)) {
-            dataPoints.add(new DataPoint(
-                item.getDate(),
-                item.getTicker(),  // or "MACRO_" + featureName for macro data
-                item.getFeature(),
-                item.getValue()
-            ));
-        }
-        
-        return dataPoints;
-    }
-}
-```
-
-### Step 2: Register in Main.java
-
-```java
-public static void main(String[] args) {
-    // Existing sources
-    new YfPrices();
-    new NzGdp();
-    
-    // Add your source
-    new MyNewSource();
-    
-    // Run ingestion
-    IngestManager.INSTANCE.fetchDataFromSources();
-    CsvLongParser.saveCsv(outputPath);
-}
-```
-
 ## Error Handling
 
 - **Null values:** Filtered out by IngestManager
@@ -318,5 +216,4 @@ public static void main(String[] args) {
 ## Related Documentation
 
 - [Data Sources](DATA_SOURCES.md) — Detailed source configuration
-- [Main README](../../README.md) — Project overview
-- [Python Pipeline](../../docs/RANKING_PIPELINE_GUIDE.md) — Data consumer
+- [Data Analysis](../../docs/DATA_ANALYSIS.md) — Long-CSV schema and contents

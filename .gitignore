@@ -13,6 +13,9 @@ __pycache__/
 *.egg-info/
 dist/
 
+# ── Trial ledgers (runtime-generated) ────────────────────────────
+python/trial_ledger/
+
 # ── Data (large / machine-generated) ─────────────────────────────
 data/*.csv
 sample_data.txt

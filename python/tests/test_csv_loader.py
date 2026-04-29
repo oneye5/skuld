@@ -1,49 +1,39 @@
 """Tests for the raw CSV loader."""
 
-from pathlib import Path
-
-import pandas as pd
-
-from skuld_research.data.csv_loader import RawData, load_raw_csv
+from skuld_research.data.csv_loader import RawData
 
 
-def test_load_returns_raw_data(synthetic_csv_path: Path):
+def test_load_returns_raw_data(synthetic_raw: RawData):
     """load_raw_csv returns a RawData with prices, volumes, etc."""
-    raw = load_raw_csv(synthetic_csv_path)
-    assert isinstance(raw, RawData)
+    assert isinstance(synthetic_raw, RawData)
 
 
-def test_prices_extracted(synthetic_csv_path: Path):
+def test_prices_extracted(synthetic_raw: RawData):
     """Prices DataFrame has adj_close pivoted to ticker columns."""
-    raw = load_raw_csv(synthetic_csv_path)
-    assert "ANZ.NZ" in raw.prices.columns
-    assert "SPK.NZ" in raw.prices.columns
-    assert raw.prices.index.name == "date"
+    assert "ANZ.NZ" in synthetic_raw.prices.columns
+    assert "SPK.NZ" in synthetic_raw.prices.columns
+    assert synthetic_raw.prices.index.name == "date"
 
 
-def test_volumes_extracted(synthetic_csv_path: Path):
+def test_volumes_extracted(synthetic_raw: RawData):
     """Volumes DataFrame has volume pivoted to ticker columns."""
-    raw = load_raw_csv(synthetic_csv_path)
-    assert "ANZ.NZ" in raw.volumes.columns
-    assert raw.volumes["ANZ.NZ"].iloc[0] > 0
+    assert "ANZ.NZ" in synthetic_raw.volumes.columns
+    assert synthetic_raw.volumes["ANZ.NZ"].iloc[0] > 0
 
 
-def test_fundamentals_extracted(synthetic_csv_path: Path):
+def test_fundamentals_extracted(synthetic_raw: RawData):
     """Fundamentals have a MultiIndex of (ticker, publication_date)."""
-    raw = load_raw_csv(synthetic_csv_path)
-    assert raw.fundamentals.index.names == ["ticker", "publication_date"]
-    assert "annual_net_income_common_stockholders" in raw.fundamentals.columns
+    assert synthetic_raw.fundamentals.index.names == ["ticker", "publication_date"]
+    assert "annual_net_income_common_stockholders" in synthetic_raw.fundamentals.columns
 
 
-def test_macro_extracted(synthetic_csv_path: Path):
+def test_macro_extracted(synthetic_raw: RawData):
     """Macro data has date index and feature columns."""
-    raw = load_raw_csv(synthetic_csv_path)
-    assert "oecd_bcicp" in raw.macro.columns
+    assert "oecd_bcicp" in synthetic_raw.macro.columns
 
 
-def test_corporate_actions_extracted(synthetic_csv_path: Path):
+def test_corporate_actions_extracted(synthetic_raw: RawData):
     """Corporate actions include dividends and splits."""
-    raw = load_raw_csv(synthetic_csv_path)
-    assert len(raw.corporate_actions) == 2  # 1 dividend + 1 split
-    types = set(raw.corporate_actions["type"])
+    assert len(synthetic_raw.corporate_actions) == 2  # 1 dividend + 1 split
+    types = set(synthetic_raw.corporate_actions["type"])
     assert types == {"dividend", "split"}

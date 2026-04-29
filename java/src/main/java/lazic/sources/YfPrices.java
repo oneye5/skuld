@@ -74,9 +74,9 @@ public class YfPrices extends DataSourceBase {
 				for (int i = 0; i < timestamps.size(); i++) {
 					Long ts = timestamps.get(i);
 
-					// Yahoo timestamps are in seconds, convert to LocalDateTime
-					// Using system default zone, but you might prefer ZoneId.of("NZ") based on your data
-					LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(ts), ZoneId.systemDefault());
+					// Yahoo timestamps are epoch seconds in UTC. We store as LocalDateTime interpreted
+					// as UTC; CsvLongParser converts back to epoch millis using ZoneId.of("UTC").
+					LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(ts), ZoneId.of("UTC"));
 
 					// Extract features (handling potential nulls in the stream)
 					addPoint(dataPoints, date, ticker, "Close", quote.close, i);
@@ -90,7 +90,7 @@ public class YfPrices extends DataSourceBase {
 				// 6. Extract dividend events
 				if (result.events != null && result.events.dividends != null) {
 					for (DividendEvent div : result.events.dividends.values()) {
-						LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(div.date), ZoneId.systemDefault());
+						LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(div.date), ZoneId.of("UTC"));
 						dataPoints.add(new DataPoint(date, ticker, "Dividend", div.amount));
 					}
 				}
@@ -98,7 +98,7 @@ public class YfPrices extends DataSourceBase {
 				// 7. Extract stock split events
 				if (result.events != null && result.events.splits != null) {
 					for (SplitEvent split : result.events.splits.values()) {
-						LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(split.date), ZoneId.systemDefault());
+						LocalDateTime date = LocalDateTime.ofInstant(Instant.ofEpochSecond(split.date), ZoneId.of("UTC"));
 						// Store split ratio as numerator/denominator (e.g., 4:1 split = 4.0)
 						double splitRatio = (double) split.numerator / split.denominator;
 						dataPoints.add(new DataPoint(date, ticker, "Split", splitRatio));

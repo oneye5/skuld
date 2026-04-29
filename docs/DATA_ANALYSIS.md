@@ -18,7 +18,7 @@
 | `ticker`    | `string` | Equity ticker (e.g. `ANZ.NZ`) or empty string for macro/economic data. |
 | `feature`   | `string` | Metric name, normalized to `snake_case`. |
 | `value`     | `string` | Numeric value in plain decimal form (no scientific notation). Always present (nulls filtered upstream). |
-| `src`       | `int`    | Integer source ID. See `data/source_legend.csv` for the mapping. |
+| `src`       | `int`    | Integer source ID. See `data/source_legend.csv` for the mapping. **Provenance only** — the Python loader (`csv_loader.py`) ignores `src` and routes rows by `feature` name + ticker presence. Use `src` for staleness reporting and audit, not for categorisation. |
 
 ## Timestamp Range
 
@@ -145,3 +145,28 @@
 3. **No publication dates:** The `timestamp` column represents the observation/period date, not the date the data became publicly available. Downstream consumers must apply conservative publication lags for point-in-time correctness (see implementation plan §3.2).
 4. **Uneven history depth:** 5 NZX tickers have <2 years of history. The min-history filter in the investable universe construction should handle this, but factor computations requiring long lookbacks (e.g., 12-month momentum) will mechanically exclude recent listings.
 5. **Wikimedia pageviews dominance:** At 1.17M rows (24.6% of all data), `wikimedia_pageviews` is the second-largest source. Its signal value for NZX equity forecasting is unvalidated and should be treated as experimental.
+
+## Raw Data Analysis Workflow
+
+Use the raw-data analysis workflow when you need a current source-of-truth view of `data/data_long.csv` before feature engineering or further research:
+
+```bash
+cd python
+uv run python scripts/raw_data_analysis.py --data ..\data\data_long.csv --out reports\raw_data_analysis --run-date YYYY-MM-DD
+```
+
+Artifacts are written under `python/reports/raw_data_analysis/YYYY-MM-DD/`:
+
+- `report.md` - canonical Markdown report with stable section headings for human and agent consumption
+- `summary.json` - machine-readable summary with top findings, issue counts, research-implication buckets, and relative artifact paths
+- `tables/dataset_overview.csv` - top-level dataset shape and date-range summary
+- `tables/source_inventory.csv` - per-source coverage summary
+- `tables/feature_inventory.csv` - per-feature inventory with source and numeric parse information
+- `tables/sparsity_by_feature.csv` - feature-level sparsity summary
+- `tables/sparsity_by_ticker.csv` - ticker-level sparsity summary
+- `tables/temporal_patterns.csv` - per-feature cadence, gap, and irregularity summary
+- `tables/stale_value_summary.csv` - longest unchanged-value run summary by series
+- `tables/anomaly_flags.csv` - duplicate, conflict, and numeric anomaly flags
+- `tables/leakage_flags.csv` - heuristic timestamp and cadence-based leakage-risk warnings
+
+Use `report.md` as the canonical narrative entry point. Use `summary.json` and the CSV tables when an agent or downstream script needs deterministic machine-readable inputs for follow-up analysis.

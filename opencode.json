@@ -1,0 +1,110 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    ".github/copilot-instructions.md"
+  ],
+  "mcp": {
+    "gh_grep": {
+      "type": "remote",
+      "url": "https://mcp.grep.app"
+    }
+  },
+  "permission": {
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow",
+      "**/.DS_Store": "deny",
+      "**/desktop.ini": "deny",
+      "**/Thumbs.db": "deny",
+      "**/.idea/**": "deny",
+      "**/.vscode/**": "deny",
+      "**/.settings/**": "deny",
+      "**/.classpath": "deny",
+      "**/.factorypath": "deny",
+      "**/.project": "deny",
+      "**/.springBeans": "deny",
+      "**/.sts4-cache/**": "deny",
+      "**/*.iws": "deny",
+      "**/*.iml": "deny",
+      "**/*.ipr": "deny",
+      "**/target/**": "deny",
+      "**/build/**": "deny",
+      "**/dist/**": "deny",
+      "**/__pycache__/**": "deny",
+      "**/*.pyc": "deny",
+      "**/*.pyo": "deny",
+      "**/*.pyd": "deny",
+      "**/.venv/**": "deny",
+      "**/venv/**": "deny",
+      "**/.pytest_cache/**": "deny",
+      "**/.ruff_cache/**": "deny",
+      "**/.mypy_cache/**": "deny",
+      "**/*.egg-info/**": "deny",
+      "**/node_modules/**": "deny",
+      "**/.cache/**": "deny",
+      "**/*.log": "deny",
+      "**/*.png": "deny",
+      "**/*.parquet": "deny",
+      "**/*.pkl": "deny",
+      "data/*.csv": "deny",
+      "data/source_legend.csv": "allow",
+      "sample_data.txt": "deny",
+      "python/trial_ledger/**": "deny",
+      "python/uv.lock": "deny"
+    },
+    "edit": {
+      "*": "allow",
+      "**/.idea/**": "deny",
+      "**/.vscode/**": "deny",
+      "**/target/**": "deny",
+      "**/build/**": "deny",
+      "**/dist/**": "deny",
+      "**/__pycache__/**": "deny",
+      "**/.venv/**": "deny",
+      "**/venv/**": "deny",
+      "**/.pytest_cache/**": "deny",
+      "**/.ruff_cache/**": "deny",
+      "**/.mypy_cache/**": "deny",
+      "**/*.egg-info/**": "deny",
+      "**/node_modules/**": "deny",
+      "data/**": "deny",
+      "sample_data.txt": "deny",
+      "python/trial_ledger/**": "deny",
+      "python/uv.lock": "ask"
+    }
+  },
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        "mistral:7b": {
+          "name": "Mistral 7B"
+        },
+        "llama3.2:3b": {
+          "name": "Llama 3.2 3B"
+        },
+        "gemma4:e2b": {
+          "name": "Gemma 4 E2B"
+        }
+      }
+    }
+  },
+  "command": {
+    "verify": {
+      "description": "Run fast Python verification",
+      "agent": "build",
+      "template": "Run the fast Python verification suite from the `python/` directory: `uv run pytest -m \"not slow\"`, `uv run ruff check`, and `uv run pyright`. Report any failures with the relevant file and line references."
+    },
+    "full-test": {
+      "description": "Run full Python test suite",
+      "agent": "build",
+      "template": "Run the full Python verification suite from the `python/` directory: `uv run pytest`, `uv run ruff check`, and `uv run pyright`. Report any failures with the relevant file and line references."
+    }
+  }
+}

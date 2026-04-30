@@ -1,6 +1,22 @@
-# Read-only — modifications are rejected by tests/test_preregistered_immutability.py
-name: momentum_low_vol_size
-description: "Phase 1 candidate: momentum + low-volatility + size"
+# Momentum Baseline with Cash Overlay — M10 Evaluation
+#
+# Identical to mom-baseline except for:
+# - name: mom-overlay
+# - description: updated to reflect overlay
+# - overlay: nzx_ma200_agg_momentum block added
+#
+# The cash overlay is a dual-condition defensive trigger:
+# 1. Equal-weighted market proxy (liquid universe) below its 200-trading-day MA
+# 2. Cross-sectional aggregate momentum z-score < 0
+#
+# When BOTH conditions are met, cash is raised to 30% (from the 5% floor).
+#
+# Rationale: Faber (2007) single-MA rule replicates poorly on small markets
+# per Clare/Seaton/Smith/Thomas (2013); dual condition reduces false positives.
+#
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: mom-overlay
+description: "Momentum baseline + NZX MA200 & aggregate momentum cash overlay"
 asof: 2026-01-01
 master_seed: 42
 n_trials_prior: 30
@@ -16,10 +32,6 @@ universe:
 factors:
   - kind: momentum
     min_months: 11
-  - kind: low_vol
-    lookback_months: 12
-    min_months: 6
-  - kind: size
 
 cost:
   spread_bps: 200.0
@@ -70,4 +82,9 @@ benchmarks:
 
 output:
   report_dir_relpath: "reports"
-  ledger_scope: production
+  ledger_scope: exploration
+
+overlay:
+  kind: nzx_ma200_agg_momentum
+  defensive_cash_fraction: 0.30
+  momentum_aggregate_lookback_months: 12

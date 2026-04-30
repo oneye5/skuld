@@ -1,6 +1,6 @@
 """Portfolio recommendation pipeline.
 
-Orchestrates: load spec → build panel → compute factors → construct target → plan trades.
+    Orchestrates: load spec -> build panel -> compute factors -> construct target -> plan trades.
 """
 from __future__ import annotations
 
@@ -8,19 +8,26 @@ from pathlib import Path
 
 import pandas as pd
 
-from skuld_common.contracts import CombinedScores, CurrentPortfolio, PreparedPanel, TargetPortfolio, TradeList
+from skuld_common.contracts import (
+    CombinedScores,
+    CurrentPortfolio,
+    PreparedPanel,
+    TargetPortfolio,
+    TradeList,
+)
 from skuld_portfolio.execution_planner.plan_trades import plan_trades
 from skuld_portfolio.inputs.cash_yaml import read_cash_yaml
 from skuld_portfolio.inputs.sharesies_holdings import parse_sharesies_csv
+from skuld_research.config.factors import build_factors_from_specs
 from skuld_research.config.hashing import spec_hash
-from skuld_research.config.loader import find_python_root, load_spec
+from skuld_research.config.loader import load_spec
 from skuld_research.config.spec import BacktestSpec
 from skuld_research.costs.model import CostConfig, CostModel
 from skuld_research.data.csv_loader import load_raw_csv
 from skuld_research.data.pit_loader import PITLoader
 from skuld_research.data.prepared_panel import build_prepared_panel
+from skuld_research.execution.policy import ExecutionPolicyConfig
 from skuld_research.factors.combiner import combine_signals
-from skuld_research.factors.momentum import MomentumFactor
 from skuld_research.portfolio.optimizer import build_target_portfolio
 
 
@@ -32,14 +39,14 @@ def recommend(
     raw_csv_path: Path,
 ) -> tuple[TradeList, CombinedScores, dict]:
     """Generate trade recommendations for a single date.
-    
+
     Args:
-        spec_path: Path to pre-registered spec YAML.
+        spec_path: Path to strategy spec YAML.
         holdings_path: Path to Sharesies export CSV.
         cash_yaml_path: Path to cash YAML.
         asof: Rebalance date (must exist in panel).
         raw_csv_path: Path to data_long.csv.
-    
+
     Returns:
         (TradeList, CombinedScores, meta_dict) where meta_dict contains
         spec_hash, spec_path, asof, low_confidence, total_volume_nzd,
@@ -48,11 +55,11 @@ def recommend(
     # 1. Load spec and compute hash
     spec: BacktestSpec = load_spec(spec_path)
     shash = spec_hash(spec)
-    
+
     # 2. Load panel up to asof
     raw = load_raw_csv(raw_csv_path)
     snap = PITLoader(raw).as_of(asof)
-    
+
     panel: PreparedPanel = build_prepared_panel(
         snap,
         min_adv_dollars=spec.universe.min_adv_dollars,
@@ -62,7 +69,7 @@ def recommend(
         mc_ffill_days=spec.universe.mc_ffill_days,
         nzx_only=spec.universe.nzx_only,
     )
-    
+
     # 3. Snap asof to the latest available rebalance date in the panel
     rebalance_dates = panel.universe_mask.index
     asof_for_compare = asof.tz_localize(None) if asof.tzinfo is not None else asof
@@ -87,34 +94,20 @@ def recommend(
         tk for tk in panel.universe_mask.columns
         if bool(panel.universe_mask.loc[asof, tk])
     ]
-    
+
     if not universe:
         raise ValueError(f"Universe is empty at {asof}")
-    
+
     # 5. Compute factor scores
-    factors = []
-    for factor_spec in spec.factors:
-        if factor_spec.kind == "momentum":
-            factors.append(MomentumFactor(min_months=factor_spec.min_months))
-        elif factor_spec.kind == "low_vol":
-            from skuld_research.factors.low_volatility import LowVolatilityFactor
-            factors.append(
-                LowVolatilityFactor(
-                    lookback_months=factor_spec.lookback_months,
-                    min_months=factor_spec.min_months,
-                )
-            )
-        elif factor_spec.kind == "size":
-            from skuld_research.factors.size import SizeFactor
-            factors.append(SizeFactor())
-    
+    factors = build_factors_from_specs(spec.factors)
+
     signals = {}
     for factor in factors:
         signals[factor.name] = factor.score(panel, asof, universe)
-    
+
     # 6. Combine signals
     combined = combine_signals(signals, universe, panel.sector, asof)
-    
+
     # 7. Build target portfolio (single date, no walk-forward)
     target: TargetPortfolio = build_target_portfolio(
         combined,
@@ -127,7 +120,7 @@ def recommend(
         return_window_days=spec.backtest.return_window_days,
         min_return_obs=spec.backtest.min_return_obs,
     )
-    
+
     # 8. Load current holdings
     cash_nzd = read_cash_yaml(cash_yaml_path)
     current: CurrentPortfolio = parse_sharesies_csv(holdings_path, cash_nzd=cash_nzd)
@@ -149,7 +142,7 @@ def recommend(
                 prices=merged_prices,
                 cash_nzd=current.cash_nzd,
             )
-    
+
     # 9. Build cost model
     cost_config = CostConfig(
         spread_bps=spec.cost.spread_bps,
@@ -158,11 +151,28 @@ def recommend(
         sharesies_excess_bps=spec.cost.sharesies_excess_bps,
     )
     cost_model = CostModel(cost_config)
-    
+
     # 10. Plan trades
     # expected_alpha: use combined_score_z as proxy (in bps scale)
-    expected_alpha = combined.scores * 100.0  # z-score → rough bps proxy
-    
+    expected_alpha = combined.scores * 100.0  # z-score -> rough bps proxy
+    execution_policy = ExecutionPolicyConfig(
+        volume_budget_nzd=(
+            spec.execution_policy.monthly_volume_budget_nzd
+            if spec.execution_policy.kind == "volume_budget"
+            else None
+        ),
+        min_trade_benefit_bps=(
+            spec.execution_policy.min_trade_benefit_bps
+            if spec.execution_policy.kind == "volume_budget"
+            else 0.0
+        ),
+        excess_trade_benefit_bps=(
+            spec.execution_policy.excess_trade_benefit_bps
+            if spec.execution_policy.kind == "volume_budget"
+            else 190.0
+        ),
+    )
+
     trades: TradeList = plan_trades(
         target=target,
         current=current,
@@ -174,8 +184,9 @@ def recommend(
         sharesies_excess_bps=spec.cost.sharesies_excess_bps,
         config_hash=shash,
         expected_alpha=expected_alpha,
+        execution_policy=execution_policy,
     )
-    
+
     # 11. Build metadata dict
     meta = {
         "spec_hash": shash,
@@ -190,5 +201,5 @@ def recommend(
             "n_tickers": len(panel.returns_daily.columns),
         },
     }
-    
+
     return trades, combined, meta

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import warnings
 
-import numpy as np
 import pandas as pd
 
 from skuld_common.contracts import CombinedScores, PreparedPanel, TargetPortfolio
@@ -81,13 +80,15 @@ def build_target_portfolio(
     positive = all_scores[all_scores > 0].sort_values(ascending=False)
 
     if positive.empty:
-        return _equal_weight_fallback(list(all_scores.index), cash_floor, t)
+        if _is_flat_positive_component_signal(scores):
+            return _equal_weight_fallback(list(all_scores.index), cash_floor, t, max_position)
+        return _cash_portfolio(t)
 
     n_top = top_quintile_n if top_quintile_n is not None else max(1, len(all_scores) // 5)
     candidates = positive.head(n_top)
 
     if len(candidates) < 2:
-        return _equal_weight_fallback(list(candidates.index), cash_floor, t)
+        return _equal_weight_fallback(list(candidates.index), cash_floor, t, max_position)
 
     # -----------------------------------------------------------------------
     # 2. Build return window for covariance estimation
@@ -95,7 +96,7 @@ def build_target_portfolio(
     daily = panel.returns_daily
     avail_dates = daily.index[daily.index < t_naive]
     if len(avail_dates) < min_return_obs:
-        return _equal_weight_fallback(list(candidates.index), cash_floor, t)
+        return _equal_weight_fallback(list(candidates.index), cash_floor, t, max_position)
 
     window_dates = avail_dates[-return_window_days:]
     candidate_tickers = [tk for tk in candidates.index if tk in daily.columns]
@@ -275,3 +276,22 @@ def _equal_weight_fallback(
     return TargetPortfolio(
         weights=weights, cash_weight=cash_weight, method="EqualWeight", asof=asof
     )
+
+
+def _cash_portfolio(asof: pd.Timestamp) -> TargetPortfolio:
+    """Return a fully-cash target when no positive signal exists."""
+    return TargetPortfolio(
+        weights=pd.Series(dtype=float),
+        cash_weight=1.0,
+        method="Cash",
+        asof=asof,
+    )
+
+
+def _is_flat_positive_component_signal(scores: CombinedScores) -> bool:
+    """Detect the explicit equal-weight benchmark signal before demeaning."""
+    components = scores.component_scores
+    if list(components.columns) != ["constant_one"]:
+        return False
+    row_means = components.mean(axis=1)
+    return bool((row_means > 0.0).all())

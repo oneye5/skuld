@@ -1,4 +1,4 @@
-# Phase 1 — Abdi-Ranaldo Spread Variant
+# Momentum Abdi-Ranaldo Spread Variant
 #
 # Replaces the flat 200-bps-per-side spread cost assumption with per-ticker,
 # time-varying spread estimates derived from the Abdi-Ranaldo (2017) OHLC
@@ -7,7 +7,7 @@
 # 1. The flat 200 bps/side (effectively 400 bps quoted) is a deliberately
 #    pessimistic constant that overstates costs for liquid NZX names (FNZ,
 #    SPK, AIA) and understates them for thin small-caps. This was a major
-#    contributor to the strategy's negative net Sharpe in `phase1_no_mcap`,
+#    contributor to the strategy's negative net Sharpe in `mom-no-mcap`,
 #    not a true edge problem.
 # 2. Hardcoded ticker→bps tables were rejected by the user as ad hoc and
 #    fragile. The Abdi-Ranaldo estimator computes a per-side spread from
@@ -20,17 +20,17 @@
 #    here as the conservative baseline; calibration is left to a follow-up
 #    spec once we have a clearer view of realised slippage.
 #
-# Difference vs phase1_no_mcap:
+# Difference vs mom-no-mcap:
 #   cost.spread_model: abdi_ranaldo  (was implicitly "flat")
 #   plus default estimator parameters (window=60, min_obs=20, scale=1.0,
 #   min_bps_per_side=5.0). Per-side `spread_bps: 200.0` is retained as the
 #   fallback rate for tickers with insufficient OHLC history.
 #
-# All other knobs identical to phase1_no_mcap.
+# All other knobs identical to mom-no-mcap.
 #
-# Read-only — modifications are rejected by tests/test_preregistered_immutability.py
-name: phase1_ar_spread
-description: "Phase 1 + 3-month smoothing + Abdi-Ranaldo per-ticker spread"
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: mom-ar-spread
+description: "Momentum + 3-month smoothing + Abdi-Ranaldo per-ticker spread"
 asof: 2026-01-01
 master_seed: 42
 n_trials_prior: 30
@@ -74,6 +74,13 @@ backtest:
   risk_free_annual: 0.035
   min_positions_per_month: 1
   degenerate_fold_max_empty_frac: 0.5
+
+# Corporate-action adjustment audit (read-only). Does not modify prices; attaches
+# AdjustmentAuditReport to RawData for ongoing visibility into missed_split,
+# bad_div_adjust and similar issues. Does NOT change any backtest output.
+# See docs/ADJUSTMENTS.md for taxonomy and known false-positive patterns.
+adjustments:
+  kind: audit
 
 walk_forward:
   two_fold_enabled: true

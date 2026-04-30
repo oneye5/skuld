@@ -21,6 +21,7 @@ from skuld_research.benchmarks.nzx_equal_weighted_fixed_universe import (
     nzx_equal_weighted_fixed_universe,
 )
 from skuld_research.benchmarks.sixty_forty import sixty_forty
+from skuld_research.config.factors import build_factors_from_specs
 from skuld_research.config.hashing import spec_hash
 from skuld_research.config.loader import find_python_root
 from skuld_research.config.spec import BacktestSpec
@@ -29,19 +30,19 @@ from skuld_research.costs.spread_estimator import compute_abdi_ranaldo_spread_pa
 from skuld_research.data.csv_loader import load_raw_csv, load_raw_ohlc
 from skuld_research.data.pit_loader import PITLoader
 from skuld_research.data.prepared_panel import build_prepared_panel
-from skuld_research.factors.momentum import MomentumFactor
+from skuld_research.data.scrubber import ScrubReport
+from skuld_research.execution.policy import ExecutionPolicyConfig
+from skuld_research.overlay import NoOverlay, NzxMA200AndAggMomentumRule, OverlayRule
 from skuld_research.reporting._seeds import derive_child_seeds
-from skuld_research.stats.dominance import romano_wolf_stepwise
 from skuld_research.stats.gating import evaluate as evaluate_gating
 from skuld_research.stats.ledger import TrialLedger
 from skuld_research.stats.rolling_walk_forward import RollingWalkForwardEngine
-from skuld_research.overlay import NoOverlay, NzxMA200AndAggMomentumRule, OverlayRule
 
 
 @dataclass(frozen=True)
 class RunResult:
     """Result of run_from_spec."""
-    
+
     spec: BacktestSpec
     spec_hash: str
     panel: PreparedPanel
@@ -53,6 +54,7 @@ class RunResult:
     master_seed: int
     panel_coverage_start: pd.Timestamp
     panel_coverage_end: pd.Timestamp
+    scrub_report: ScrubReport
 
 
 def run_from_spec(
@@ -63,26 +65,26 @@ def run_from_spec(
     ledger_root: Path | None = None,
 ) -> RunResult:
     """Run a complete backtest from a BacktestSpec.
-    
+
     Args:
         spec: BacktestSpec instance.
         raw_csv_path: Path to data_long.csv.
         write_ledger: Whether to append to trial ledger (default True).
         ledger_root: Optional override for ledger root (defaults to python/trial_ledger).
-    
+
     Returns:
         RunResult with all computed results.
     """
     # Compute spec hash
     h = spec_hash(spec)
-    
+
     # Derive child seeds
     child_seeds = derive_child_seeds(spec.master_seed)
-    
+
     # Load data
-    raw = load_raw_csv(Path(raw_csv_path))
+    raw = load_raw_csv(Path(raw_csv_path), scrub=spec.scrubbing)
     snap = PITLoader(raw).as_of(pd.Timestamp(spec.asof, tz="UTC"))
-    
+
     # Build panel
     panel = build_prepared_panel(
         snap,
@@ -94,7 +96,7 @@ def run_from_spec(
         nzx_only=spec.universe.nzx_only,
         rebalance_freq=spec.universe.rebalance_freq,
     )
-    
+
     # Build BacktestConfig
     cost_config = CostConfig(
         spread_bps=spec.cost.spread_bps,
@@ -102,7 +104,24 @@ def run_from_spec(
         sharesies_coverage_nzd=spec.cost.sharesies_coverage_nzd,
         sharesies_excess_bps=spec.cost.sharesies_excess_bps,
     )
-    
+    execution_policy = ExecutionPolicyConfig(
+        volume_budget_nzd=(
+            spec.execution_policy.monthly_volume_budget_nzd
+            if spec.execution_policy.kind == "volume_budget"
+            else None
+        ),
+        min_trade_benefit_bps=(
+            spec.execution_policy.min_trade_benefit_bps
+            if spec.execution_policy.kind == "volume_budget"
+            else 0.0
+        ),
+        excess_trade_benefit_bps=(
+            spec.execution_policy.excess_trade_benefit_bps
+            if spec.execution_policy.kind == "volume_budget"
+            else 190.0
+        ),
+    )
+
     backtest_config = BacktestConfig(
         initial_nav_nzd=spec.backtest.initial_nav_nzd,
         cash_floor=spec.backtest.cash_floor,
@@ -119,12 +138,13 @@ def run_from_spec(
         risk_free_annual=spec.backtest.risk_free_annual,
         min_positions_per_month=spec.backtest.min_positions_per_month,
         degenerate_fold_max_empty_frac=spec.backtest.degenerate_fold_max_empty_frac,
+        execution_policy=execution_policy,
     )
-    
+
     # Build spread panel if requested
     spread_panel: pd.DataFrame | None = None
     if spec.cost.spread_model == "abdi_ranaldo":
-        high, low, close = load_raw_ohlc(Path(raw_csv_path))
+        high, low, close = load_raw_ohlc(Path(raw_csv_path), scrub=spec.scrubbing)
         spread_panel = compute_abdi_ranaldo_spread_panel(
             high, low, close,
             window=spec.cost.spread_estimator_window,
@@ -134,22 +154,8 @@ def run_from_spec(
         )
 
     # Build factors
-    factors = []
-    for factor_spec in spec.factors:
-        if factor_spec.kind == "momentum":
-            factors.append(MomentumFactor(min_months=factor_spec.min_months, smoothing_months=factor_spec.smoothing_months))
-        elif factor_spec.kind == "low_vol":
-            from skuld_research.factors.low_volatility import LowVolatilityFactor
-            factors.append(
-                LowVolatilityFactor(
-                    lookback_months=factor_spec.lookback_months,
-                    min_months=factor_spec.min_months,
-                )
-            )
-        elif factor_spec.kind == "size":
-            from skuld_research.factors.size import SizeFactor
-            factors.append(SizeFactor())
-    
+    factors = build_factors_from_specs(spec.factors)
+
     # Build overlay rule
     overlay_rule: OverlayRule
     if spec.overlay is None or spec.overlay.kind == "none":
@@ -161,11 +167,11 @@ def run_from_spec(
         )
     else:
         raise ValueError(f"Unknown overlay kind: {spec.overlay.kind}")
-    
+
     # Resolve delisting CSV path
     python_root = find_python_root()
     delisting_csv_path = python_root / spec.survivorship.delisting_csv_relpath
-    
+
     # Build 2-fold driver folds if enabled
     strategy_two_fold = None
     if spec.walk_forward.two_fold_enabled:
@@ -173,13 +179,13 @@ def run_from_spec(
         n = len(rebalance_dates)
         if n < 4:
             raise ValueError(f"Need at least 4 rebalance dates for 2-fold driver, got {n}")
-        
+
         mid = n // 2
         folds_2fold = [
             FoldSpec(fold_id=0, test_start=rebalance_dates[1], test_end=rebalance_dates[mid - 1]),
             FoldSpec(fold_id=1, test_start=rebalance_dates[mid], test_end=rebalance_dates[-1]),
         ]
-        
+
         strategy_two_fold = WalkForwardEngine(
             factors=factors,
             panel=panel,
@@ -191,7 +197,7 @@ def run_from_spec(
             overlay_rule=overlay_rule,
             spread_panel=spread_panel,
         ).run()
-    
+
     # Run rolling walk-forward
     strategy_rolling = RollingWalkForwardEngine(
         panel=panel,
@@ -206,7 +212,7 @@ def run_from_spec(
         overlay_rule=overlay_rule,
         spread_panel=spread_panel,
     ).run()
-    
+
     # Build folds for benchmarks (only if 2-fold enabled)
     folds_2fold = None
     if spec.walk_forward.two_fold_enabled:
@@ -217,7 +223,7 @@ def run_from_spec(
             FoldSpec(fold_id=0, test_start=rebalance_dates[1], test_end=rebalance_dates[mid - 1]),
             FoldSpec(fold_id=1, test_start=rebalance_dates[mid], test_end=rebalance_dates[-1]),
         ]
-    
+
     # Run benchmarks
     _rolling_kwargs = dict(
         panel=panel,
@@ -237,7 +243,7 @@ def run_from_spec(
         monte_carlo_seeds=spec.survivorship.monte_carlo_seeds,
         mc_rng_seed=child_seeds["mc_delisting"],
     ) if folds_2fold else None
-    
+
     # 1. NZ TD floor
     td_floor_bt = nz_td_floor(panel, snap.asof, default_floor=spec.benchmarks.td_floor_default)
     td_floor_2fold = (
@@ -254,9 +260,12 @@ def run_from_spec(
         wf_rolling=td_floor_rolling_wf,
         coverage_start=td_floor_bt.start,
         coverage_end=td_floor_bt.end,
-        notes=(f"Notional term deposit, {spec.benchmarks.td_floor_default*100:.1f}% default floor",),
+        notes=(
+            f"Notional term deposit, {spec.benchmarks.td_floor_default*100:.1f}% "
+            "default floor",
+        ),
     )
-    
+
     # 2. NZX equal-weighted
     nzx_bt = nzx_equal_weighted_fixed_universe(
         panel,
@@ -278,9 +287,12 @@ def run_from_spec(
         wf_rolling=nzx_rolling_wf,
         coverage_start=nzx_bt.start,
         coverage_end=nzx_bt.end,
-        notes=(f"{spec.benchmarks.nzx_eq_mcap_floor_nzd/1e6:.0f}M NZD mcap floor", "ADV filter not implemented"),
+        notes=(
+            f"{spec.benchmarks.nzx_eq_mcap_floor_nzd/1e6:.0f}M NZD mcap floor",
+            "ADV filter not implemented",
+        ),
     )
-    
+
     # 3. 60/40
     sixty_forty_returns, sf_start, sf_end, sf_notes = sixty_forty(
         panel,
@@ -304,27 +316,19 @@ def run_from_spec(
         coverage_end=sf_end,
         notes=sf_notes,
     )
-    
+
     benchmarks = (td_bench, nzx_bench, sf_bench)
-    
-    # Dominance
+
     bench_oos_returns = {
         bench.name: bench.wf_rolling.oos_returns for bench in benchmarks
     }
-    dominance = romano_wolf_stepwise(
-        strategy_rolling.oos_returns,
-        bench_oos_returns,
-        alpha=spec.gating.alpha,
-        n_resamples=spec.gating.dominance_n_resamples,
-        rng_seed=child_seeds["dominance"],
-    )
-    
+
     # Gating
     if ledger_root is None:
         ledger_root = python_root / "trial_ledger"
-    
+
     ledger = TrialLedger(ledger_root, spec.output.ledger_scope)
-    
+
     gating = evaluate_gating(
         strategy_rolling,
         ledger,
@@ -332,9 +336,14 @@ def run_from_spec(
         sanity_floor=spec.gating.sanity_floor,
         alpha=spec.gating.alpha,
         n_resamples=spec.gating.bootstrap_n_resamples,
+        dominance_n_resamples=spec.gating.dominance_n_resamples,
         rng_seed=child_seeds["bootstrap"],
     )
-    
+
+    if gating.dominance is None:
+        raise RuntimeError("Expected dominance result when benchmark returns are provided")
+    dominance = gating.dominance
+
     # Write ledger entry if requested and not already present
     if write_ledger and not ledger.contains(h):
         entry = {
@@ -348,7 +357,7 @@ def run_from_spec(
             "entered_at": datetime.utcnow().isoformat() + "Z",
         }
         ledger.append(entry)
-    
+
     return RunResult(
         spec=spec,
         spec_hash=h,
@@ -361,4 +370,5 @@ def run_from_spec(
         master_seed=spec.master_seed,
         panel_coverage_start=panel.returns_daily.index[0],
         panel_coverage_end=panel.returns_daily.index[-1],
+        scrub_report=raw.scrub_report,
     )

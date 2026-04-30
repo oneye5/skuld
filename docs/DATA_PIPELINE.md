@@ -34,7 +34,7 @@ Yahoo Finance's fundamental data refresh is not guaranteed to be regular or time
 
 ### 1.7 Incomplete Corporate Action Records
 
-Split data is present for only 31.5% of NZX tickers; dividend data for 78.8%. A price series without its corresponding split adjustments will show artificial price discontinuities, inflating or inverting return signals. The PreparedPanel construction applies every corporate action record present in the `PITSnapshot` and detects remaining discontinuities via a ratio test, but it cannot correct for splits that were never recorded in the raw data.
+Split data is present for only 31.5% of NZX tickers; dividend data for 78.8%. A price series without its corresponding split adjustments will show artificial price discontinuities, inflating or inverting return signals. `PreparedPanel` does **not** apply the corporate-action frame to prices — it forwards it to consumers and otherwise relies on Yahoo's `adj_close` to already encode splits and dividends. The optional adjustments layer (`skuld_research.data.adjustments`, see `docs/ADJUSTMENTS.md`) cross-validates `adj_close` against the ledger and can repair detected issues; in particular its `missed_split` detector flags split-shaped jumps in `adj_close` that have no corresponding record, which is the closest the pipeline currently comes to surfacing the never-recorded-split failure mode. Splits that are *also* missing from `adj_close` itself (i.e. Yahoo's chain failed silently and no ledger row exists) remain unaddressed.
 
 ### 1.8 No Schema Versioning
 
@@ -75,7 +75,7 @@ The point-in-time loader (`pit_loader.py`) enforces the no-lookahead invariant. 
 
 `PreparedPanel` is built from a `PITSnapshot` and applies corporate actions, computes derived series, and constructs the investable universe mask:
 
-- **Total-return series:** constructed with explicit handling of splits, dividends, capital returns, and rights issues from the corporate actions frame. Each adjustment factor is applied to prices before the ex-date. Naive price-only (close-only) series are not used.
+- **Total-return series:** derived directly from Yahoo Finance's `adj_close`, which is *expected* to already incorporate splits, dividends, and capital returns. Skuld trusts that adjustment by default — no explicit re-application of the corporate-action frame is performed at panel-construction time. An optional audit/repair layer (`skuld_research.data.adjustments`) can be enabled by callers to cross-validate `adj_close` against the corporate-action ledger and, if requested, repair detected discrepancies (missed splits, unit jumps, bad dividend back-adjustments, etc.). It is off by default; see `docs/ADJUSTMENTS.md` for the detection taxonomy, repair policies, and integration patterns.
 - **Market cap:** price × shares outstanding as of the snapshot date.
 - **Sector:** populated from sector source if available; currently all "Unknown" (sector data is deferred). Cross-sectional z-scoring degenerates to universe-wide z-scoring until real sector data is added.
 - **Universe mask:** `universe_mask[t, ticker] = True` only when all of the following hold as of `PITSnapshot.as_of(t)`:

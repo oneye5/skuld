@@ -5,19 +5,20 @@ constructs portfolios, applies transaction costs, tracks NAV and weight drift.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
 
 from skuld_common.contracts import BacktestResult, CombinedScores, PreparedPanel, TargetPortfolio
+from skuld_research.backtest.metrics import compute_drawdown_series
 from skuld_research.costs.model import CostBreakdown, CostConfig, CostModel
+from skuld_research.execution.policy import ExecutionPolicyConfig, apply_execution_policy
 from skuld_research.factors.combiner import combine_signals
 from skuld_research.factors.protocols import SignalGenerator
-from skuld_research.portfolio.optimizer import build_target_portfolio
-from skuld_research.backtest.metrics import compute_drawdown_series
-from skuld_research.overlay.rules import NoOverlay, OverlayRule
 from skuld_research.overlay.apply import apply_cash_overlay
+from skuld_research.overlay.rules import NoOverlay, OverlayRule
+from skuld_research.portfolio.optimizer import build_target_portfolio
 
 
 @dataclass
@@ -46,6 +47,7 @@ class BacktestConfig:
     risk_free_annual: float = 0.0
     min_positions_per_month: int = 1  # NZX routinely has 4-name months; only reject if truly empty
     degenerate_fold_max_empty_frac: float = 0.5
+    execution_policy: ExecutionPolicyConfig = field(default_factory=ExecutionPolicyConfig)
 
     def __post_init__(self) -> None:
         if not (0.0 < self.max_position <= 1.0):
@@ -133,45 +135,58 @@ class BacktestEngine:
             ]
 
             if not universe:
+                nav_before_cost = nav
                 # Force liquidation if we hold anything; then charge the subscription fee.
                 if not current_weights.empty and (current_weights > 1e-6).any():
-                    # Realise returns for the closing period before liquidating
-                    monthly_rets = panel.returns_monthly
-                    if next_t in monthly_rets.index:
-                        next_t_lookup = next_t
-                    else:
-                        avail = monthly_rets.index[monthly_rets.index <= next_t]
-                        next_t_lookup = avail[-1] if not avail.empty else None
-
-                    if next_t_lookup is not None:
-                        period_rets_all = monthly_rets.loc[next_t_lookup]
-                        period_rets = period_rets_all.reindex(current_weights.index, fill_value=0.0)
-                        gross_return = float((current_weights * period_rets).sum())
-                    else:
-                        gross_return = 0.0
+                    gross_return = 0.0
 
                     # Spread cost on the full liquidation value
                     liquidation_values = current_weights * nav
                     liq_cost = self.cost_model.compute_period_costs(
                         liquidation_values, per_ticker_spread_bps=spread_at_t,
                     )
-                    cost_drag = liq_cost.total_cost_nzd / nav
+                    liq_cost = _add_holding_period_subscription_fees(
+                        liq_cost,
+                        panel.returns_monthly,
+                        t_naive,
+                        next_t,
+                        cfg.cost_config.sharesies_monthly_fee_nzd,
+                    )
+                    cost_drag = liq_cost.total_cost_nzd / nav_before_cost
                     net_return = gross_return - cost_drag
                     turnover = float(current_weights.sum())
                     current_weights = pd.Series(dtype=float)
                 else:
                     # Holding cash; only subscription fee applies
+                    gross_return = 0.0
                     liq_cost = self.cost_model.compute_period_costs(pd.Series(dtype=float))
-                    net_return = -liq_cost.total_cost_nzd / nav
+                    liq_cost = _add_holding_period_subscription_fees(
+                        liq_cost,
+                        panel.returns_monthly,
+                        t_naive,
+                        next_t,
+                        cfg.cost_config.sharesies_monthly_fee_nzd,
+                    )
+                    cost_drag = liq_cost.total_cost_nzd / nav_before_cost
+                    net_return = -cost_drag
                     turnover = 0.0
 
                 nav = nav * (1.0 + net_return)
                 period_records.append({
                     "date": next_t,
+                    "gross_return": gross_return,
                     "net_return": net_return,
                     "cost_nzd": liq_cost.total_cost_nzd,
+                    "spread_cost_nzd": liq_cost.spread_cost_nzd,
+                    "sharesies_fee_nzd": liq_cost.sharesies_fee_nzd,
+                    "cost_drag": cost_drag,
                     "turnover": turnover,
                     "n_positions": 0,
+                    "equity_weight": 0.0,
+                    "cash_weight": 1.0,
+                    "executed_volume_nzd": turnover * nav_before_cost,
+                    "deferred_volume_nzd": 0.0,
+                    "excess_volume_nzd": 0.0,
                 })
                 continue
 
@@ -204,6 +219,9 @@ class BacktestEngine:
             target_full = target.weights.reindex(all_tickers, fill_value=0.0)
             current_full = current_weights.reindex(all_tickers, fill_value=0.0)
             delta_w = target_full - current_full
+            # Existing holdings absent from the new target are forced exits;
+            # otherwise stale positions can remain stranded behind trade filters.
+            forced = (current_full > 1e-9) & (target_full <= 1e-9)
 
             # No-trade region: skip if delta_weight is too small
             in_ntr = delta_w.abs() < cfg.no_trade_threshold_frac
@@ -226,14 +244,38 @@ class BacktestEngine:
             )
             below_floor = delta_values < size_floor_per_trade
 
-            skip = in_ntr | below_floor
+            skip = (in_ntr | below_floor) & ~forced
             executable_delta = delta_w.copy()
             executable_delta[skip] = 0.0
+
+            executed_volume_nzd = float(executable_delta.abs().sum() * nav)
+            deferred_volume_nzd = 0.0
+            excess_volume_nzd = 0.0
+
+            if cfg.execution_policy.enabled:
+                policy_result = apply_execution_policy(
+                    executable_delta,
+                    nav_nzd=nav,
+                    expected_alpha_bps=combined.scores * 100.0,
+                    config=cfg.execution_policy,
+                    forced=forced,
+                )
+                executable_delta = policy_result.executable_delta_weights
+                executed_volume_nzd = policy_result.executed_volume_nzd
+                deferred_volume_nzd = policy_result.deferred_volume_nzd
+                excess_volume_nzd = policy_result.excess_volume_nzd
 
             # Transaction costs
             exec_abs_values = (executable_delta.abs() * nav)
             cost_bd: CostBreakdown = self.cost_model.compute_period_costs(
                 exec_abs_values, per_ticker_spread_bps=spread_at_t,
+            )
+            cost_bd = _add_holding_period_subscription_fees(
+                cost_bd,
+                panel.returns_monthly,
+                t_naive,
+                next_t,
+                cfg.cost_config.sharesies_monthly_fee_nzd,
             )
 
             # New actual weights
@@ -244,27 +286,10 @@ class BacktestEngine:
             if total_w > 1.0:
                 new_weights = new_weights / total_w
 
-            # Monthly return for the period [t → next_t]
-            monthly_rets = panel.returns_monthly
-            if next_t in monthly_rets.index:
-                next_t_lookup = next_t
-            else:
-                avail = monthly_rets.index[monthly_rets.index <= next_t]
-                if avail.empty:
-                    period_records.append({
-                        "date": next_t,
-                        "net_return": 0.0,
-                        "cost_nzd": 0.0,
-                        "turnover": 0.0,
-                        "n_positions": int((new_weights > 1e-6).sum()),
-                    })
-                    current_weights = new_weights
-                    continue
-                next_t_lookup = avail[-1]
-
-            period_rets_all = monthly_rets.loc[next_t_lookup]
-            period_rets = period_rets_all.reindex(new_weights.index, fill_value=0.0)
-            gross_return = float((new_weights * period_rets).sum())
+            # Compound every monthly return in the holding period [t -> next_t].
+            gross_return, drifted = _compound_period_returns(
+                new_weights, panel.returns_monthly, t_naive, next_t
+            )
             cost_drag = cost_bd.total_cost_nzd / nav
             net_return = gross_return - cost_drag
 
@@ -274,15 +299,24 @@ class BacktestEngine:
             n_pos = int((new_weights > 1e-6).sum())
             period_records.append({
                 "date": next_t,
+                "gross_return": gross_return,
                 "net_return": net_return,
                 "cost_nzd": cost_bd.total_cost_nzd,
+                "spread_cost_nzd": cost_bd.spread_cost_nzd,
+                "sharesies_fee_nzd": cost_bd.sharesies_fee_nzd,
+                "cost_drag": cost_drag,
                 "turnover": turnover,
                 "n_positions": n_pos,
+                "equity_weight": float(new_weights.sum()),
+                "cash_weight": max(0.0, 1.0 - float(new_weights.sum())),
+                "executed_volume_nzd": executed_volume_nzd,
+                "deferred_volume_nzd": deferred_volume_nzd,
+                "excess_volume_nzd": excess_volume_nzd,
             })
 
             # Update NAV, drift weights
             nav = nav * (1.0 + net_return)
-            drifted = _drift_weights(new_weights, period_rets, gross_return)
+            drifted = _apply_cost_drag_to_weights(drifted, cost_drag)
             current_weights = drifted
 
         if not period_records:
@@ -306,13 +340,88 @@ def _drift_weights(
     return drifted.clip(lower=0.0)
 
 
-def _build_result(records: list[dict], flat_haircut_bps: float, rf_annual: float = 0.0) -> BacktestResult:
+def _compound_period_returns(
+    weights: pd.Series,
+    monthly_returns: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> tuple[float, pd.Series]:
+    """Compound all monthly returns in ``(start, end]`` and drift weights."""
+    if weights.empty:
+        return 0.0, weights
+
+    start_naive = start.tz_localize(None) if getattr(start, "tzinfo", None) else start
+    end_naive = end.tz_localize(None) if getattr(end, "tzinfo", None) else end
+    idx = monthly_returns.index
+    period_idx = idx[(idx > start_naive) & (idx <= end_naive)]
+    if period_idx.empty:
+        return 0.0, weights
+
+    drifted = weights.copy()
+    compound = 1.0
+    for month in period_idx:
+        period_rets = monthly_returns.loc[month].reindex(drifted.index, fill_value=0.0)
+        month_return = float((drifted * period_rets).sum())
+        compound *= 1.0 + month_return
+        drifted = _drift_weights(drifted, period_rets, month_return)
+
+    return compound - 1.0, drifted
+
+
+def _apply_cost_drag_to_weights(weights: pd.Series, cost_drag: float) -> pd.Series:
+    """Re-express equity weights after fees reduce NAV, assuming fees come from cash."""
+    if weights.empty or cost_drag <= 0.0:
+        return weights
+    denom = 1.0 - cost_drag
+    if denom <= 1e-12:
+        return pd.Series(0.0, index=weights.index)
+    return (weights / denom).clip(lower=0.0)
+
+
+def _holding_period_month_count(
+    monthly_returns: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> int:
+    """Count monthly return rows in ``(start, end]`` with a minimum of one fee month."""
+    start_naive = start.tz_localize(None) if getattr(start, "tzinfo", None) else start
+    end_naive = end.tz_localize(None) if getattr(end, "tzinfo", None) else end
+    idx = monthly_returns.index
+    return max(1, int(((idx > start_naive) & (idx <= end_naive)).sum()))
+
+
+def _add_holding_period_subscription_fees(
+    cost: CostBreakdown,
+    monthly_returns: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    monthly_fee_nzd: float,
+) -> CostBreakdown:
+    """Add fixed monthly subscription fees beyond the one charged by CostModel."""
+    extra_months = _holding_period_month_count(monthly_returns, start, end) - 1
+    if extra_months <= 0 or monthly_fee_nzd == 0.0:
+        return cost
+    extra_fee = extra_months * monthly_fee_nzd
+    return replace(
+        cost,
+        sharesies_fee_nzd=cost.sharesies_fee_nzd + extra_fee,
+        total_cost_nzd=cost.total_cost_nzd + extra_fee,
+    )
+
+
+def _build_result(
+    records: list[dict], flat_haircut_bps: float, rf_annual: float = 0.0
+) -> BacktestResult:
     """Assemble BacktestResult from period records."""
     df = pd.DataFrame(records).set_index("date")
     df.index = pd.DatetimeIndex(df.index)
 
     returns = df["net_return"].astype(float)
+    gross_returns = df["gross_return"].astype(float)
     costs_nzd = df["cost_nzd"].astype(float)
+    spread_costs_nzd = df["spread_cost_nzd"].astype(float)
+    sharesies_fee_nzd = df["sharesies_fee_nzd"].astype(float)
+    cost_drag = df["cost_drag"].astype(float)
     turnover = df["turnover"].astype(float)
     drawdown = compute_drawdown_series(returns)
 
@@ -334,8 +443,13 @@ def _build_result(records: list[dict], flat_haircut_bps: float, rf_annual: float
 
     mdd = float(drawdown.min()) if not drawdown.empty else 0.0
     calmar_ratio = ((mu - rf_annual) / abs(mdd)) if abs(mdd) > 1e-12 else 0.0
-    
+
     period_n_positions = df["n_positions"].astype(int)
+    equity_weight = df["equity_weight"].astype(float)
+    cash_weight = df["cash_weight"].astype(float)
+    executed_volume_nzd = df["executed_volume_nzd"].astype(float)
+    deferred_volume_nzd = df["deferred_volume_nzd"].astype(float)
+    excess_volume_nzd = df["excess_volume_nzd"].astype(float)
 
     return BacktestResult(
         returns=returns,
@@ -352,4 +466,13 @@ def _build_result(records: list[dict], flat_haircut_bps: float, rf_annual: float
         skewness=skewness,
         calmar_ratio=calmar_ratio,
         period_n_positions=period_n_positions,
+        gross_returns=gross_returns,
+        spread_costs_nzd=spread_costs_nzd,
+        sharesies_fee_nzd=sharesies_fee_nzd,
+        cost_drag=cost_drag,
+        equity_weight=equity_weight,
+        cash_weight=cash_weight,
+        executed_volume_nzd=executed_volume_nzd,
+        deferred_volume_nzd=deferred_volume_nzd,
+        excess_volume_nzd=excess_volume_nzd,
     )

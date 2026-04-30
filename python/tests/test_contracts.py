@@ -3,18 +3,15 @@
 import importlib
 import sys
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from skuld_common.contracts import (
     BacktestResult,
-    CombinedScores,
     CurrentPortfolio,
     FoldResult,
     PITSnapshot,
     PreparedPanel,
-    TargetPortfolio,
     TradeList,
     WalkForwardResult,
 )
@@ -222,6 +219,11 @@ def test_prepared_panel_valid_construction():
 
 def test_skuld_research_top_level_exports_are_lazy():
     """Importing `skuld_research` should not eagerly import deep submodules."""
+    saved_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name.startswith("skuld_research")
+    }
     for name in [
         "skuld_research",
         "skuld_research.factors",
@@ -231,16 +233,21 @@ def test_skuld_research_top_level_exports_are_lazy():
     ]:
         sys.modules.pop(name, None)
 
-    package = importlib.import_module("skuld_research")
+    try:
+        package = importlib.import_module("skuld_research")
 
-    assert "skuld_research.factors" not in sys.modules
-    assert "skuld_research.portfolio.optimizer" not in sys.modules
+        assert "skuld_research.factors" not in sys.modules
+        assert "skuld_research.portfolio.optimizer" not in sys.modules
 
-    assert package.MomentumFactor.__name__ == "MomentumFactor"
-    assert package.build_target_portfolio.__name__ == "build_target_portfolio"
+        assert package.MomentumFactor.__name__ == "MomentumFactor"
+        assert package.build_target_portfolio.__name__ == "build_target_portfolio"
 
-    assert "skuld_research.factors.momentum" in sys.modules
-    assert "skuld_research.portfolio.optimizer" in sys.modules
+        assert "skuld_research.factors.momentum" in sys.modules
+        assert "skuld_research.portfolio.optimizer" in sys.modules
+    finally:
+        for name in [module for module in list(sys.modules) if module.startswith("skuld_research")]:
+            sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
 
 
 @pytest.mark.parametrize(
@@ -395,17 +402,27 @@ def test_package_re_exports_are_lazy(
     loaded_module: str,
 ):
     """Package re-exports should not import their implementation modules eagerly."""
+    saved_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name.startswith(root_prefix)
+    }
     for name in [module for module in list(sys.modules) if module.startswith(root_prefix)]:
         sys.modules.pop(name, None)
 
-    package = importlib.import_module(package_name)
+    try:
+        package = importlib.import_module(package_name)
 
-    for module_name in eager_modules:
-        assert module_name not in sys.modules
+        for module_name in eager_modules:
+            assert module_name not in sys.modules
 
-    getattr(package, attr_name)
+        getattr(package, attr_name)
 
-    assert loaded_module in sys.modules
+        assert loaded_module in sys.modules
+    finally:
+        for name in [module for module in list(sys.modules) if module.startswith(root_prefix)]:
+            sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
 
 
 def test_prepared_panel_rejects_mismatched_returns_monthly_columns():

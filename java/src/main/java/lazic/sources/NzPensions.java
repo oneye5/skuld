@@ -9,12 +9,18 @@ import java.util.Set;
 
 import com.google.gson.Gson;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzPensions extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.DAF.CM,DSD_FP@DF_FPS,1.0/NZL.A.1121+1131+1141+1151+1210+1215+1230+1240+1245+1250+1255+1270+1000.._T._T._T?startPeriod=2001&dimensionAtObservation=AllDimensions";
+
+	// OECD Funded Pensions Statistics (annual via /A.): published ~12 months after reference year-end.
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.months(12);
 
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
@@ -140,7 +146,9 @@ public class NzPensions extends DataSourceBase {
 				LocalDateTime timestamp;
 				if (timeVal.start != null && !timeVal.start.isEmpty()) {
 					try {
-						timestamp = LocalDateTime.parse(timeVal.start, DateTimeFormatter.ISO_DATE_TIME);
+						LocalDateTime periodStart = LocalDateTime.parse(timeVal.start, DateTimeFormatter.ISO_DATE_TIME);
+						// URL specifies /A. (annual frequency) so cadence is ANNUAL.
+						timestamp = ReleaseDate.applyLag(periodStart, Cadence.ANNUAL, RELEASE_LAG);
 					} catch (Exception e) {
 						// Fallback to constructing from id
 						timestamp = parseTimeFromId(timeVal.id);
@@ -185,17 +193,20 @@ public class NzPensions extends DataSourceBase {
 
 		// Handle annual data (e.g., "2019")
 		if (timeId.length() == 4) {
-			return LocalDateTime.parse(timeId + "-01-01T00:00:00");
+			LocalDateTime periodStart = LocalDateTime.parse(timeId + "-01-01T00:00:00");
+			return ReleaseDate.applyLag(periodStart, Cadence.ANNUAL, RELEASE_LAG);
 		}
 
 		// Handle monthly data (e.g., "2019-01")
 		if (timeId.length() == 7) {
-			return LocalDateTime.parse(timeId + "-01T00:00:00");
+			LocalDateTime periodStart = LocalDateTime.parse(timeId + "-01T00:00:00");
+			return ReleaseDate.applyLag(periodStart, Cadence.MONTHLY, RELEASE_LAG);
 		}
 
 		// Handle full date (e.g., "2019-01-01")
 		if (timeId.length() == 10) {
-			return LocalDateTime.parse(timeId + "T00:00:00");
+			LocalDateTime periodStart = LocalDateTime.parse(timeId + "T00:00:00");
+			return ReleaseDate.applyLag(periodStart, Cadence.DAILY, RELEASE_LAG);
 		}
 
 		throw new IllegalArgumentException("Unsupported time ID format: " + timeId);

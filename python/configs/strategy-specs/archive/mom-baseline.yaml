@@ -1,6 +1,16 @@
-# Read-only — modifications are rejected by tests/test_preregistered_immutability.py
-name: momentum_only
-description: "Phase 1 baseline — momentum only"
+# Momentum Baseline Spec — M8 Factor Evaluation Result
+#
+# Included factors: momentum (11-month)
+#
+# Decision files:
+# - 2026-04-26_value.md (PARKED)
+# - 2026-04-26_quality.md (PARKED)
+# - 2026-04-26_low_volatility.md (FAIL)
+# - 2026-04-26_size.md (FAIL)
+#
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: mom-baseline
+description: "Momentum baseline — cumulative pass/fail result of M8 factor evaluation"
 asof: 2026-01-01
 master_seed: 42
 n_trials_prior: 30

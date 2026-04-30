@@ -5,12 +5,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from skuld_common.contracts import BacktestResult, PITSnapshot, PreparedPanel, WalkForwardResult
+from skuld_common.contracts import PITSnapshot, PreparedPanel, WalkForwardResult
 from skuld_research.backtest.engine import BacktestConfig, BacktestEngine
 from skuld_research.backtest.walk_forward import FoldSpec, WalkForwardEngine
 from skuld_research.data.prepared_panel import build_prepared_panel
 from skuld_research.factors.momentum import MomentumFactor
-
 
 # ---------------------------------------------------------------------------
 # Helper: build a PreparedPanel with synthetic data (n_days=800, n_tickers=15)
@@ -54,7 +53,9 @@ def _make_panel(
     return build_prepared_panel(snap, nzx_only=False, rebalance_start="2021-01-01")
 
 
-def _make_two_fold_engine(panel: PreparedPanel | None = None) -> tuple[WalkForwardEngine, list[FoldSpec]]:
+def _make_two_fold_engine(
+    panel: PreparedPanel | None = None,
+) -> tuple[WalkForwardEngine, list[FoldSpec]]:
     """Build a WalkForwardEngine with two non-overlapping folds."""
     if panel is None:
         panel = _make_panel()
@@ -98,12 +99,12 @@ def test_oos_returns_span_all_folds():
     """oos_returns is non-empty and has a monotonically increasing index."""
     from skuld_research.backtest.engine import BacktestConfig
     config = BacktestConfig(degenerate_fold_max_empty_frac=1.0)  # Disable rejection for this test
-    
+
     panel = _make_panel()
     rebalance_dates = panel.universe_mask.index
     n = len(rebalance_dates)
     mid = n // 2
-    
+
     folds = [
         FoldSpec(0, rebalance_dates[1], rebalance_dates[mid]),
         FoldSpec(1, rebalance_dates[mid + 1], rebalance_dates[-1]),
@@ -137,7 +138,7 @@ def test_augmented_drawdown_not_better_than_observed():
 
 
 def test_single_fold_same_as_engine_direct():
-    """One fold covering all rebalance dates produces the same returns as BacktestEngine directly."""
+    """One fold over all rebalance dates matches BacktestEngine directly."""
     panel = _make_panel()
     rebalance_dates = panel.universe_mask.index
 
@@ -173,7 +174,7 @@ def test_fold_date_restriction():
     """Each fold's returns fall within its FoldSpec date window."""
     engine, folds = _make_two_fold_engine()
     result = engine.run()
-    for fold_result, spec in zip(result.folds, folds):
+    for fold_result, spec in zip(result.folds, folds, strict=True):
         ret = fold_result.result.returns
         if ret.empty:
             continue
@@ -208,10 +209,10 @@ def test_degenerate_fold_rejection():
     rebalance_dates = panel.universe_mask.index
     n = len(rebalance_dates)
     mid = n // 2
-    
+
     # Make second fold's universe mostly False
     panel.universe_mask.iloc[mid:, :] = False
-    
+
     from skuld_common.contracts import PreparedPanel
     panel = PreparedPanel(
         returns_daily=panel.returns_daily,
@@ -222,15 +223,15 @@ def test_degenerate_fold_rejection():
         macro=panel.macro,
         asof=panel.asof,
     )
-    
+
     folds = [
         FoldSpec(0, rebalance_dates[1], rebalance_dates[mid]),
         FoldSpec(1, rebalance_dates[mid + 1], rebalance_dates[-1]),
     ]
-    
+
     from skuld_research.backtest.engine import BacktestConfig
     config = BacktestConfig(min_positions_per_month=5, degenerate_fold_max_empty_frac=0.5)
-    
+
     wf = WalkForwardEngine(
         factors=[MomentumFactor()],
         panel=panel,
@@ -239,7 +240,7 @@ def test_degenerate_fold_rejection():
         monte_carlo_seeds=50,
     )
     result = wf.run()
-    
+
     # Second fold should be rejected
     assert result.n_rejected_folds >= 1
 
@@ -248,7 +249,7 @@ def test_per_regime_sharpe_populated():
     """Per-regime Sharpe dict is populated."""
     engine, _ = _make_two_fold_engine()
     result = engine.run()
-    
+
     # Should have at least one regime key
     assert len(result.oos_sharpe_by_regime) >= 0  # May be empty if not enough data
 
@@ -256,11 +257,14 @@ def test_per_regime_sharpe_populated():
 def test_new_wf_fields_have_defaults():
     """New WalkForwardResult fields have safe defaults for existing constructions."""
     # Manually construct a WalkForwardResult without the new fields (using defaults)
-    from skuld_common.contracts import WalkForwardResult, FoldResult
-    
+    from skuld_common.contracts import WalkForwardResult
+
     result = WalkForwardResult(
         folds=(),
-        oos_returns=pd.Series([0.01, 0.02], index=pd.date_range("2020-01-31", periods=2, freq="ME")),
+        oos_returns=pd.Series(
+            [0.01, 0.02],
+            index=pd.date_range("2020-01-31", periods=2, freq="ME"),
+        ),
         oos_sharpe_raw=1.0,
         oos_sharpe_flat_haircut=0.6,
         oos_sharpe_delisting_adjusted=0.5,
@@ -271,7 +275,7 @@ def test_new_wf_fields_have_defaults():
         oos_avg_turnover=0.05,
         oos_total_cost_nzd=100.0,
     )
-    
+
     # Check defaults
     assert result.n_kept_folds == 0
     assert result.n_rejected_folds == 0
@@ -280,26 +284,26 @@ def test_new_wf_fields_have_defaults():
 
 
 def test_precomputed_returns_short_circuit():
-    """When precomputed_returns is provided, WalkForwardEngine returns it directly with zero costs."""
+    """Precomputed returns are passed through with zero costs."""
     panel = _make_panel(n_days=400)
     rebalance_dates = panel.universe_mask.index
     n = len(rebalance_dates)
     mid = n // 2
-    
+
     # Synthetic returns series that spans the fold windows
     synthetic_returns = pd.Series(
         np.random.default_rng(100).standard_normal(n - 1) * 0.02,
         index=rebalance_dates[1:],
     )
-    
+
     folds = [
         FoldSpec(0, rebalance_dates[1], rebalance_dates[mid]),
         FoldSpec(1, rebalance_dates[mid + 1], rebalance_dates[-1]),
     ]
-    
+
     from skuld_research.backtest.engine import BacktestConfig
     config = BacktestConfig(degenerate_fold_max_empty_frac=1.0)  # Disable rejection
-    
+
     wf = WalkForwardEngine(
         factors=[MomentumFactor()],  # Should be ignored
         panel=panel,
@@ -309,7 +313,7 @@ def test_precomputed_returns_short_circuit():
         precomputed_returns=synthetic_returns,
     )
     result = wf.run()
-    
+
     # OOS returns should match the precomputed series (aligned to fold windows)
     expected_oos = pd.concat([
         synthetic_returns.loc[
@@ -321,10 +325,33 @@ def test_precomputed_returns_short_circuit():
             (synthetic_returns.index <= folds[1].test_end)
         ],
     ])
-    
+
     pd.testing.assert_series_equal(result.oos_returns, expected_oos, check_names=False)
-    
+
     # Costs and turnover should be zero
     assert result.oos_total_cost_nzd == 0.0
     assert result.oos_avg_turnover == 0.0
+
+
+def test_precomputed_returns_do_not_apply_strategy_flat_haircut():
+    """Already-net benchmark returns should not receive the strategy haircut again."""
+    panel = _make_panel(n_days=400)
+    rebalance_dates = panel.universe_mask.index
+    synthetic_returns = pd.Series(
+        [0.02 if i % 2 == 0 else -0.005 for i in range(len(rebalance_dates) - 1)],
+        index=rebalance_dates[1:],
+    )
+    folds = [FoldSpec(0, rebalance_dates[1], rebalance_dates[-1])]
+    config = BacktestConfig(flat_haircut_bps=400.0, risk_free_annual=0.0)
+
+    result = WalkForwardEngine(
+        factors=[MomentumFactor()],
+        panel=panel,
+        folds=folds,
+        backtest_config=config,
+        precomputed_returns=synthetic_returns,
+    ).run()
+
+    assert result.oos_sharpe_flat_haircut == pytest.approx(result.oos_sharpe_raw)
+    assert result.oos_sharpe_delisting_adjusted == pytest.approx(result.oos_sharpe_raw)
 

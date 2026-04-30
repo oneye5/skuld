@@ -140,6 +140,8 @@ def build_prepared_panel(
         universe_mask=universe_mask,
         macro=snap.macro,
         asof=snap.asof,
+        prices=prices_daily,
+        corporate_actions=snap.corporate_actions,
     )
 
 

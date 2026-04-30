@@ -16,10 +16,10 @@ class SpecValidationError(ValueError):
 
 def find_python_root() -> Path:
     """Find the python/ project root by walking up from this file.
-    
+
     Returns:
         Path to directory containing pyproject.toml.
-    
+
     Raises:
         FileNotFoundError: if no pyproject.toml found in parent chain.
     """
@@ -33,19 +33,19 @@ def find_python_root() -> Path:
 
 def load_spec(path: Path | str) -> BacktestSpec:
     """Load and validate a BacktestSpec from a YAML file.
-    
+
     Args:
         path: Path to YAML file.
-    
+
     Returns:
         Validated BacktestSpec.
-    
+
     Raises:
         SpecValidationError: if YAML is invalid or fails validation.
     """
     path = Path(path)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return BacktestSpec.model_validate(data)
     except (yaml.YAMLError, ValidationError) as e:
@@ -54,20 +54,25 @@ def load_spec(path: Path | str) -> BacktestSpec:
         raise SpecValidationError(f"Spec file not found: {path}") from e
 
 
-def iter_preregistered_specs(root: Path | None = None) -> list[Path]:
-    """Find all pre-registered spec YAML files.
-    
+def iter_strategy_specs(root: Path | None = None) -> list[Path]:
+    """Find all committed strategy spec YAML files.
+
     Args:
         root: Python project root (defaults to auto-detected root).
-    
+
     Returns:
-        Sorted list of paths to *.yaml under configs/preregistered/.
+        Sorted list of paths to *.yaml under configs/strategy-specs/.
     """
     if root is None:
         root = find_python_root()
-    
-    preregistered_dir = root / "configs" / "preregistered"
-    if not preregistered_dir.exists():
+
+    strategy_specs_dir = root / "configs" / "strategy-specs"
+    if not strategy_specs_dir.exists():
         return []
-    
-    return sorted(preregistered_dir.glob("*.yaml"))
+
+    return sorted(strategy_specs_dir.rglob("*.yaml"))
+
+
+def iter_preregistered_specs(root: Path | None = None) -> list[Path]:
+    """Compatibility alias for iter_strategy_specs."""
+    return iter_strategy_specs(root)

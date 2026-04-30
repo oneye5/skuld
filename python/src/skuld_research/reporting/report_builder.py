@@ -29,11 +29,11 @@ def build_methodology_report(
     n_trials_prior: int,
 ) -> MethodologyReport:
     """Build a MethodologyReport from walk-forward results and statistics.
-    
+
     Pure function; no I/O, no time-of-day reads.
-    
+
     Args:
-        strategy_name: e.g., "momentum_only".
+        strategy_name: e.g., "mom-ar-spread".
         strategy_two_fold: WalkForwardResult from 2-fold driver.
         strategy_rolling: WalkForwardResult from rolling driver (gating reference).
         benchmarks: tuple of BenchmarkResult.
@@ -46,13 +46,13 @@ def build_methodology_report(
         panel_coverage_end: panel.returns_daily.index[-1].
         master_seed: master RNG seed.
         n_trials_prior: prior trial count.
-    
+
     Returns:
         MethodologyReport frozen dataclass.
     """
     # Compute pass/fail bars
     pass_fail_bars = []
-    
+
     # 1. Sanity floor (TD floor)
     td_floor_bench = next((b for b in benchmarks if b.name == "NZ TD floor"), None)
     if td_floor_bench:
@@ -65,7 +65,7 @@ def build_methodology_report(
             else f"Strategy Sharpe {strategy_sharpe:.3f} ≤ TD floor Sharpe {td_sharpe:.3f}"
         )
         pass_fail_bars.append(("Sanity floor (TD floor)", passed, reason))
-    
+
     # 2. Primary benchmark (NZX equal-weighted) via Romano-Wolf
     nzx_bench_name = "NZX equal-weighted"
     if nzx_bench_name in dominance.dominates:
@@ -77,8 +77,12 @@ def build_methodology_report(
             if passed
             else f"Dominates={dominates_nzx}, p_adj={p_adj:.4f} > 0.05"
         )
-        pass_fail_bars.append(("Primary benchmark (NZX equal-weighted) via Romano-Wolf", passed, reason))
-    
+        pass_fail_bars.append((
+            "Primary benchmark (NZX equal-weighted) via Romano-Wolf",
+            passed,
+            reason,
+        ))
+
     # 3. Deflated Sharpe
     deflated_passed = gating.deflated.passes
     reason = (
@@ -87,7 +91,7 @@ def build_methodology_report(
         else f"Deflated Sharpe p={gating.deflated.p_value:.4f} > {gating.deflated.alpha}"
     )
     pass_fail_bars.append(("Deflated Sharpe", deflated_passed, reason))
-    
+
     return MethodologyReport(
         config_hash=config_hash,
         git_sha=git_sha,

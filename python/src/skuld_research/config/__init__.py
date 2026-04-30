@@ -1,4 +1,4 @@
-"""Pre-registration config system for reproducible backtests."""
+"""Strategy spec config system for reproducible backtests."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
         SpecValidationError,
         find_python_root,
         iter_preregistered_specs,
+        iter_strategy_specs,
         load_spec,
     )
     from skuld_research.config.runner import RunResult, run_from_spec
@@ -19,12 +20,14 @@ if TYPE_CHECKING:
         BacktestSpec,
         BenchmarksSpec,
         CostSpec,
+        DividendYieldFactorSpec,
         FactorSpec,
         GatingSpec,
         LowVolatilityFactorSpec,
         MomentumFactorSpec,
         OutputSpec,
         RollingDriverSpec,
+        ScrubbingSpec,
         SizeFactorSpec,
         SurvivorshipSpec,
         UniverseSpec,
@@ -41,6 +44,10 @@ _EXPORTS = {
         "LowVolatilityFactorSpec",
     ),
     "SizeFactorSpec": ("skuld_research.config.spec", "SizeFactorSpec"),
+    "DividendYieldFactorSpec": (
+        "skuld_research.config.spec",
+        "DividendYieldFactorSpec",
+    ),
     "CostSpec": ("skuld_research.config.spec", "CostSpec"),
     "BacktestEngineSpec": ("skuld_research.config.spec", "BacktestEngineSpec"),
     "WalkForwardSpec": ("skuld_research.config.spec", "WalkForwardSpec"),
@@ -49,6 +56,7 @@ _EXPORTS = {
     "GatingSpec": ("skuld_research.config.spec", "GatingSpec"),
     "BenchmarksSpec": ("skuld_research.config.spec", "BenchmarksSpec"),
     "OutputSpec": ("skuld_research.config.spec", "OutputSpec"),
+    "ScrubbingSpec": ("skuld_research.config.spec", "ScrubbingSpec"),
     "spec_hash": ("skuld_research.config.hashing", "spec_hash"),
     "short_hash": ("skuld_research.config.hashing", "short_hash"),
     "load_spec": ("skuld_research.config.loader", "load_spec"),
@@ -59,6 +67,10 @@ _EXPORTS = {
     "iter_preregistered_specs": (
         "skuld_research.config.loader",
         "iter_preregistered_specs",
+    ),
+    "iter_strategy_specs": (
+        "skuld_research.config.loader",
+        "iter_strategy_specs",
     ),
     "find_python_root": ("skuld_research.config.loader", "find_python_root"),
     "RunResult": ("skuld_research.config.runner", "RunResult"),
@@ -72,6 +84,7 @@ __all__ = [
     "MomentumFactorSpec",
     "LowVolatilityFactorSpec",
     "SizeFactorSpec",
+    "DividendYieldFactorSpec",
     "CostSpec",
     "BacktestEngineSpec",
     "WalkForwardSpec",
@@ -80,10 +93,12 @@ __all__ = [
     "GatingSpec",
     "BenchmarksSpec",
     "OutputSpec",
+    "ScrubbingSpec",
     "spec_hash",
     "short_hash",
     "load_spec",
     "SpecValidationError",
+    "iter_strategy_specs",
     "iter_preregistered_specs",
     "find_python_root",
     "RunResult",

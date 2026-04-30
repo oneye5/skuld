@@ -1,6 +1,6 @@
-# Read-only — modifications are rejected by tests/test_preregistered_immutability.py
-name: momentum_low_vol
-description: "Phase 1 candidate: momentum + low-volatility"
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: m8-mom
+description: "M8 archived candidate: momentum only"
 asof: 2026-01-01
 master_seed: 42
 n_trials_prior: 30
@@ -16,9 +16,6 @@ universe:
 factors:
   - kind: momentum
     min_months: 11
-  - kind: low_vol
-    lookback_months: 12
-    min_months: 6
 
 cost:
   spread_bps: 200.0
@@ -69,4 +66,4 @@ benchmarks:
 
 output:
   report_dir_relpath: "reports"
-  ledger_scope: production
+  ledger_scope: exploration

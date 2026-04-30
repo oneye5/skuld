@@ -7,11 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from skuld_common.contracts import WalkForwardResult, FoldResult, BacktestResult
+from skuld_common.contracts import BacktestResult, FoldResult, WalkForwardResult
 from skuld_research.stats.gating import evaluate
-from skuld_research.stats.ledger import ProductionTrialLedger, ExplorationTrialLedger
+from skuld_research.stats.ledger import ExplorationTrialLedger, ProductionTrialLedger
 
 
 def _make_synthetic_wf_result(sharpe: float = 1.5, n_months: int = 120) -> WalkForwardResult:
@@ -20,7 +19,7 @@ def _make_synthetic_wf_result(sharpe: float = 1.5, n_months: int = 120) -> WalkF
     target_monthly_mu = sharpe / (12 ** 0.5) * 0.05  # target vol ~5%
     returns = target_monthly_mu + 0.05 * rng.standard_normal(n_months)
     oos_returns = pd.Series(returns, index=pd.date_range("2020-01-31", periods=n_months, freq="ME"))
-    
+
     # Dummy fold
     fold = FoldResult(
         fold_id=0,
@@ -39,7 +38,7 @@ def _make_synthetic_wf_result(sharpe: float = 1.5, n_months: int = 120) -> WalkF
             avg_positions=5.0,
         ),
     )
-    
+
     return WalkForwardResult(
         folds=(fold,),
         oos_returns=oos_returns,
@@ -60,14 +59,13 @@ def _make_synthetic_wf_result(sharpe: float = 1.5, n_months: int = 120) -> WalkF
 def test_positive_sharpe_passes_with_few_trials(tmp_path: Path):
     """Positive Sharpe with n_trials=1 passes gating."""
     result = _make_synthetic_wf_result(sharpe=2.0, n_months=120)
-    
+
     ledger = ProductionTrialLedger(root=tmp_path / "prod")
-    # Override n_trials_prior to 1 for this test (mock by passing benchmarks=None and sanity_floor=0)
-    # Actually, evaluate uses ledger.n_unique_trials() + n_trials_prior, so we can't override easily.
-    # Instead, let's just check the structure.
-    
+    # evaluate uses ledger.n_unique_trials() + n_trials_prior, so the exact pass
+    # outcome depends on the fixed prior. This test verifies output structure.
+
     decision = evaluate(result, ledger, sanity_floor=0.0, alpha=0.05, rng_seed=42)
-    
+
     # Check structure
     assert decision.passes in [True, False]  # depends on n_trials_prior
     assert "sanity_floor" in decision.bars
@@ -79,24 +77,39 @@ def test_positive_sharpe_passes_with_few_trials(tmp_path: Path):
 def test_sanity_floor_gate(tmp_path: Path):
     """Sharpe below sanity_floor fails the sanity_floor bar."""
     result = _make_synthetic_wf_result(sharpe=0.5, n_months=100)
-    
+
     ledger = ProductionTrialLedger(root=tmp_path / "prod")
-    
+
     decision = evaluate(result, ledger, sanity_floor=1.0, alpha=0.05, rng_seed=42)
-    
+
     passed, reason = decision.bars["sanity_floor"]
     assert passed is False
+
+
+def test_bootstrap_ci_gate_fails_when_interval_straddles_zero(tmp_path: Path):
+    """Documented gating requires the 95% bootstrap Sharpe CI to clear zero."""
+    result = _make_synthetic_wf_result(sharpe=0.0, n_months=80)
+    ledger = ProductionTrialLedger(root=tmp_path / "prod")
+
+    decision = evaluate(
+        result, ledger, sanity_floor=-10.0, alpha=0.05, n_resamples=300, rng_seed=42
+    )
+
+    passed, reason = decision.bars["bootstrap_ci"]
+    assert passed is False
+    assert decision.bootstrap.ci_low_95 <= 0.0
+    assert "≤ 0" in reason
 
 
 def test_dominance_with_benchmark(tmp_path: Path):
     """Strategy with constant alpha over benchmark dominates."""
     result = _make_synthetic_wf_result(sharpe=2.0, n_months=100)
-    
+
     # Benchmark = strategy - constant alpha
     benchmark_ret = result.oos_returns - 0.02 / 12
-    
+
     ledger = ProductionTrialLedger(root=tmp_path / "prod")
-    
+
     decision = evaluate(
         result,
         ledger,
@@ -106,7 +119,7 @@ def test_dominance_with_benchmark(tmp_path: Path):
         n_resamples=500,
         rng_seed=42,
     )
-    
+
     # Check dominance bar exists
     assert "dominance_bench" in decision.bars
     # With strong alpha, should dominate
@@ -116,26 +129,26 @@ def test_dominance_with_benchmark(tmp_path: Path):
 def test_reproducibility(tmp_path: Path):
     """Two calls with same seed produce byte-identical results."""
     result = _make_synthetic_wf_result(sharpe=1.5, n_months=80)
-    
+
     ledger = ProductionTrialLedger(root=tmp_path / "prod")
-    
+
     d1 = evaluate(result, ledger, sanity_floor=0.0, alpha=0.05, n_resamples=300, rng_seed=999)
     d2 = evaluate(result, ledger, sanity_floor=0.0, alpha=0.05, n_resamples=300, rng_seed=999)
-    
+
     # Convert to JSON for comparison
     j1 = json.dumps(asdict(d1), sort_keys=True, default=str)
     j2 = json.dumps(asdict(d2), sort_keys=True, default=str)
-    
+
     assert j1 == j2
 
 
 def test_production_and_exploration_ledgers_separate(tmp_path: Path):
     """Production and exploration ledgers have independent trial counts."""
     result = _make_synthetic_wf_result(sharpe=1.0, n_months=60)
-    
+
     prod = ProductionTrialLedger(root=tmp_path / "prod")
     expl = ExplorationTrialLedger(root=tmp_path / "expl")
-    
+
     # Append to prod ledger
     prod.append({
         "spec_hash": "hash1",
@@ -147,12 +160,12 @@ def test_production_and_exploration_ledgers_separate(tmp_path: Path):
         "git_sha": None,
         "entered_at": "2026-04-25T10:00:00+00:00",
     })
-    
+
     # Evaluate with prod ledger: n_trials = n_trials_prior + 1
     d_prod = evaluate(result, prod, sanity_floor=0.0, rng_seed=42)
-    
+
     # Evaluate with expl ledger: n_trials = n_trials_prior + 0
     d_expl = evaluate(result, expl, sanity_floor=0.0, rng_seed=42)
-    
+
     # n_trials should differ
     assert d_prod.deflated.n_trials != d_expl.deflated.n_trials

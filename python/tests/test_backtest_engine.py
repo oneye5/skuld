@@ -7,9 +7,10 @@ import pytest
 
 from skuld_common.contracts import BacktestResult, PITSnapshot, PreparedPanel
 from skuld_research.backtest.engine import BacktestConfig, BacktestEngine
+from skuld_research.costs.model import CostConfig
 from skuld_research.data.prepared_panel import build_prepared_panel
+from skuld_research.execution.policy import ExecutionPolicyConfig
 from skuld_research.factors.momentum import MomentumFactor
-
 
 # ---------------------------------------------------------------------------
 # Helper: build a PreparedPanel with synthetic data
@@ -65,6 +66,337 @@ def _make_engine(config: BacktestConfig | None = None) -> BacktestEngine:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+class _FixedScoreFactor:
+    def __init__(self, scores: pd.Series, name: str = "fixed") -> None:
+        self._scores = scores
+        self.name = name
+
+    def score(
+        self,
+        panel: PreparedPanel,
+        t: pd.Timestamp,
+        universe: list[str],
+    ) -> pd.Series:
+        return self._scores.reindex(universe)
+
+
+def test_quarterly_period_compounds_all_intermediate_monthly_returns():
+    """A quarterly rebalance period compounds every monthly return in the gap."""
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-06-30"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30", "2024-05-31", "2024-06-30"])
+    monthly_returns = pd.DataFrame(
+        {
+            "A.NZ": [0.10, 0.10, -0.05],
+            "B.NZ": [0.0, 0.0, 0.0],
+            "C.NZ": [0.0, 0.0, 0.0],
+            "D.NZ": [0.0, 0.0, 0.0],
+        },
+        index=monthly_dates,
+    )
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=monthly_returns,
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-07-31"),
+    )
+    cfg = BacktestConfig(
+        cash_floor=0.0,
+        max_position=1.0,
+        max_sector=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+
+    factor = _FixedScoreFactor(
+        pd.Series({"A.NZ": 3.0, "B.NZ": 2.0, "C.NZ": 1.0, "D.NZ": 0.5})
+    )
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    expected = (1.10 * 1.10 * 0.95) - 1.0
+    assert result.returns.iloc[0] == pytest.approx(expected)
+
+
+def test_quarterly_period_charges_subscription_for_each_month_in_period():
+    """Sharesies subscription is monthly even when rebalance periods are quarterly."""
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-06-30"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30", "2024-05-31", "2024-06-30"])
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=monthly_dates, columns=tickers),
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-07-31"),
+    )
+    cfg = BacktestConfig(
+        initial_nav_nzd=10_000.0,
+        cash_floor=0.0,
+        max_position=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=15.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+
+    factor = _FixedScoreFactor(
+        pd.Series({"A.NZ": 3.0, "B.NZ": 2.0, "C.NZ": 1.0, "D.NZ": 0.5})
+    )
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    assert result.costs_nzd.iloc[0] == pytest.approx(45.0)
+    assert result.returns.iloc[0] == pytest.approx(-45.0 / 10_000.0)
+    assert result.spread_costs_nzd.iloc[0] == pytest.approx(0.0)
+    assert result.sharesies_fee_nzd.iloc[0] == pytest.approx(45.0)
+    assert result.gross_returns.iloc[0] == pytest.approx(0.0)
+    assert result.cost_drag.iloc[0] == pytest.approx(45.0 / 10_000.0)
+    assert result.equity_weight.iloc[0] == pytest.approx(1.0)
+    assert result.cash_weight.iloc[0] == pytest.approx(0.0)
+
+
+def test_empty_universe_liquidates_before_holding_period_returns():
+    """If the universe is empty at rebalance t, holdings are sold before t->next_t returns."""
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-04-30", "2024-05-31"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30", "2024-05-31"])
+    monthly_returns = pd.DataFrame(
+        {
+            "A.NZ": [0.10, 0.50],
+            "B.NZ": [0.0, 0.0],
+            "C.NZ": [0.0, 0.0],
+            "D.NZ": [0.0, 0.0],
+        },
+        index=monthly_dates,
+    )
+    universe_mask = pd.DataFrame(True, index=rebalance_dates, columns=tickers)
+    universe_mask.loc[pd.Timestamp("2024-04-30"), :] = False
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=monthly_returns,
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=universe_mask,
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-06-30"),
+    )
+    cfg = BacktestConfig(
+        cash_floor=0.0,
+        max_position=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+
+    factor = _FixedScoreFactor(
+        pd.Series({"A.NZ": 3.0, "B.NZ": 2.0, "C.NZ": 1.0, "D.NZ": 0.5})
+    )
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    assert result.returns.iloc[0] == pytest.approx(0.10)
+    assert result.returns.iloc[1] == pytest.approx(0.0)
+    assert result.period_n_positions.iloc[1] == 0
+
+
+def test_empty_universe_cost_drag_uses_pre_period_nav():
+    """Cost attribution should reconcile gross return to net return on cash-only months."""
+    tickers = ["A.NZ"]
+    dates = pd.bdate_range("2024-01-01", "2024-02-29")
+    rebalance_dates = pd.to_datetime(["2024-01-31", "2024-02-29"])
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=[pd.Timestamp("2024-02-29")], columns=tickers),
+        market_cap=pd.DataFrame(1_000_000.0, index=dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(False, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=dates),
+        asof=pd.Timestamp("2024-03-31"),
+    )
+    cfg = BacktestConfig(
+        initial_nav_nzd=10_000.0,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=15.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+
+    result = BacktestEngine(factors=[], panel=panel, config=cfg).run()
+
+    assert result.cost_drag.iloc[0] == pytest.approx(15.0 / 10_000.0)
+    assert result.returns.iloc[0] == pytest.approx(
+        result.gross_returns.iloc[0] - result.cost_drag.iloc[0]
+    )
+
+
+def test_execution_policy_defers_low_benefit_rebalance_trade():
+    """BacktestEngine applies volume-budget policy after normal trade filters."""
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-04-30"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30"])
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=monthly_dates, columns=tickers),
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-05-31"),
+    )
+    cfg = BacktestConfig(
+        initial_nav_nzd=10_000.0,
+        cash_floor=0.0,
+        max_position=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+        execution_policy=ExecutionPolicyConfig(
+            volume_budget_nzd=5_000.0,
+            excess_trade_benefit_bps=300.0,
+        ),
+    )
+    factor = _FixedScoreFactor(
+        pd.Series({"A.NZ": 3.0, "B.NZ": 2.0, "C.NZ": 1.0, "D.NZ": 0.5})
+    )
+
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    assert result.executed_volume_nzd.iloc[0] <= 5_000.0
+    assert result.deferred_volume_nzd.iloc[0] > 0.0
+    assert result.turnover.iloc[0] < 0.5
+
+
+def test_execution_policy_forced_exit_bypasses_trade_filters():
+    """BacktestEngine liquidates stale holdings even below size/no-trade filters."""
+    tickers = ["A.NZ", "B.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-04-30", "2024-05-31"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30", "2024-05-31"])
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(
+            {"A.NZ": [-0.60, 0.0], "B.NZ": [0.0, 0.0]},
+            index=monthly_dates,
+        ),
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=monthly_dates),
+        asof=pd.Timestamp("2024-06-30"),
+    )
+    cfg = BacktestConfig(
+        initial_nav_nzd=10_000.0,
+        cash_floor=0.0,
+        max_position=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=5_000.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+        execution_policy=ExecutionPolicyConfig(
+            volume_budget_nzd=10_000.0,
+            excess_trade_benefit_bps=10_000.0,
+        ),
+    )
+
+    class DateScoreFactor:
+        name = "date_score"
+
+        def score(
+            self,
+            panel: PreparedPanel,
+            t: pd.Timestamp,
+            universe: list[str],
+        ) -> pd.Series:
+            scores = (
+                pd.Series({"A.NZ": 1.0, "B.NZ": -1.0})
+                if t == rebalance_dates[0]
+                else pd.Series({"A.NZ": -1.0, "B.NZ": -1.0})
+            )
+            return scores.reindex(universe)
+
+    result = BacktestEngine(factors=[DateScoreFactor()], panel=panel, config=cfg).run()
+
+    assert result.equity_weight.iloc[0] == pytest.approx(1.0)
+    assert result.equity_weight.iloc[1] == pytest.approx(0.0)
+    assert result.executed_volume_nzd.iloc[1] == pytest.approx(4_000.0)
+
+
+def test_subscription_costs_drift_weights_by_reducing_cash_first():
+    """Fixed fees reduce cash, so the next rebalance restores the cash floor."""
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-04-30", "2024-05-31"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30", "2024-05-31"])
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=monthly_dates, columns=tickers),
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-06-30"),
+    )
+    cfg = BacktestConfig(
+        initial_nav_nzd=10_000.0,
+        cash_floor=0.10,
+        max_position=0.90,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=100.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+
+    factor = _FixedScoreFactor(
+        pd.Series({"A.NZ": 3.0, "B.NZ": 2.0, "C.NZ": 1.0, "D.NZ": 0.5})
+    )
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    assert result.turnover.iloc[1] == pytest.approx(((0.90 / 0.99) - 0.90) / 2.0)
 
 def test_engine_returns_backtest_result():
     """engine.run() returns BacktestResult with at least one return period."""
@@ -140,7 +472,7 @@ def test_minimum_rebalance_dates_raises():
 
 
 def test_drift_weights_wipeout_does_not_crash():
-    """_drift_weights with portfolio_gross_return = -1.0 does not raise and returns non-negative weights."""
+    """_drift_weights handles total loss without negative weights."""
     from skuld_research.backtest.engine import _drift_weights
     weights = pd.Series({"A.NZ": 0.5, "B.NZ": 0.5})
     period_returns = pd.Series({"A.NZ": -1.0, "B.NZ": -1.0})

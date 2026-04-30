@@ -1,5 +1,15 @@
 # Data Sources Reference
 
+## Timestamp convention (knowledge-time)
+
+Every `DataPoint.timestamp` produced by an ingestion source is the **public-release date** of that observation, not the period start. This is the timestamp at which an investor could first have known the value, and it is the value Python research code treats as the knowledge-time index.
+
+For sources whose raw API stamps an observation at the *period start* (most OECD/SDMX macro feeds), the source class shifts the timestamp to **end-of-period + publication lag** via `lazic.utils.ingest.ReleaseDate.applyLag(periodStart, cadence, lag)`. Each affected source declares a `RELEASE_LAG` constant with a comment citing the publication-calendar source.
+
+Sources whose raw API already returns a release-date timestamp (e.g. `YfPrices` daily bars, finalised at end of trading day) do not need a lag wrap.
+
+See `docs/specs/2026-04-30-lookahead-bias-remediation.md` for the lag table and rationale.
+
 ## Market Data Sources
 
 ### YfPrices (Yahoo Finance)
@@ -8,11 +18,11 @@ Daily OHLCV price data for all tickers.
 
 | Feature | Description |
 |---------|-------------|
-| `open`, `high`, `low`, `close` | OHLC prices |
-| `adj_close` | Dividend/split-adjusted close |
+| `open`, `high`, `low`, `close` | OHLC prices, raw (in the share units that prevailed at the bar's date — *not* adjusted for splits) |
+| `adj_close` | Yahoo's dividend/split-adjusted close. Known to be unreliable on tickers with dramatic reverse splits (e.g. negative values on MPG.NZ post-2026 1-for-40); the Python adjustments layer (`docs/ADJUSTMENTS.md`) is the SSOT for adjusted prices in research code. |
 | `volume` | Trading volume |
-| `dividend` | Dividend events |
-| `split` | Stock split events |
+| `dividend` | Per-share cash dividend, **back-adjusted** to the share unit of its ex_date by multiplying by the cumulative product of every split ratio with `split_date > ex_date`. This keeps `dividend` and raw `close` on the same per-share scale at every point in history. Yahoo's source field is in *current* share-equivalent units, which would otherwise mismatch the raw `close` for any ticker that has had a split. |
+| `split` | Stock split events. Ratio = numerator/denominator (e.g. 4-for-1 forward = 4.0; 1-for-40 reverse = 0.025). |
 
 **API endpoint:**
 ```

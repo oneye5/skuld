@@ -14,12 +14,19 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzBusinessConfidence extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI,4.1/NZL.M.......?dimensionAtObservation=AllDimensions&format=genericdata";
+
+	// OECD CLI / business & consumer confidence (monthly): published ~5 days after month-end via OECD STES.
+	// https://www.oecd.org/sdd/leading-indicators/
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.of(5);
 
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
@@ -90,8 +97,10 @@ public class NzBusinessConfidence extends DataSourceBase {
 					Double value = Double.valueOf(valStr);
 
 					// Macro data usually has null ticker
+					java.time.LocalDateTime periodStart = ym.atDay(1).atStartOfDay();
+					java.time.LocalDateTime timestamp = ReleaseDate.applyLag(periodStart, Cadence.MONTHLY, RELEASE_LAG);
 					DataPoint point = new DataPoint(
-									ym.atDay(1).atStartOfDay(),
+									timestamp,
 									null,
 									featureName,
 									value

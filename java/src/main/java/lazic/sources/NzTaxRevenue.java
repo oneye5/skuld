@@ -11,12 +11,18 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzTaxRevenue extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,DSD_REV_COMP_GLOBAL@DF_RSGLOBAL,2.1/NZL...T_1000+T_2000+T_3000+T_4000+T_5000+T_6000+_T..USD+XDC+PT_OTR_SECTOR+PT_B1GQ.A?startPeriod=2000&dimensionAtObservation=AllDimensions";
+
+	// OECD Revenue Statistics (annual): published ~12 months after reference year-end.
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.months(12);
 
 	@Override
 	public String getSourceName() { return "nz_tax_revenue"; }
@@ -173,7 +179,8 @@ public class NzTaxRevenue extends DataSourceBase {
 		try {
 			// Time period is in format "2000", "2001", etc.
 			int year = Integer.parseInt(timePeriod);
-			return LocalDateTime.of(year, 1, 1, 0, 0); // Set to Jan 1st of the year
+			LocalDateTime periodStart = LocalDateTime.of(year, 1, 1, 0, 0); // Jan 1st of reference year
+			return ReleaseDate.applyLag(periodStart, Cadence.ANNUAL, RELEASE_LAG);
 		} catch (NumberFormatException e) {
 			return LocalDateTime.now(); // Fallback to current time
 		}

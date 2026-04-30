@@ -14,8 +14,8 @@ import pandas as pd
 
 from skuld_common.contracts import BacktestResult, FoldResult, PreparedPanel, WalkForwardResult
 from skuld_research.backtest.engine import BacktestConfig, BacktestEngine
+from skuld_research.backtest.metrics import compute_drawdown_series
 from skuld_research.factors.protocols import SignalGenerator
-from skuld_research.backtest.metrics import compute_drawdown_series, compute_max_drawdown
 from skuld_research.survivorship.bias import SurvivorshipAdjuster
 
 
@@ -103,7 +103,7 @@ class WalkForwardEngine:
         # Short-circuit for precomputed returns (benchmarks)
         if self.precomputed_returns is not None:
             return self._run_precomputed()
-        
+
         adjuster = SurvivorshipAdjuster(
             delisting_csv_path=self.delisting_csv,
             flat_haircut_bps=self.bc.flat_haircut_bps,
@@ -128,11 +128,11 @@ class WalkForwardEngine:
                 spread_panel=self.spread_panel,
             )
             fold_bt: BacktestResult = engine.run()
-            
+
             # Degenerate-fold rejection
             min_pos = self.bc.min_positions_per_month
             max_empty_frac = self.bc.degenerate_fold_max_empty_frac
-            
+
             # Only apply rejection if period_n_positions is populated
             if not fold_bt.period_n_positions.empty and len(fold_bt.period_n_positions) > 0:
                 # Count empty months (n_positions < min_pos)
@@ -144,14 +144,14 @@ class WalkForwardEngine:
                 # No position data → consider valid (backward compatibility)
                 empty_frac = 0.0
                 is_degenerate = False
-            
+
             fold_results.append(FoldResult(
                 fold_id=spec.fold_id,
                 test_start=spec.test_start,
                 test_end=spec.test_end,
                 result=fold_bt,
             ))
-            
+
             if is_degenerate:
                 n_rejected += 1
                 rejected_fold_ids.add(spec.fold_id)
@@ -206,12 +206,20 @@ class WalkForwardEngine:
 
             try:
                 from scipy import stats as scipy_stats
-                oos_skewness = float(scipy_stats.skew(oos_returns.values, bias=False)) if n >= 3 else 0.0
+                oos_skewness = (
+                    float(scipy_stats.skew(oos_returns.values, bias=False))
+                    if n >= 3
+                    else 0.0
+                )
             except Exception:
                 oos_skewness = 0.0
 
             oos_mdd_for_calmar = float(oos_drawdown.min()) if not oos_drawdown.empty else 0.0
-            oos_calmar_ratio = ((mu - rf) / abs(oos_mdd_for_calmar)) if abs(oos_mdd_for_calmar) > 1e-12 else 0.0
+            oos_calmar_ratio = (
+                ((mu - rf) / abs(oos_mdd_for_calmar))
+                if abs(oos_mdd_for_calmar) > 1e-12
+                else 0.0
+            )
         else:
             # No kept folds → zero everything
             oos_sharpe_raw = 0.0
@@ -228,7 +236,9 @@ class WalkForwardEngine:
             oos_calmar_ratio = 0.0
 
         # Per-regime Sharpe (using kept folds only)
-        oos_sharpe_by_regime = _compute_per_regime_sharpe(self.panel, oos_returns, self.bc.risk_free_annual)
+        oos_sharpe_by_regime = _compute_per_regime_sharpe(
+            self.panel, oos_returns, self.bc.risk_free_annual
+        )
 
         return WalkForwardResult(
             folds=tuple(fold_results),
@@ -266,12 +276,12 @@ class WalkForwardEngine:
         # Extract returns for each fold window
         fold_results: list[FoldResult] = []
         oos_returns_parts: list[pd.Series] = []
-        
+
         for spec in self.folds:
             fold_returns = precomp.loc[
                 (precomp.index >= spec.test_start) & (precomp.index <= spec.test_end)
             ]
-            
+
             # Build a minimal BacktestResult with zero costs/turnover
             fold_bt = BacktestResult(
                 returns=fold_returns,
@@ -289,52 +299,60 @@ class WalkForwardEngine:
                 calmar_ratio=0.0,
                 period_n_positions=pd.Series(0, index=fold_returns.index, dtype=int),
             )
-            
+
             fold_results.append(FoldResult(
                 fold_id=spec.fold_id,
                 test_start=spec.test_start,
                 test_end=spec.test_end,
                 result=fold_bt,
             ))
-            
+
             oos_returns_parts.append(fold_returns)
-        
+
         # Concatenate OOS returns
         if oos_returns_parts:
             oos_returns = pd.concat(oos_returns_parts).sort_index()
         else:
             oos_returns = pd.Series([], dtype=float)
-        
+
         # Compute aggregate stats
         if len(oos_returns) > 0:
             n = len(oos_returns)
             mu = float(oos_returns.mean()) * 12.0
             vol = float(oos_returns.std(ddof=1)) * (12.0 ** 0.5) if n > 1 else 0.0
-            
+
             rf = self.bc.risk_free_annual
             oos_sharpe_raw = ((mu - rf) / vol) if vol > 1e-12 else 0.0
-            haircut = self.bc.flat_haircut_bps / 10_000.0
-            oos_sharpe_hc = ((mu - rf - haircut) / vol) if vol > 1e-12 else 0.0
-            # For precomputed returns, delisting adjustment is the same as flat haircut
-            oos_sharpe_dl = oos_sharpe_hc
-            
+            # Precomputed benchmark returns are already net of their own costs or
+            # haircuts; do not apply the strategy's survivorship/cost stress again.
+            oos_sharpe_hc = oos_sharpe_raw
+            oos_sharpe_dl = oos_sharpe_raw
+
             oos_drawdown = compute_drawdown_series(oos_returns)
             oos_mdd_obs = float(oos_drawdown.min()) if not oos_drawdown.empty else 0.0
             oos_mdd_obs = min(oos_mdd_obs, 0.0)
-            
+
             # No MC augmentation for precomputed returns
             mc_med = oos_mdd_obs
             mc_p90 = oos_mdd_obs
-            
+
             oos_hit_rate = float((oos_returns > 0).mean())
-            
+
             try:
                 from scipy import stats as scipy_stats
-                oos_skewness = float(scipy_stats.skew(oos_returns.values, bias=False)) if n >= 3 else 0.0
+                oos_skewness = (
+                    float(scipy_stats.skew(oos_returns.values, bias=False))
+                    if n >= 3
+                    else 0.0
+                )
             except Exception:
                 oos_skewness = 0.0
-            
-            oos_calmar_ratio = ((mu - rf) / abs(oos_mdd_obs)) if abs(oos_mdd_obs) > 1e-12 else 0.0
+
+            oos_calmar_ratio = (
+                ((mu - rf) / abs(oos_mdd_obs))
+                if abs(oos_mdd_obs) > 1e-12
+                else 0.0
+            )
         else:
             oos_sharpe_raw = 0.0
             oos_sharpe_hc = 0.0
@@ -346,10 +364,12 @@ class WalkForwardEngine:
             oos_hit_rate = 0.0
             oos_skewness = 0.0
             oos_calmar_ratio = 0.0
-        
+
         # Per-regime Sharpe
-        oos_sharpe_by_regime = _compute_per_regime_sharpe(self.panel, oos_returns, self.bc.risk_free_annual)
-        
+        oos_sharpe_by_regime = _compute_per_regime_sharpe(
+            self.panel, oos_returns, self.bc.risk_free_annual
+        )
+
         return WalkForwardResult(
             folds=tuple(fold_results),
             oos_returns=oos_returns,
@@ -399,6 +419,8 @@ def _restrict_panel_to_fold(panel, spec: FoldSpec):
         universe_mask=fold_mask,
         macro=panel.macro,
         asof=panel.asof,
+        prices=panel.prices,
+        corporate_actions=panel.corporate_actions,
     )
 
 
@@ -410,15 +432,15 @@ def _compute_per_regime_sharpe(
     """Compute per-regime annualised Sharpe from OOS returns."""
     if oos_returns.empty:
         return {}
-    
+
     # Import here to avoid circular dependency
     from skuld_research.stats.regimes import label_regimes
-    
+
     regime_labels = label_regimes(panel)
-    
+
     # Align returns with regime labels
     aligned = oos_returns.to_frame("ret").join(regime_labels.to_frame("regime"), how="inner")
-    
+
     sharpes = {}
     for regime in ["bull", "bear", "chop"]:
         regime_rets = aligned[aligned["regime"] == regime]["ret"]
@@ -427,5 +449,5 @@ def _compute_per_regime_sharpe(
             vol = regime_rets.std(ddof=1) * (12.0 ** 0.5)
             sharpe = ((mu - rf_annual) / vol) if vol > 1e-12 else 0.0
             sharpes[regime] = sharpe
-    
+
     return sharpes

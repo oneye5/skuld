@@ -16,8 +16,11 @@ import java.util.Set;
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 /**
@@ -71,6 +74,10 @@ public class WikimediaPageviews extends DataSourceBase {
     
     private static final DateTimeFormatter TIMESTAMP_PARSER = 
         DateTimeFormatter.ofPattern("yyyyMMddHH");
+
+    // Wikimedia daily pageview API publishes the previous day's totals roughly 1 day after period end.
+    // https://wikitech.wikimedia.org/wiki/Analytics/AQS/Pageviews
+    private static final ReleaseLag RELEASE_LAG = ReleaseLag.of(1);
 
     @Override
     public String getSourceName() { return "wikimedia_pageviews"; }
@@ -204,8 +211,9 @@ public class WikimediaPageviews extends DataSourceBase {
             
             for (PageviewItem item : response.items) {
                 try {
-                    // Parse timestamp (format: "2015070100")
-                    LocalDateTime date = LocalDateTime.parse(item.timestamp, TIMESTAMP_PARSER);
+                    // Parse timestamp (format: "2015070100"), then shift to release date.
+                    LocalDateTime periodStart = LocalDateTime.parse(item.timestamp, TIMESTAMP_PARSER);
+                    LocalDateTime date = ReleaseDate.applyLag(periodStart, Cadence.DAILY, RELEASE_LAG);
                     result.put(date, item.views);
                 } catch (Exception e) {
                     // Skip malformed timestamps

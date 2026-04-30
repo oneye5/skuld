@@ -24,10 +24,10 @@ def main() -> None:
     
     # Define specs to evaluate (label, relative path from python/)
     specs_to_evaluate = [
-        ("momentum_only", "configs/preregistered/2026-04-26_momentum_only.yaml"),
-        ("momentum_low_vol", "configs/preregistered/2026-04-26_momentum_low_vol.yaml"),
-        ("momentum_size", "configs/preregistered/2026-04-26_momentum_size.yaml"),
-        ("momentum_low_vol_size", "configs/preregistered/2026-04-26_momentum_low_vol_size.yaml"),
+        ("m8-mom", "configs/strategy-specs/archive/m8-mom.yaml"),
+        ("m8-mom-lowvol", "configs/strategy-specs/archive/m8-mom-lowvol.yaml"),
+        ("m8-mom-size", "configs/strategy-specs/archive/m8-mom-size.yaml"),
+        ("m8-mom-lowvol-size", "configs/strategy-specs/archive/m8-mom-lowvol-size.yaml"),
     ]
     
     # Resolve paths

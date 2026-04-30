@@ -12,12 +12,19 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzLaborStats extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.CFE.EDS,DSD_REG_LABOUR@DF_LAB,2.0/A..NZL..POP+LF+EMP+UNE+LF_RATE+UNE_RATE+LF_RATE_SEXDIF+EMP_RATIO_SEXDIF+UNE_LT+UNE_LT_RATE+UNE_RATE_SEXDIF+EMP_RATIO.Y15T24+Y_GT15+Y15T64.M+F+_T.?startPeriod=1996&dimensionAtObservation=AllDimensions";
+
+	// OECD regional labour database: annual frequency (URL specifies /A.).
+	// Annual statistics are typically released ~12 months after reference year-end.
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.months(12);
 
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
@@ -74,7 +81,8 @@ public class NzLaborStats extends DataSourceBase {
 					if (dimensions.length > 8 && timePeriodValues != null) {
 						int timeIdx = Integer.parseInt(dimensions[8]);
 						String year = timePeriodValues.get(timeIdx).getAsJsonObject().get("id").getAsString();
-						timestamp = LocalDateTime.of(Integer.parseInt(year), 1, 1, 0, 0);
+						LocalDateTime periodStart = LocalDateTime.of(Integer.parseInt(year), 1, 1, 0, 0);
+						timestamp = ReleaseDate.applyLag(periodStart, Cadence.ANNUAL, RELEASE_LAG);
 					} else {
 						// Fallback: use current time if structure is missing
 						timestamp = LocalDateTime.now();

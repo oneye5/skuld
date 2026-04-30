@@ -9,12 +9,18 @@ import java.util.Set;
 
 import com.google.gson.Gson;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzLaborTaxation extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,DSD_TAX_WAGES_COU@DF_TW_COU,2.1/NZL...S_C0+S_C2.AW167+AW100+AW67._Z.A?startPeriod=2000&dimensionAtObservation=AllDimensions";
+
+	// OECD Taxing Wages (annual): published ~12 months after reference year-end.
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.months(12);
 
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
@@ -119,16 +125,17 @@ public class NzLaborTaxation extends DataSourceBase {
 				DimensionValue timeVal = timeDim.values.get(timeIndex);
 				String timeStartStr = timeVal.start;
 
-				// Parse Time
-				LocalDateTime timestamp;
+				// Parse Time (period start), then shift to release date.
+				LocalDateTime periodStart;
 				if (timeStartStr != null && !timeStartStr.isEmpty()) {
-					timestamp = LocalDateTime.parse(timeStartStr, DateTimeFormatter.ISO_DATE_TIME);
+					periodStart = LocalDateTime.parse(timeStartStr, DateTimeFormatter.ISO_DATE_TIME);
 				} else {
 					// Fallback: if 'start' is missing, construct from 'id' (e.g., "2000")
 					String timeId = timeVal.id;
 					// For annual data, append Jan 1st
-					timestamp = LocalDateTime.parse(timeId + "-01-01T00:00:00");
+					periodStart = LocalDateTime.parse(timeId + "-01-01T00:00:00");
 				}
+				LocalDateTime timestamp = ReleaseDate.applyLag(periodStart, Cadence.ANNUAL, RELEASE_LAG);
 
 				// Create DataPoint
 				// Ticker is null as this is macroeconomic data

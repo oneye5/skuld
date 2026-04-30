@@ -14,12 +14,18 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzRoadFatalities extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.ITF,DSD_ST@DF_STFAT,1.0/NZL.M...ROAD...?dimensionAtObservation=AllDimensions";
+
+	// NZ Ministry of Transport / OECD-ITF monthly road fatality stats: ~30 days after month-end.
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.of(30);
 
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker,
@@ -130,7 +136,8 @@ public class NzRoadFatalities extends DataSourceBase {
 		try {
 			// Handle format like "2025-04"
 			YearMonth yearMonth = YearMonth.parse(timePeriodStr, DateTimeFormatter.ofPattern("yyyy-MM"));
-			return yearMonth.atDay(1).atStartOfDay();
+			LocalDateTime periodStart = yearMonth.atDay(1).atStartOfDay();
+			return ReleaseDate.applyLag(periodStart, Cadence.MONTHLY, RELEASE_LAG);
 		} catch (Exception e) {
 			System.err.println("Failed to parse time period: " + timePeriodStr);
 			return null;

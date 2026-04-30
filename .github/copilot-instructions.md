@@ -13,11 +13,30 @@ Treat user instructions as signals of intent, not exact specifications. Prioriti
 - Recognise the X-Y problem. If the requested approach seems roundabout, name the underlying goal and address that instead.
 - Consider the broader context. A single instruction exists within a larger conversation — resolve conflicts with established goals thoughtfully rather than treating each message in isolation.
 
+## Concise responses
+Use minimal formatting and verbosity, for example, when replying to a user about what you did to verify a change, do not talk about the exact commands you ran, this is far too much verbocity, instead just a short mention that you for example, ran tests, is enough. You do not need to mention that tests pass, this is redundant because tests should almost always pass before you call done as part of verification and qa. 
+
+## Questions
+
+When you do need to ask a question, limit the number of options to 2 - 3, with the option for the user to write a custom answer. 
+
+## Subagents
+
+The use of subagents is heavily encouraged, it allows for the use of parallelism and specialization as well as context window management. Use a work + review / verification loop with subagents. 
+
 ## Do not's
 
 - Call done prematurely, only call done when the task is truly complete and verified. The only times to call done early is to ask important questions or ask for a review on a significant decision point. 
 
-- Source control is strictly the responsibility of the user, not agents. You should not touch source control.
+- Source control is the responsibility of the user, not agents. 
+
+- DO NOT ask redundant questions. Avoid asking questions that can be answered / inferred by reasoning / experiments with the tools at your disposal. For example, if asked to implement a small feature where performance is critical, do not ask the user what aproach to take, isntead run small experiments to determine the best approach, you are able to make more informed decisions than the user in some cases.
+
+- DO NOT be overly verbose, for example, saying "No source control touched" after changes where the user had not mentioned source control is redundant and verbose and bloats the conversation. Information should be presented as clear and concisely as possible, and only include information relevant to the current task.
+
+- DO NOT relly heavily on the main agent, the main agent should be treated as a high-level coordinator and delegator, not a workhorse for heavy reasoning or code-writing tasks. Delegate to sub-agents for those kinds of tasks so the main agent can preserve a clear high-level picture and avoid getting bogged down in details.
+
+- DO NOT call done for no reason, for example, user asks 'how well does x perform?' and you reply with, 'I havent measured how well x performs, would you like me to run x to find out?'. This is an example of a redundant question and adds another unnecessary step to the process, instead, you should just run x and report the results without asking the user if they want you to run x, because in most cases, if the user is asking about the performance of x, they likely want to know how well it performs, so there is no need to ask if they want you to run it, just run it and report the results. 
 
 # Skills
 
@@ -108,16 +127,22 @@ Keep current. When adding, moving, or deleting a doc, update the corresponding e
 
 Project and architecture:
 
+- `docs/ADJUSTMENTS.md` — Opt-in corporate-action adjustment audit/repair layer for cross-validating Yahoo `adj_close` against the dividend/split ledger. Includes detection categories, repair policies, and integration patterns for both the standard loader and bespoke (e.g. ML) pipelines.
 - `docs/APPLICATION.md` — High-level Python application structure: the three packages (`skuld_common`, `skuld_research`, `skuld_portfolio`), data flow, research-vs-production split, statistical gating. Start here for orientation.
 - `docs/DATA_PIPELINE.md` — Raw data quality characteristics, preprocessing stages, contract types passed between pipeline stages. Required reading before touching data code.
 - `docs/DATA_ANALYSIS.md` — Schema and content reference for `data/data_long.csv` and `data/source_legend.csv` (Java ingestion output).
 - `docs/specs/2026-04-29-raw-data-analysis-workflow.md` — Specification for a reusable raw-data analysis workflow over `data/data_long.csv`, including coverage, sparsity, temporal behavior, anomaly detection, and leakage heuristics.
+- `docs/specs/2026-04-30-phase1-dominance-diagnostic.md` — Diagnostic of why `mom-ar-spread` fails dominance gating: identifies a 2010-01-04 SKT.NZ raw-data corruption producing a fictitious +63% portfolio month, plus structural GFC underperformance vs the NZ TD floor; recommends data scrubbing and a regime overlay before any new alpha work.
+- `docs/specs/2026-04-30-corporate-action-adjustments.md` — Spec for the corporate-action adjustment layer above; defines the API, detection taxonomy, severity model, and acceptance criteria.
+- `docs/specs/2026-04-30-lookahead-bias-remediation.md` — Spec for shifting Java macro/social ingestion timestamps from period-start to public-release date (period end + per-source publication lag) to eliminate look-ahead bias; introduces `Cadence`/`ReleaseLag`/`ReleaseDate` utilities and the per-source lag table.
+- `docs/specs/2026-04-30-strategy-specs-rename.md` — Spec for reorganising strategy YAMLs into lifecycle folders with concise hyphenated names.
 - `java/docs/ARCHITECTURE.md` — Java ingestion architecture: `IngestManager`, `DataSourceBase`, parallel source execution, CSV output.
 - `java/docs/DATA_SOURCES.md` — Per-source reference: which fields each of the ~14 data sources produces.
 
 Domain reference:
 
 - `docs/sharesies-pricing.md` — Sharesies NZ subscription plans and per-trade fee structure. Used by the execution planner's fee-cliff optimisation.
+- `python/configs/strategy-specs/README.md` — Lifecycle policy and inventory for frozen strategy YAML specs.
 
 Plans and specs (historical records, dated):
 

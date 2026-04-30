@@ -22,11 +22,11 @@ public class Main {
  		new NzRoadFatalities();
 		new NzLaborTaxation();
 		new NzPensions();
-		new NzTaxRevenue(); //low importance feature
+		new NzTaxRevenue();
 		new NzBalanceOfPayments();
 		new WikimediaPageviews();
 		new GlobalFoodPrices();
-		 new GlobalAquacultureProduction(); //disabled, features have low importance
+		 new GlobalAquacultureProduction(); 
 
 		IngestManager.INSTANCE.fetchDataFromSources();
 		IngestManager.INSTANCE.printSubset(100);

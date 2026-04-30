@@ -181,6 +181,85 @@ def test_portfolio_respects_per_name_cap():
     )
 
 
+def test_single_candidate_fallback_respects_per_name_cap():
+    """Single-name fallback leaves excess cash instead of breaching max_position."""
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    scores = _make_combined_scores(tickers, [2.0, -1.0, -2.0, -3.0], t)
+
+    result = build_target_portfolio(
+        scores,
+        panel,
+        t,
+        cash_floor=0.05,
+        max_position=0.25,
+        min_return_obs=1,
+    )
+
+    assert result.weights.to_dict() == pytest.approx({"A.NZ": 0.25})
+    assert result.cash_weight == pytest.approx(0.75)
+
+
+def test_no_positive_scores_returns_cash_instead_of_equal_weight_universe():
+    """All non-positive scores represent no signal and should not force investment."""
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    scores = _make_combined_scores(tickers, [0.0, -1.0, -2.0, -3.0], t)
+
+    result = build_target_portfolio(scores, panel, t, cash_floor=0.05, max_position=0.25)
+
+    assert result.weights.empty
+    assert result.cash_weight == pytest.approx(1.0)
+
+
+def test_flat_positive_non_benchmark_component_returns_cash():
+    """Only the explicit constant benchmark signal may equal-weight flat scores."""
+    from skuld_research.factors.combiner import combine_signals
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    combined = combine_signals(
+        {"flat_alpha": pd.Series(1.0, index=tickers)},
+        tickers,
+        panel.sector,
+        t,
+    )
+
+    result = build_target_portfolio(combined, panel, t, cash_floor=0.05, max_position=0.25)
+
+    assert result.weights.empty
+    assert result.cash_weight == pytest.approx(1.0)
+
+
+def test_constant_one_benchmark_component_equal_weights_flat_scores():
+    """The explicit equal-weight benchmark signal still invests despite flat z-scores."""
+    from skuld_research.factors.combiner import combine_signals
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    combined = combine_signals(
+        {"constant_one": pd.Series(1.0, index=tickers)},
+        tickers,
+        panel.sector,
+        t,
+    )
+
+    result = build_target_portfolio(combined, panel, t, cash_floor=0.0, max_position=0.25)
+
+    assert set(result.weights.index) == set(tickers)
+    assert result.cash_weight == pytest.approx(0.0)
+
+
 # ---------------------------------------------------------------------------
 # Test: only positive-score tickers get weight
 # ---------------------------------------------------------------------------
@@ -231,7 +310,8 @@ def test_portfolio_selects_top_quintile():
     top_quintile = sorted(tickers)[-4:]  # T16, T17, T18, T19
     for ticker in nonzero:
         assert ticker in top_quintile, (
-            f"Ticker {ticker} is outside the top quintile but has weight {result.weights[ticker]:.4f}"
+            f"Ticker {ticker} is outside the top quintile but has weight "
+            f"{result.weights[ticker]:.4f}"
         )
 
 

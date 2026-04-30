@@ -65,7 +65,7 @@ class PITSnapshot:
 
         if violations:
             raise ValueError(
-                f"PIT invariant violated — no future data allowed.\n"
+                "PIT invariant violated — no future data allowed.\n"
                 + "\n".join(f"  - {v}" for v in violations)
             )
 
@@ -81,6 +81,8 @@ class PreparedPanel:
         sector: index=ticker, values=GICS sector or 'Unknown'
         universe_mask: index=rebalance_date, columns=ticker, bool
         macro: index=date, columns=macro_feature (e.g., interest rates)
+        prices: optional index=date, columns=ticker, adjusted close prices
+        corporate_actions: optional dividend/split event table filtered PIT
         asof: the timestamp this panel was built for
     """
 
@@ -91,6 +93,8 @@ class PreparedPanel:
     universe_mask: pd.DataFrame
     macro: pd.DataFrame
     asof: pd.Timestamp
+    prices: pd.DataFrame = field(default_factory=pd.DataFrame)
+    corporate_actions: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def __post_init__(self) -> None:
         violations: list[str] = []
@@ -209,6 +213,16 @@ class BacktestResult:
         hit_rate: fraction of rebalance periods with positive net return (0–1).
         skewness: sample skewness of net monthly returns (negative = left-tailed).
         calmar_ratio: annualised excess return divided by absolute max drawdown.
+        period_n_positions: number of non-zero equity positions by period.
+        gross_returns: pre-cost portfolio returns by period.
+        spread_costs_nzd: spread cost component by period.
+        sharesies_fee_nzd: Sharesies fee component by period.
+        cost_drag: total cost divided by pre-period NAV by period.
+        equity_weight: realised post-trade equity weight before return drift.
+        cash_weight: realised post-trade cash weight before return drift.
+        executed_volume_nzd: absolute trade volume executed by period.
+        deferred_volume_nzd: absolute trade volume deferred by execution policy.
+        excess_volume_nzd: executed volume above the monthly execution budget.
     """
 
     returns: pd.Series
@@ -225,6 +239,15 @@ class BacktestResult:
     skewness: float = 0.0
     calmar_ratio: float = 0.0
     period_n_positions: pd.Series = field(default_factory=lambda: pd.Series(dtype=int))
+    gross_returns: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    spread_costs_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    sharesies_fee_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    cost_drag: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    equity_weight: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    cash_weight: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    executed_volume_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    deferred_volume_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    excess_volume_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
 
     def __post_init__(self) -> None:
         if self.n_periods < 0:
@@ -247,7 +270,7 @@ class FoldResult:
     fold_id: int
     test_start: pd.Timestamp
     test_end: pd.Timestamp
-    result: "BacktestResult"
+    result: BacktestResult
 
     def __post_init__(self) -> None:
         if self.fold_id < 0:
@@ -315,28 +338,27 @@ class CurrentPortfolio:
 
     def __post_init__(self) -> None:
         violations: list[str] = []
-        
+
         # Holdings and prices indices must align
         holdings_tickers = set(self.holdings.index.tolist())
         prices_tickers = set(self.prices.index.tolist())
         if holdings_tickers != prices_tickers:
             extra_holdings = holdings_tickers - prices_tickers
-            missing_prices = holdings_tickers - prices_tickers
             extra_prices = prices_tickers - holdings_tickers
             if extra_holdings:
                 violations.append(f"holdings has tickers without prices: {extra_holdings}")
             if extra_prices:
                 violations.append(f"prices has tickers without holdings: {extra_prices}")
-        
+
         # No negative shares
         if (self.holdings < 0).any():
             bad = self.holdings[self.holdings < 0].index.tolist()
             violations.append(f"negative shares for: {bad}")
-        
+
         # Cash non-negative
         if self.cash_nzd < 0:
             violations.append(f"cash_nzd must be >= 0, got {self.cash_nzd}")
-        
+
         if violations:
             raise ValueError(
                 "CurrentPortfolio invariant violated:\n"
@@ -586,7 +608,7 @@ class MethodologyReport:
         rng_master_seed_note: the spawn formula used (committed to docs).
 
     Body:
-        strategy_name: e.g., "momentum_only".
+        strategy_name: e.g., "mom-ar-spread".
         strategy_two_fold: WalkForwardResult.
         strategy_rolling: WalkForwardResult (gating reference).
         benchmarks: tuple of BenchmarkResult, one per benchmark, in display order.

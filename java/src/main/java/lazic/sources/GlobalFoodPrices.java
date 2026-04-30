@@ -11,8 +11,11 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 /**
@@ -33,6 +36,11 @@ public class GlobalFoodPrices extends DataSourceBase {
 	
 	// Local fallback file path (relative to project root)
 	private static final String LOCAL_FALLBACK_PATH = "data/fao_food_prices.csv";
+
+	// FAO Food Price Index is published monthly, typically ~5 days after month-end.
+	// Use a conservative 30-day lag to avoid look-ahead even when the FAO release schedule slips.
+	// https://www.fao.org/worldfoodsituation/foodpricesindex/en/
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.of(30);
 	
 	// Feature names for the 6 main price indices (columns 1-6 after Date)
 	private static final String[] FEATURE_NAMES = {
@@ -293,6 +301,7 @@ public class GlobalFoodPrices extends DataSourceBase {
 	private LocalDateTime parseMonthToDateTime(String monthStr) {
 		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM");
 		YearMonth yearMonth = YearMonth.parse(monthStr, formatter);
-		return yearMonth.atDay(1).atStartOfDay();
+		LocalDateTime periodStart = yearMonth.atDay(1).atStartOfDay();
+		return ReleaseDate.applyLag(periodStart, Cadence.MONTHLY, RELEASE_LAG);
 	}
 }

@@ -14,13 +14,20 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzBalanceOfPayments extends DataSourceBase {
 	// The query includes "+Y" to fetch seasonally adjusted data as well
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.TPS,DSD_BOP@DF_BOP,1.0/NZL.....Q.XDC.N+Y?startPeriod=2000-Q1&dimensionAtObservation=AllDimensions";
+
+	// Stats NZ Balance of Payments (via OECD SDMX): quarterly release ~75 days after quarter-end.
+	// https://www.stats.govt.nz/release-calendar/
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.of(75);
 
 	@Override
 	public String getSourceName() { return "nz_balance_of_payments"; }
@@ -127,8 +134,9 @@ public class NzBalanceOfPayments extends DataSourceBase {
 			int timeValIdx = Integer.parseInt(indices[timePeriodIndex]);
 			DimensionValue timeDim = dimensions.get(timePeriodIndex).values.get(timeValIdx);
 
-			// Use the 'end' period for the timestamp (e.g., "2000-03-31T00:00:00")
-			LocalDateTime date = LocalDateTime.parse(timeDim.end, DateTimeFormatter.ISO_DATE_TIME);
+			// Use the 'end' period for the timestamp (e.g., "2000-03-31T00:00:00"), then shift to release date.
+			LocalDateTime periodEnd = LocalDateTime.parse(timeDim.end, DateTimeFormatter.ISO_DATE_TIME);
+			LocalDateTime date = ReleaseDate.applyLag(periodEnd, Cadence.QUARTERLY, RELEASE_LAG);
 
 			// -- Construct Feature Name --
 			// e.g., "Balance of Payments - Primary income - Net - Seasonally adjusted"

@@ -13,13 +13,19 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzVehicleRegistrations extends DataSourceBase {
 	// The URL provided in the snippet
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.ITF,DSD_ST@DF_STREG,1.0/NZL.M...ROAD...";
+
+	// NZTA / OECD-ITF monthly vehicle registration stats: published ~25 days after month-end.
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.of(25);
 
 	/**
 	 * Returns a set of DataPoint's.
@@ -120,7 +126,8 @@ public class NzVehicleRegistrations extends DataSourceBase {
 
 				// Append -01 to make it a valid ISO date for parsing
 				LocalDate ld = LocalDate.parse(dateStr + "-01", formatter);
-				map.put(i, ld.atStartOfDay());
+				LocalDateTime periodStart = ld.atStartOfDay();
+				map.put(i, ReleaseDate.applyLag(periodStart, Cadence.MONTHLY, RELEASE_LAG));
 			}
 		} catch (Exception e) {
 			System.err.println("Error building time index map: " + e.getMessage());

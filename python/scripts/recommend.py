@@ -1,7 +1,7 @@
 """Generate monthly trade recommendations from a pre-registered spec.
 
 Usage (from python/ directory):
-    uv run python scripts/recommend.py --spec configs/preregistered/2026-04-26_phase1_baseline.yaml --holdings tests/fixtures/sharesies_export_2026-04-26.csv --cash tests/fixtures/cash_2026-04-26.yaml --asof 2025-12-31 --raw-csv ../data/data_long.csv --output-dir reports/
+    uv run python scripts/recommend.py --spec configs/strategy-specs/candidates/mom-ar-spread.yaml --holdings tests/fixtures/sharesies_export_2026-04-26.csv --cash tests/fixtures/cash_2026-04-26.yaml --asof 2025-12-31 --raw-csv ../data/data_long.csv --output-dir reports/
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _parse_args() -> argparse.Namespace:
         "--spec",
         type=Path,
         required=True,
-        help="Path to spec YAML file",
+        help="Path to strategy spec YAML file",
     )
     p.add_argument(
         "--holdings",

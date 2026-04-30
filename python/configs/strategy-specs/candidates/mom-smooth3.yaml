@@ -1,6 +1,20 @@
-# Read-only — modifications are rejected by tests/test_preregistered_immutability.py
-name: momentum_size
-description: "Phase 1 candidate: momentum + size"
+# Momentum-smoothed-3 Spec — turnover-reduction variant
+#
+# Hypothesis: mom-baseline pays ~22%/month turnover (16177 NZD cost on
+# 10000 NZD NAV across 11 OOS folds) for monthly rebalancing on the raw 12-1
+# momentum signal. IC diagnostics show the momentum signal peaks at horizon
+# ~6 months (IC 0.13), so monthly score-to-score noise is largely paid for in
+# costs. Averaging the raw 12-1 score across the trailing 3 rebalance dates
+# should cut score volatility (and therefore turnover) without throwing away
+# the underlying signal.
+#
+# Difference vs mom-baseline: factors[].smoothing_months: 3 (was 1).
+# All other knobs (universe, cost, backtest, walk_forward, survivorship,
+# gating, benchmarks, output) are identical to mom-baseline.
+#
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: mom-smooth3
+description: "Momentum baseline + 3-month momentum score smoothing"
 asof: 2026-01-01
 master_seed: 42
 n_trials_prior: 30
@@ -16,7 +30,7 @@ universe:
 factors:
   - kind: momentum
     min_months: 11
-  - kind: size
+    smoothing_months: 3
 
 cost:
   spread_bps: 200.0
@@ -39,6 +53,10 @@ backtest:
   risk_free_annual: 0.035
   min_positions_per_month: 1
   degenerate_fold_max_empty_frac: 0.5
+
+# See mom-ar-spread.yaml for rationale. Audit-only; no price mutation.
+adjustments:
+  kind: audit
 
 walk_forward:
   two_fold_enabled: true
@@ -67,4 +85,4 @@ benchmarks:
 
 output:
   report_dir_relpath: "reports"
-  ledger_scope: production
+  ledger_scope: exploration

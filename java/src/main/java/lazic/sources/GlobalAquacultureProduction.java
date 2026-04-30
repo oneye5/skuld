@@ -12,12 +12,18 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class GlobalAquacultureProduction extends DataSourceBase {
 	private final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.TAD.ARP,DSD_FISH_PROD@DF_FISH_AQUA,1.0/.A.._T.T?startPeriod=2000&dimensionAtObservation=AllDimensions";
+
+	// FAO/OECD aquaculture production (annual): published ~18 months after reference year-end.
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.months(18);
 
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker,
@@ -97,8 +103,9 @@ public class GlobalAquacultureProduction extends DataSourceBase {
 				if (obsValue.size() == 0 || obsValue.get(0).isJsonNull()) continue;
 				double value = obsValue.get(0).getAsDouble();
 
-				// Create timestamp from year
-				LocalDateTime timestamp = LocalDateTime.of(Integer.parseInt(year), 1, 1, 0, 0);
+				// Create timestamp from year, then shift to release date
+				LocalDateTime periodStart = LocalDateTime.of(Integer.parseInt(year), 1, 1, 0, 0);
+				LocalDateTime timestamp = ReleaseDate.applyLag(periodStart, Cadence.ANNUAL, RELEASE_LAG);
 
 				// Feature name includes country for clarity
 				String featureName = "aquaculture_production_tonnes_" + countryId.toLowerCase();

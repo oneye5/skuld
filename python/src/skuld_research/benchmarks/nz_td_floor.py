@@ -13,18 +13,18 @@ def nz_td_floor(
     default_floor: float = 0.04,
 ) -> BacktestResult:
     """NZ TD floor benchmark (notional term-deposit returns).
-    
+
     Reads panel.macro["short_term_interest_rates"] (annualised %, decimal form).
     Resamples to month-end, forward-fills gaps up to 3 months, falls back to
     default_floor (4%/yr) for any remaining missing month.
-    
+
     Monthly return = (1 + r_annual) ** (1/12) - 1.
-    
+
     Args:
         panel: PreparedPanel with macro data.
         asof: PIT cutoff (unused, for signature consistency).
         default_floor: fallback annual rate (decimal, e.g., 0.04 for 4%).
-    
+
     Returns:
         BacktestResult with synthesised returns, zero costs/turnover.
     """
@@ -34,23 +34,26 @@ def nz_td_floor(
     else:
         # Field missing → use default for all dates
         rates_daily = pd.Series(default_floor, index=panel.returns_daily.index)
-    
+
     # Resample to month-end, take last available rate in each month
     rates_monthly = rates_daily.resample("ME").last()
-    
+
+    # Ingested OECD/rates series may mix decimal and percentage rates.
+    rates_monthly = rates_monthly.mask(rates_monthly > 1.0, rates_monthly / 100.0)
+
     # Forward-fill gaps up to 3 months
     rates_monthly = rates_monthly.ffill(limit=3)
-    
+
     # Fill any remaining NaNs with default_floor
     rates_monthly = rates_monthly.fillna(default_floor)
-    
+
     # Align with panel.returns_monthly index
     aligned_index = panel.returns_monthly.index
     rates_aligned = rates_monthly.reindex(aligned_index, method="ffill").fillna(default_floor)
-    
+
     # Monthly return: (1 + r_annual)^(1/12) - 1
     monthly_returns = (1.0 + rates_aligned) ** (1.0 / 12.0) - 1.0
-    
+
     # Build BacktestResult
     n = len(monthly_returns)
     if n == 0:
@@ -71,14 +74,14 @@ def nz_td_floor(
             calmar_ratio=0.0,
             period_n_positions=pd.Series([], dtype=int),
         )
-    
+
     drawdown = compute_drawdown_series(monthly_returns)
-    
+
     # Compute Sharpe (annualised)
     mu = float(monthly_returns.mean()) * 12.0
     vol = float(monthly_returns.std(ddof=1)) * (12.0 ** 0.5) if n > 1 else 0.0
     sharpe_raw = mu / vol if vol > 1e-12 else 0.0
-    
+
     return BacktestResult(
         returns=monthly_returns,
         costs_nzd=pd.Series(0.0, index=monthly_returns.index),

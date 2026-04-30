@@ -1,16 +1,20 @@
-# Phase 1 Baseline Spec — M8 Factor Evaluation Result
+# Momentum-smoothed-3 + Quarterly-Rebalance Spec — Phase 1 turnover compounding
 #
-# Included factors: momentum (11-month)
+# Hypothesis: stacking 3-month score smoothing (predecessor:
+# mom-smooth3.yaml) with a quarterly rebalance schedule
+# should compound the cost reduction. IC diagnostics show the 12-1 momentum
+# signal peaks at horizon ~6 months, so a quarterly cadence on a smoothed
+# score is signal-consistent: we hold positions longer and pay turnover
+# only on the slowest component of the score's drift.
 #
-# Decision files:
-# - 2026-04-26_value.md (PARKED)
-# - 2026-04-26_quality.md (PARKED)
-# - 2026-04-26_low_volatility.md (FAIL)
-# - 2026-04-26_size.md (FAIL)
+# Difference vs mom-smooth3.yaml:
+#   universe.rebalance_freq: "BQE" (was implicit "BME").
+# All other knobs (factors, cost, backtest, walk_forward, survivorship,
+# gating, benchmarks, output) are identical.
 #
-# Read-only — modifications are rejected by tests/test_preregistered_immutability.py
-name: phase1_baseline
-description: "Phase 1 baseline — cumulative pass/fail result of M8 factor evaluation"
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: mom-smooth3-quarterly
+description: "Momentum baseline + 3m smoothing + quarterly rebalance"
 asof: 2026-01-01
 master_seed: 42
 n_trials_prior: 30
@@ -22,10 +26,12 @@ universe:
   adv_window: 20
   mc_ffill_days: 5
   nzx_only: true
+  rebalance_freq: "BQE"
 
 factors:
   - kind: momentum
     min_months: 11
+    smoothing_months: 3
 
 cost:
   spread_bps: 200.0
@@ -48,6 +54,10 @@ backtest:
   risk_free_annual: 0.035
   min_positions_per_month: 1
   degenerate_fold_max_empty_frac: 0.5
+
+# See mom-ar-spread.yaml for rationale. Audit-only; no price mutation.
+adjustments:
+  kind: audit
 
 walk_forward:
   two_fold_enabled: true

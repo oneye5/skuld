@@ -6,12 +6,19 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
 public class NzGdp extends DataSourceBase {
 	final String URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_NATIO_CURR,1.1/Q..NZL.S13+S14.........?startPeriod=2000-Q1&dimensionAtObservation=AllDimensions&format=genericdata";
+
+	// Stats NZ National Accounts (via OECD SDMX): quarterly release ~10 weeks after quarter-end.
+	// https://www.stats.govt.nz/release-calendar/
+	private static final ReleaseLag RELEASE_LAG = ReleaseLag.of(75);
 
 	/**
 	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker, such as macroeconomic data for example
@@ -76,7 +83,8 @@ public class NzGdp extends DataSourceBase {
 
 			try {
 				// Convert the "YYYY-QX" quarter string to a LocalDateTime at the start of the quarter
-				LocalDateTime dateTime = convertQuarterToDateTime(timePeriodStr);
+				LocalDateTime periodStart = convertQuarterToDateTime(timePeriodStr);
+				LocalDateTime dateTime = ReleaseDate.applyLag(periodStart, Cadence.QUARTERLY, RELEASE_LAG);
 
 				// Convert the value string to a Double, applying the unit multiplier (e.g., 10^6 for Millions)
 				int unitMultiplierPower = Integer.parseInt(unitMultiplierStr);

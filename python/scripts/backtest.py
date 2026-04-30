@@ -1,8 +1,8 @@
 """Run a backtest from a pre-registered spec YAML.
 
 Usage (from python/ directory):
-    uv run python scripts/backtest.py --spec configs/preregistered/2026-04-26_momentum_only.yaml
-    uv run python scripts/backtest.py --spec configs/preregistered/2026-04-26_momentum_only.yaml --raw-csv ../data/data_long.csv
+    uv run python scripts/backtest.py --spec configs/strategy-specs/archive/m8-mom.yaml
+    uv run python scripts/backtest.py --spec configs/strategy-specs/archive/m8-mom.yaml --raw-csv ../data/data_long.csv
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _parse_args() -> argparse.Namespace:
         "--spec",
         type=Path,
         required=True,
-        help="Path to spec YAML file (e.g., configs/preregistered/2026-04-26_momentum_only.yaml)",
+        help="Path to strategy spec YAML file (e.g., configs/strategy-specs/archive/m8-mom.yaml)",
     )
     p.add_argument(
         "--raw-csv",

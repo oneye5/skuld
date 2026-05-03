@@ -40,6 +40,15 @@ def build_factors_from_specs(factor_specs: list[FactorSpec]) -> list[SignalGener
                     min_dividends=factor_spec.min_dividends,
                 )
             )
+        elif factor_spec.kind == "return_on_risk":
+            from skuld_research.factors.return_on_risk import ReturnOnRiskFactor
+
+            factors.append(
+                ReturnOnRiskFactor(
+                    lookback_months=factor_spec.lookback_months,
+                    min_months=factor_spec.min_months,
+                )
+            )
         else:
             raise ValueError(f"Unknown factor kind: {factor_spec.kind}")
     return factors

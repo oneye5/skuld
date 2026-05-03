@@ -20,6 +20,7 @@ import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseFilter;
 import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
@@ -74,6 +75,9 @@ public class WikimediaPageviews extends DataSourceBase {
     
     private static final DateTimeFormatter TIMESTAMP_PARSER = 
         DateTimeFormatter.ofPattern("yyyyMMddHH");
+
+    private static final long MIN_REQUEST_INTERVAL_MS = 1_000L;
+    private static long lastRequestAtMs = 0L;
 
     // Wikimedia daily pageview API publishes the previous day's totals roughly 1 day after period end.
     // https://wikitech.wikimedia.org/wiki/Analytics/AQS/Pageviews
@@ -197,7 +201,7 @@ public class WikimediaPageviews extends DataSourceBase {
             .replace("{END}", END_DATE);
         
         try {
-            String rawData = WebHtmlGetter.get(url);
+            String rawData = getWithWikimediaBackoff(url);
             
             if (rawData == null || rawData.isEmpty()) {
                 return result;
@@ -214,6 +218,7 @@ public class WikimediaPageviews extends DataSourceBase {
                     // Parse timestamp (format: "2015070100"), then shift to release date.
                     LocalDateTime periodStart = LocalDateTime.parse(item.timestamp, TIMESTAMP_PARSER);
                     LocalDateTime date = ReleaseDate.applyLag(periodStart, Cadence.DAILY, RELEASE_LAG);
+                    if (!ReleaseFilter.isKnowableNow(date)) continue;
                     result.put(date, item.views);
                 } catch (Exception e) {
                     // Skip malformed timestamps
@@ -252,21 +257,9 @@ public class WikimediaPageviews extends DataSourceBase {
                         continue;
                     }
                     
-                    // Skip empty lines and comments
-                    if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                        continue;
-                    }
-                    
-                    // Parse CSV line: ticker,wikipedia_page
-                    String[] parts = line.split(",", -1); // -1 to keep empty strings
-                    
-                    if (parts.length >= 2) {
-                        String ticker = parts[0].trim();
-                        String wikipediaPage = parts[1].trim();
-                        
-                        if (!wikipediaPage.isEmpty()) {
-                            mappings.add(new PageMapping(ticker, wikipediaPage));
-                        }
+                    String[] parts = parseConfigLine(line);
+                    if (parts != null) {
+                        mappings.add(new PageMapping(parts[0], parts[1]));
                     }
                 }
             }
@@ -276,6 +269,64 @@ public class WikimediaPageviews extends DataSourceBase {
         }
         
         return mappings;
+    }
+
+    static String[] parseConfigLine(String line) {
+        if (line == null) return null;
+        String trimmed = line.trim();
+        if (trimmed.isEmpty()) return null;
+
+        String unquoted = trimmed;
+        if (unquoted.length() >= 2 && unquoted.startsWith("\"") && unquoted.endsWith("\"")) {
+            unquoted = unquoted.substring(1, unquoted.length() - 1).trim();
+        }
+        if (unquoted.startsWith("#")) return null;
+
+        String[] parts = line.split(",", -1);
+        if (parts.length < 2) return null;
+        String ticker = parts[0].trim();
+        String wikipediaPage = parts[1].trim();
+        if (ticker.length() >= 2 && ticker.startsWith("\"") && ticker.endsWith("\"")) {
+            ticker = ticker.substring(1, ticker.length() - 1).trim();
+        }
+        if (wikipediaPage.length() >= 2 && wikipediaPage.startsWith("\"") && wikipediaPage.endsWith("\"")) {
+            wikipediaPage = wikipediaPage.substring(1, wikipediaPage.length() - 1).trim();
+        }
+        return wikipediaPage.isEmpty() ? null : new String[] { ticker, wikipediaPage };
+    }
+
+    private static String getWithWikimediaBackoff(String url) {
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            throttleRequests();
+            try {
+                return WebHtmlGetter.get(url);
+            } catch (RuntimeException e) {
+                last = e;
+                if (!e.getMessage().contains("HTTP 429") || attempt == 3) {
+                    throw e;
+                }
+                sleepQuietly(5_000L * attempt);
+            }
+        }
+        throw last;
+    }
+
+    private static synchronized void throttleRequests() {
+        long now = System.currentTimeMillis();
+        long waitMs = MIN_REQUEST_INTERVAL_MS - (now - lastRequestAtMs);
+        if (waitMs > 0) {
+            sleepQuietly(waitMs);
+        }
+        lastRequestAtMs = System.currentTimeMillis();
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
     
     // ========== Inner Classes ==========

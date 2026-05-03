@@ -26,18 +26,18 @@ def read_cash_yaml(path: Path) -> float:
     """
     if not path.exists():
         raise FileNotFoundError(f"Cash YAML not found: {path}")
-    
-    with open(path, "r", encoding="utf-8") as f:
+
+    with open(path, encoding="utf-8") as f:
         try:
             data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise CashYAMLError(f"Failed to parse YAML from {path}: {e}") from e
-    
+
     if not isinstance(data, dict):
         raise CashYAMLError(
             f"Cash YAML must be a YAML mapping (dict), got {type(data).__name__}"
         )
-    
+
     if "cash_nzd" not in data:
         raise CashYAMLError(
             "Cash YAML missing required key 'cash_nzd'.\n"
@@ -45,7 +45,7 @@ def read_cash_yaml(path: Path) -> float:
             "  cash_nzd: <number>\n"
             "  asof: <date>  # optional"
         )
-    
+
     cash = data["cash_nzd"]
     try:
         return float(cash)

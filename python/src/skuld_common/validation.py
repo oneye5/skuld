@@ -385,8 +385,9 @@ def detect_stale_sources(
     """
     report = ValidationReport(check_name="stale_sources")
     for source, latest in source_latest.items():
-        age = (as_of - latest).days
+        latest_ts = pd.Timestamp(latest) if not isinstance(latest, pd.Timestamp) else latest
+        age = (as_of - latest_ts).days
         if age > max_age_days:
-            report.details[source] = [f"last data: {latest.strftime('%Y-%m-%d')}, age: {age} days"]
+            report.details[source] = [f"last data: {latest_ts.strftime('%Y-%m-%d')}, age: {age} days"]
             report.issue_count += 1
     return report

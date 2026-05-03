@@ -282,8 +282,6 @@ MCK.NZ,Millennium_%26_Copthorne_Hotels
 ,Electricity_sector_in_New_Zealand
 ,Agriculture_in_New_Zealand
 ,KiwiSaver
-,Economy_of_China
-,Economy_of_Australia
 # Weather Events,
 ,Cyclone_Gabrielle
 # Geopolitics,
@@ -293,7 +291,7 @@ MCK.NZ,Millennium_%26_Copthorne_Hotels
 ,Rocket_Lab
 ,Weta_Digital
 # ============================================================================,
-"# OTHER, HUMAN ADDED, common search terms",
+# OTHER, common search terms,
 # ============================================================================,
 ,Bunnings
 ,Facebook

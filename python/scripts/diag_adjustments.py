@@ -213,7 +213,7 @@ def part_b() -> None:
     if rep_report is not None and not rep_report.events.empty:
         # The RepairResult.repairs ledger is not exposed via RawData, but the
         # audit events are. Recreate the ledger by direct call.
-        from skuld_research.data.adjustments import repair_adjustments, RepairPolicy
+        from skuld_research.data.adjustments import RepairPolicy, repair_adjustments
         rr = repair_adjustments(
             raw_baseline.prices,
             raw_baseline.corporate_actions,

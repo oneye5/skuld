@@ -81,7 +81,8 @@ class PreparedPanel:
         sector: index=ticker, values=GICS sector or 'Unknown'
         universe_mask: index=rebalance_date, columns=ticker, bool
         macro: index=date, columns=macro_feature (e.g., interest rates)
-        prices: optional index=date, columns=ticker, adjusted close prices
+        prices: optional index=date, columns=ticker, adjusted close prices after
+            any prepared-panel masking
         corporate_actions: optional dividend/split event table filtered PIT
         asof: the timestamp this panel was built for
     """
@@ -95,6 +96,7 @@ class PreparedPanel:
     asof: pd.Timestamp
     prices: pd.DataFrame = field(default_factory=pd.DataFrame)
     corporate_actions: pd.DataFrame = field(default_factory=pd.DataFrame)
+    market_cap_proxy: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def __post_init__(self) -> None:
         violations: list[str] = []
@@ -524,11 +526,30 @@ class DeflatedSharpeResult:
 
 
 @dataclass(frozen=True)
+class ExcessReturnTestResult:
+    """One-sided HAC test on strategy excess return versus a benchmark.
+
+    Attributes:
+        mean_excess_annual: annualised arithmetic mean of strategy minus benchmark.
+        t_stat: HAC/Newey-West t-statistic for mean excess return.
+        p_value: one-sided p-value for the alternative mean_excess > 0.
+        passes: True iff the excess mean is positive and p_value <= alpha.
+    """
+
+    mean_excess_annual: float
+    t_stat: float
+    p_value: float
+    passes: bool
+
+
+@dataclass(frozen=True)
 class DominanceResult:
     """Romano–Wolf stepwise multiple-testing for strategy-vs-benchmarks.
 
     Attributes:
-        benchmark_names: names in order tested.
+        benchmark_names: names in order tested by Romano-Wolf. This excludes
+            any TD/cash-hurdle benchmark routed through the dedicated
+            excess-return gate.
         adjusted_p_values: dict benchmark -> Romano–Wolf adjusted p-value.
         dominates: dict benchmark -> bool (True iff strategy beats benchmark
             at family-wise alpha).
@@ -550,10 +571,13 @@ class GatingDecision:
     Attributes:
         passes: overall pass/fail.
         bars: dict bar_name -> (passed, reason). bar_name in
-            {'sanity_floor', 'deflated_sharpe', 'dominance_<benchmark>'}.
+            {'sanity_floor', 'bootstrap_ci', 'deflated_sharpe',
+             'td_excess_return', 'dominance_<benchmark>'}.
         deflated: DeflatedSharpeResult.
         bootstrap: BootstrapResult.
-        dominance: DominanceResult | None (None if no benchmarks supplied).
+        dominance: DominanceResult | None. Contains only the risky benchmarks
+            evaluated by Romano-Wolf, excluding the TD/cash-hurdle benchmark
+            when that benchmark is split into `td_excess_return`.
         n_kept_folds: count from WalkForwardResult.
         n_rejected_folds: count from WalkForwardResult.
         rejection_reasons: tuple of reasons.
@@ -613,14 +637,17 @@ class MethodologyReport:
         strategy_rolling: WalkForwardResult (gating reference).
         benchmarks: tuple of BenchmarkResult, one per benchmark, in display order.
         gating: GatingDecision (from M5).
-        dominance: DominanceResult — Romano–Wolf adjusted p-values vs. each
-            benchmark, computed on the rolling-driver OOS returns of the
-            strategy and each benchmark (paired stationary bootstrap inside).
+        dominance: DominanceResult — Romano–Wolf adjusted p-values vs. the
+            risky benchmarks only, computed on the rolling-driver OOS returns
+            of the strategy and each risky benchmark (paired stationary
+            bootstrap inside). The TD/cash-hurdle benchmark is reported via
+            `gating.bars['td_excess_return']` instead.
 
     Footer:
         pass_fail: tuple of (bar_name, passed: bool, reason: str). Includes:
-            "sanity floor (TD floor)", "primary benchmark (NZX equal-weighted)
-            via Romano–Wolf", "deflated Sharpe", and any other bars enabled.
+            "sanity floor (TD excess return)", "primary benchmark (NZX
+            equal-weighted) via Romano–Wolf", "deflated Sharpe", and any
+            other bars enabled.
     """
 
     config_hash: str

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         LowVolatilityFactorSpec,
         MomentumFactorSpec,
         OutputSpec,
+        ReturnOnRiskFactorSpec,
         RollingDriverSpec,
         ScrubbingSpec,
         SizeFactorSpec,
@@ -47,6 +48,10 @@ _EXPORTS = {
     "DividendYieldFactorSpec": (
         "skuld_research.config.spec",
         "DividendYieldFactorSpec",
+    ),
+    "ReturnOnRiskFactorSpec": (
+        "skuld_research.config.spec",
+        "ReturnOnRiskFactorSpec",
     ),
     "CostSpec": ("skuld_research.config.spec", "CostSpec"),
     "BacktestEngineSpec": ("skuld_research.config.spec", "BacktestEngineSpec"),

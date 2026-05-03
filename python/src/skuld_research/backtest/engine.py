@@ -5,10 +5,13 @@ constructs portfolios, applies transaction costs, tracks NAV and weight drift.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from skuld_common.contracts import BacktestResult, CombinedScores, PreparedPanel, TargetPortfolio
 from skuld_research.backtest.metrics import compute_drawdown_series
@@ -36,22 +39,46 @@ class BacktestConfig:
     cash_floor: float = 0.05
     max_position: float = 0.25   # raised from 0.05: NZX typically has 4-10 positions
     max_sector: float = 0.25
+    min_names: int | None = None
     score_lambda: float = 0.0
     no_trade_threshold_frac: float = 0.005   # 0.5% of NAV min drift to rebalance
     size_floor_nzd: float = 50.0              # minimum trade in NZD
     size_floor_cost_multiple: float = 5.0     # skip if trade < N × round-trip cost
     return_window_days: int = 252
     min_return_obs: int = 63
+    adv_participation_cap: float | None = 0.01
     cost_config: CostConfig = field(default_factory=CostConfig)
     flat_haircut_bps: float = 400.0
     risk_free_annual: float = 0.0
     min_positions_per_month: int = 1  # NZX routinely has 4-name months; only reject if truly empty
     degenerate_fold_max_empty_frac: float = 0.5
+    turnover_budget_frac: float | None = None
+    smoothing_alpha: float = 0.0   # weight toward prior portfolio (0=no smoothing, 1=never trade)
     execution_policy: ExecutionPolicyConfig = field(default_factory=ExecutionPolicyConfig)
+    adv_panel: pd.DataFrame | None = None
 
     def __post_init__(self) -> None:
         if not (0.0 < self.max_position <= 1.0):
             raise ValueError(f"max_position must be in (0, 1], got {self.max_position}")
+        if self.adv_participation_cap is not None and not (0.0 <= self.adv_participation_cap <= 1.0):
+            raise ValueError(
+                "adv_participation_cap must be in [0, 1] or None, "
+                f"got {self.adv_participation_cap}"
+            )
+        if self.min_names is not None and self.min_names < 1:
+            raise ValueError(f"min_names must be >= 1 or None, got {self.min_names}")
+        if self.turnover_budget_frac is not None and not (0.0 <= self.turnover_budget_frac <= 1.0):
+            raise ValueError(
+                "turnover_budget_frac must be in [0, 1] or None, "
+                f"got {self.turnover_budget_frac}"
+            )
+        if self.turnover_budget_frac is not None and self.execution_policy.turnover_budget_frac is None:
+            self.execution_policy = replace(
+                self.execution_policy,
+                turnover_budget_frac=self.turnover_budget_frac,
+            )
+        if not (0.0 <= self.smoothing_alpha < 1.0):
+            raise ValueError(f"smoothing_alpha must be in [0, 1), got {self.smoothing_alpha}")
 
 
 class BacktestEngine:
@@ -104,6 +131,18 @@ class BacktestEngine:
             return None
         return self.spread_panel.loc[avail[-1]]
 
+    def _adv_lookup(self, t: pd.Timestamp) -> pd.Series | None:
+        """Return rebalance-date ADV in NZD for `t` (or None if unavailable)."""
+        if self.config.adv_panel is None or self.config.adv_panel.empty:
+            return None
+        idx = self.config.adv_panel.index
+        if t in idx:
+            return self.config.adv_panel.loc[t]
+        avail = idx[idx <= t]
+        if avail.empty:
+            return None
+        return self.config.adv_panel.loc[avail[-1]]
+
     def run(self) -> BacktestResult:
         """Run the backtest over all rebalance dates in panel.universe_mask.
 
@@ -135,6 +174,9 @@ class BacktestEngine:
             ]
 
             if not universe:
+                logger.warning(
+                    "rebalance %s: universe collapsed to 0 tickers — holding cash", t.date()
+                )
                 nav_before_cost = nav
                 # Force liquidation if we hold anything; then charge the subscription fee.
                 if not current_weights.empty and (current_weights > 1e-6).any():
@@ -190,6 +232,12 @@ class BacktestEngine:
                 })
                 continue
 
+            if len(universe) < 5:
+                logger.warning(
+                    "rebalance %s: thin universe (%d tickers) — factor scores unreliable",
+                    t.date(), len(universe),
+                )
+
             # Score signals
             signals: dict[str, pd.Series] = {}
             for factor in self.factors:
@@ -198,19 +246,41 @@ class BacktestEngine:
             combined: CombinedScores = combine_signals(
                 signals, universe, panel.sector, t
             )
+            adv_at_t = self._adv_lookup(t_naive)
 
             target: TargetPortfolio = build_target_portfolio(
                 combined, panel, t,
                 cash_floor=cfg.cash_floor,
                 max_position=cfg.max_position,
                 max_sector=cfg.max_sector,
+                min_names=cfg.min_names,
                 score_lambda=cfg.score_lambda,
+                adv=adv_at_t,
+                portfolio_nav=nav,
+                adv_participation_cap=cfg.adv_participation_cap,
                 return_window_days=cfg.return_window_days,
                 min_return_obs=cfg.min_return_obs,
             )
 
             # Apply cash overlay (may raise cash beyond the floor)
             target = apply_cash_overlay(target, panel, self.overlay_rule, t)
+
+            # Portfolio weight smoothing: blend target with current weights
+            if cfg.smoothing_alpha > 0.0 and not current_weights.empty:
+                blend_tickers = list(
+                    set(list(target.weights.index)) | set(list(current_weights.index))
+                )
+                t_full = target.weights.reindex(blend_tickers, fill_value=0.0)
+                c_full = current_weights.reindex(blend_tickers, fill_value=0.0)
+                blended = (1.0 - cfg.smoothing_alpha) * t_full + cfg.smoothing_alpha * c_full
+                # Drop near-zero positions
+                blended = blended[blended > 1e-4]
+                total_blended = blended.sum()
+                if total_blended > 1e-12:
+                    # Rescale to equity sleeve (1 - cash_floor)
+                    blended = blended * (1.0 - cfg.cash_floor) / total_blended
+                cash_weight = max(cfg.cash_floor, 1.0 - float(blended.sum()))
+                target = replace(target, weights=blended, cash_weight=cash_weight)
 
             # All tickers we need to consider (target + current holdings)
             all_tickers = list(

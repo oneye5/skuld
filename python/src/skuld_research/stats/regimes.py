@@ -27,16 +27,16 @@ def label_regimes(panel: PreparedPanel) -> pd.Series:
     # Build market proxy: equal-weighted across liquid universe
     ever_in_universe = panel.universe_mask.any(axis=0)
     liquid_tickers = ever_in_universe[ever_in_universe].index.tolist()
-    
+
     if not liquid_tickers:
         # No liquid universe → all chop
         return pd.Series("chop", index=panel.returns_monthly.index)
-    
+
     market_ret = panel.returns_monthly[liquid_tickers].mean(axis=1)
-    
+
     labels = []
     dates = market_ret.index.tolist()
-    
+
     for i, t in enumerate(dates):
         if i < 12:
             # Insufficient history
@@ -45,12 +45,12 @@ def label_regimes(panel: PreparedPanel) -> pd.Series:
             # Trailing 12 months: strictly before t
             trailing_12 = market_ret.iloc[i - 12 : i]
             cumulative_ret = (1.0 + trailing_12).prod() - 1.0
-            
+
             if cumulative_ret > 0.10:
                 labels.append("bull")
             elif cumulative_ret < -0.10:
                 labels.append("bear")
             else:
                 labels.append("chop")
-    
+
     return pd.Series(labels, index=dates, name="regime")

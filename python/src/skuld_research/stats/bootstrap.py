@@ -34,14 +34,14 @@ def stationary_bootstrap_sharpe(
     """
     if returns.isna().any():
         raise ValueError("returns must be NaN-free")
-    
+
     n = len(returns)
     if n < 2:
         raise ValueError("Need at least 2 observations for bootstrap")
-    
+
     if mean_block_len is None:
         mean_block_len = max(2.0, float(n ** (1.0 / 3.0)))
-    
+
     # Point estimate from original series
     mu = float(returns.mean())
     std = float(returns.std(ddof=1))
@@ -56,16 +56,16 @@ def stationary_bootstrap_sharpe(
             n_resamples=n_resamples,
             mean_block_len=mean_block_len,
         )
-    
+
     point_estimate = (mu / std) * (periods_per_year ** 0.5)
-    
+
     # Bootstrap resamples
     rng = np.random.default_rng(rng_seed)
     ret_values = returns.values
     sharpes = []
-    
+
     p_continue = 1.0 - 1.0 / mean_block_len  # probability of continuing block
-    
+
     for _ in range(n_resamples):
         # Stationary bootstrap: start at random index, then with prob p_continue
         # advance by 1, else jump to random index. Wrap modulo n.
@@ -77,7 +77,7 @@ def stationary_bootstrap_sharpe(
                 idx = (idx + 1) % n
             else:
                 idx = rng.integers(0, n)
-        
+
         resample_arr = np.array(resample)
         mu_b = resample_arr.mean()
         std_b = resample_arr.std(ddof=1)
@@ -86,11 +86,11 @@ def stationary_bootstrap_sharpe(
             sharpes.append(sharpe_b)
         else:
             sharpes.append(float("nan"))
-    
+
     sharpes_arr = np.array(sharpes)
     # Filter out NaN if any resamples had zero std
     sharpes_finite = sharpes_arr[np.isfinite(sharpes_arr)]
-    
+
     if len(sharpes_finite) == 0:
         # All resamples had zero std → return NaN
         return BootstrapResult(
@@ -102,7 +102,7 @@ def stationary_bootstrap_sharpe(
             n_resamples=n_resamples,
             mean_block_len=mean_block_len,
         )
-    
+
     return BootstrapResult(
         point_estimate=point_estimate,
         mean=float(sharpes_finite.mean()),

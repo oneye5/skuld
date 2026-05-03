@@ -57,9 +57,18 @@ class DividendYieldFactorSpec(BaseModel):
     min_dividends: int = 1
 
 
+class ReturnOnRiskFactorSpec(BaseModel):
+    """Return-on-risk factor configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["return_on_risk"] = "return_on_risk"
+    lookback_months: int = 12
+    min_months: int = 6
+
+
 # Discriminated union for factors (extensible for M8: value, quality, low_vol, size)
 FactorSpec = Annotated[
-    MomentumFactorSpec | LowVolatilityFactorSpec | SizeFactorSpec | DividendYieldFactorSpec,
+    MomentumFactorSpec | LowVolatilityFactorSpec | SizeFactorSpec | DividendYieldFactorSpec | ReturnOnRiskFactorSpec,
     Field(discriminator="kind")
 ]
 
@@ -91,16 +100,20 @@ class BacktestEngineSpec(BaseModel):
     cash_floor: float = 0.05
     max_position: float = 0.25
     max_sector: float = 0.25
+    min_names: int | None = Field(default=None, ge=1)
     score_lambda: float = 0.0
     no_trade_threshold_frac: float = 0.005
     size_floor_nzd: float = 50.0
     size_floor_cost_multiple: float = 5.0
     return_window_days: int = 252
     min_return_obs: int = 63
+    adv_participation_cap: float | None = Field(default=0.01, ge=0.0, le=1.0)
     flat_haircut_bps: float = 400.0
     risk_free_annual: float = 0.0
     min_positions_per_month: int = 1
     degenerate_fold_max_empty_frac: float = 0.5
+    turnover_budget_frac: float | None = Field(default=None, ge=0.0, le=1.0)
+    smoothing_alpha: float = Field(default=0.0, ge=0.0, lt=1.0)
 
 
 class RollingDriverSpec(BaseModel):
@@ -147,6 +160,7 @@ class BenchmarksSpec(BaseModel):
     nzx_eq_adv_floor_shares: int = 10_000
     sixty_forty_equity_proxy: str = "FNZ.NZ"
     sixty_forty_bond_macro_field: str = "long_term_interest_rates"
+    sixty_forty_bond_duration_years: float = 0.0
     sixty_forty_flat_haircut_bps: float = 50.0
 
 
@@ -200,6 +214,24 @@ class ScrubbingSpec(BaseModel):
     reversal_tolerance: float = 0.10
 
 
+class AnomalyFilterSpec(BaseModel):
+    """Prepared-panel anomaly masking configuration."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["none", "mask_extremes"] = "none"
+    daily_abs_return_threshold: float = Field(default=2.0, ge=0.0)
+    monthly_abs_return_threshold: float = Field(default=5.0, ge=0.0)
+    volume_gate_threshold: float = Field(default=0.20, ge=0.0)
+    require_volume_confirmation: bool = True
+    corporate_action_buffer_days: int = Field(default=5, ge=0)
+    # Tickers that still have more than this many extreme daily returns after
+    # per-date masking are chronically mis-adjusted.  Their entire price series
+    # is dropped to NaN so they cannot contaminate factor scores.
+    # Set to 0 to disable the chronic-ticker pass.
+    chronic_ticker_max_extreme_days: int = Field(default=5, ge=0)
+
+
 class AdjustmentSpec(BaseModel):
     """Corporate-action adjustment audit/repair configuration.
 
@@ -248,4 +280,5 @@ class BacktestSpec(BaseModel):
     overlay: OverlayConfig | None = None
     execution_policy: ExecutionPolicySpec = Field(default_factory=ExecutionPolicySpec)
     scrubbing: ScrubbingSpec | None = None
+    anomaly_filter: AnomalyFilterSpec | None = None
     adjustments: AdjustmentSpec | None = None

@@ -77,6 +77,21 @@ class SizeFactor:
         # forward-filled up to mc_ffill_days, so we just take the last value)
         most_recent_mcap = mcap_df.loc[avail_idx, available_tickers].iloc[-1]
 
+        # If majority of the universe has NaN market_cap, fall back to proxy.
+        # This covers pre-2022 periods where shares-outstanding data is absent.
+        if (
+            most_recent_mcap.isna().mean() > 0.5
+            and not panel.market_cap_proxy.empty
+        ):
+            proxy_df = panel.market_cap_proxy
+            proxy_avail = proxy_df.index[proxy_df.index < t_naive]
+            if len(proxy_avail) > 0:
+                proxy_tickers = [tk for tk in available_tickers if tk in proxy_df.columns]
+                if proxy_tickers:
+                    proxy_row = proxy_df.loc[proxy_avail, proxy_tickers].dropna(how="all")
+                    if not proxy_row.empty:
+                        most_recent_mcap = proxy_row.iloc[-1].reindex(available_tickers)
+
         # Compute -log(mcap) where mcap is valid
         scores = -np.log(most_recent_mcap)
 

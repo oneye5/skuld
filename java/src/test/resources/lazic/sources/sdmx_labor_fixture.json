@@ -1,0 +1,23 @@
+{
+  "structure": {
+    "dimensions": {
+      "observation": [
+        {"id": "FREQ",             "values": [{"id": "A"}]},
+        {"id": "REF_AREA",         "values": [{"id": "NZL"}, {"id": "NZL_AUK"}]},
+        {"id": "GEO_SCOPE",        "values": [{"id": "NZL"}]},
+        {"id": "TERRITORIAL_LEVEL","values": [{"id": "NAT"}, {"id": "REG"}]},
+        {"id": "MEASURE",          "values": [{"id": "POP"}, {"id": "LF"}, {"id": "EMP"}, {"id": "UNE"}]},
+        {"id": "AGE",              "values": [{"id": "Y15T24"}, {"id": "Y_GT15"}, {"id": "Y15T64"}]},
+        {"id": "SEX",              "values": [{"id": "M"}, {"id": "F"}, {"id": "_T"}]},
+        {"id": "UNIT_MEASURE",     "values": [{"id": "N"}]},
+        {"id": "TIME_PERIOD",      "values": [{"id": "2005"}]}
+      ]
+    }
+  },
+  "dataSets": [{
+    "observations": {
+      "0:0:0:0:3:0:0:0:0": [11.3],
+      "0:1:0:1:3:0:0:0:0": [4500.0]
+    }
+  }]
+}

@@ -1,9 +1,9 @@
 # Methodology Report
 
 **Config hash:** 4dd5177fe965a6a703fe04c9ad0ec24e30b2eab6f00876657004a930b74ef489
-**Git SHA:** 8858478-dirty
+**Git SHA:** acdc0a7-dirty
 **As-of date:** 2026-01-01
-**Panel coverage:** 1970-01-03 to 2025-12-31
+**Panel coverage:** 1970-01-02 to 2025-12-31
 **Master seed:** 42
 **Prior trials:** 30
 
@@ -25,18 +25,18 @@ Changing this order is a breaking change to reproducibility.
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Strategy | -0.302 | -0.765 | -0.360 | -27.83% | -27.83% | -41.72% | 11.01% | 9024 | 34.84% | 2.054 | -0.094 | 1 | 1 |
+| Strategy | -0.116 | -0.563 | -0.172 | -17.45% | -17.45% | -33.21% | 7.84% | 6957 | 27.10% | 6.965 | -0.059 | 1 | 1 |
 
 ### Rolling Driver (Gating Reference)
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Strategy | -0.133 | -0.516 | -0.181 | -21.06% | -21.06% | -29.04% | 17.17% | 9553 | 50.51% | 1.700 | -0.066 | 9 | 3 |
+| Strategy | 0.066 | -0.299 | 0.021 | -11.20% | -11.20% | -22.21% | 12.02% | 6975 | 39.39% | 5.681 | 0.065 | 9 | 3 |
 
 ### Per-Regime Sharpe (Rolling Driver)
 
-- **bull:** -0.050
-- **chop:** -0.331
+- **bull:** 0.303
+- **chop:** -0.635
 
 ## Benchmarks
 
@@ -65,19 +65,19 @@ Changing this order is a breaking change to reproducibility.
 
 **Notes:**
 - 20M NZD mcap floor
-- ADV filter not implemented
+- 10,000 share ADV floor
 
 #### Two-Fold Driver
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| NZX equal-weighted | -0.483 | -0.483 | -0.483 | -30.50% | -30.50% | -30.50% | 0.00% | 0 | 25.72% | 1.163 | -0.089 | 2 | 0 |
+| NZX equal-weighted | -0.287 | -0.287 | -0.287 | -28.65% | -28.65% | -28.65% | 0.00% | 0 | 27.33% | 1.260 | -0.057 | 2 | 0 |
 
 #### Rolling Driver
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| NZX equal-weighted | 0.070 | 0.070 | 0.070 | -21.57% | -21.57% | -21.57% | 0.00% | 0 | 55.56% | 0.473 | 0.027 | 12 | 0 |
+| NZX equal-weighted | 0.351 | 0.351 | 0.351 | -15.43% | -15.43% | -15.43% | 0.00% | 0 | 59.03% | 0.440 | 0.188 | 12 | 0 |
 
 ### 60/40
 
@@ -92,21 +92,20 @@ Changing this order is a breaking change to reproducibility.
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 60/40 | 0.195 | 0.195 | 0.195 | -13.27% | -13.27% | -13.27% | 0.00% | 0 | 64.94% | -1.068 | 0.097 | 2 | 0 |
+| 60/40 | 0.389 | 0.389 | 0.389 | -13.00% | -13.00% | -13.00% | 0.00% | 0 | 67.53% | -0.399 | 0.206 | 2 | 0 |
 
 #### Rolling Driver
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 60/40 | 0.728 | 0.728 | 0.728 | -4.34% | -4.34% | -4.34% | 0.00% | 0 | 68.93% | 0.001 | 0.865 | 12 | 0 |
+| 60/40 | 0.986 | 0.986 | 0.986 | -4.34% | -4.34% | -4.34% | 0.00% | 0 | 73.79% | 0.410 | 1.292 | 12 | 0 |
 
 ## Dominance (Romano-Wolf Stepwise)
 
 | Benchmark | Adjusted p-value | Dominates |
 |---|---|---|
-| NZ TD floor | 0.9965 | False |
-| NZX equal-weighted | 0.9710 | False |
-| 60/40 | 0.9900 | False |
+| NZX equal-weighted | 0.8175 | False |
+| 60/40 | 0.8185 | False |
 
 ## Gating Decision
 
@@ -114,20 +113,23 @@ Changing this order is a breaking change to reproducibility.
 
 ### Bars
 
-- **sanity_floor:** ✗ — Sharpe -0.52 ≤ 0.00
-- **bootstrap_ci:** ✗ — 95% CI low -0.50 ≤ 0
-- **deflated_sharpe:** ✗ — p=0.9993 > 0.05
-- **dominance_NZ TD floor:** ✗ — p_adj=0.9965 > 0.05
-- **dominance_NZX equal-weighted:** ✗ — p_adj=0.9710 > 0.05
-- **dominance_60/40:** ✗ — p_adj=0.9900 > 0.05
+- **sanity_floor:** ✗ — Sharpe -0.30 ≤ 0.00
+- **bootstrap_ci:** ✗ — 95% CI low -0.41 ≤ 0
+- **deflated_sharpe:** ✗ — p=0.9848 > 0.05
+- **td_excess_return:** ✗ — Mean excess -5.62% ≤ 0 or p=0.8910 > 0.05
+- **dominance_NZX equal-weighted:** ✗ — p_adj=0.8175 > 0.05
+- **dominance_60/40:** ✗ — p_adj=0.8185 > 0.05
 
-**Notes:** Kept folds: 9; Rejected folds: 3; n_trials: 39 (prior: 30, ledger: 9); Per-regime Sharpe: bull=-0.05, chop=-0.33
+**Notes:** Kept folds: 9; Rejected folds: 3; n_trials: 41 (prior: 30, ledger: 11); Per-regime Sharpe: bull=0.30, chop=-0.63
 
 ## Pass / Fail
 
-- **Sanity floor (TD floor):** ✗ FAIL — Strategy Sharpe -0.181 ≤ TD floor Sharpe 1.207
-- **Primary benchmark (NZX equal-weighted) via Romano-Wolf:** ✗ FAIL — Dominates=False, p_adj=0.9710 > 0.05
-- **Deflated Sharpe:** ✗ FAIL — Deflated Sharpe p=0.9993 > 0.05
+- **Sanity floor:** ✗ FAIL — Sharpe -0.30 ≤ 0.00
+- **Bootstrap CI:** ✗ FAIL — 95% CI low -0.41 ≤ 0
+- **Deflated Sharpe:** ✗ FAIL — p=0.9848 > 0.05
+- **TD excess return:** ✗ FAIL — Mean excess -5.62% ≤ 0 or p=0.8910 > 0.05
+- **Benchmark (NZX equal-weighted) via Romano-Wolf:** ✗ FAIL — p_adj=0.8175 > 0.05
+- **Benchmark (60/40) via Romano-Wolf:** ✗ FAIL — p_adj=0.8185 > 0.05
 
 ### Rejected Folds
 

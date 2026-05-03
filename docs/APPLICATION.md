@@ -96,8 +96,6 @@ The Java layer is intentionally separate and feeds the Python pipeline via the l
 
 Data sources self-register into an `IngestManager` singleton at construction time. All sources are fetched in parallel. The output is a single CSV with a uniform schema: `(timestamp, ticker, feature, value, src)`. The Python side routes rows to the appropriate frame by `feature` name and ticker presence; the `src` column is used for audit and staleness reporting only.
 
-See [Java Architecture](../java/docs/ARCHITECTURE.md) and [Java Data Sources](../java/docs/DATA_SOURCES.md) for full details.
-
 ---
 
 ## Key Design Principles

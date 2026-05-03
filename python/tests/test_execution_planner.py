@@ -272,3 +272,37 @@ def test_plan_trades_default_does_not_defer_at_fee_cliff():
 
     assert set(trades.trades["action"]) == {"BUY"}
     assert trades.total_volume_nzd == pytest.approx(6_000.0)
+
+
+def test_plan_trades_uses_per_ticker_spread_for_size_floor_and_costs():
+    """Planner should match research AR-spread costs when a spread panel is supplied."""
+    current = CurrentPortfolio(
+        holdings=pd.Series([0], index=["AIR"], dtype=int),
+        prices=pd.Series([1.0], index=["AIR"], dtype=float),
+        cash_nzd=10_000.0,
+    )
+    target = TargetPortfolio(
+        weights=pd.Series([0.10], index=["AIR"], dtype=float),
+        cash_weight=0.90,
+        method="test",
+        asof=pd.Timestamp("2026-01-01", tz="UTC"),
+    )
+
+    trades = plan_trades(
+        target=target,
+        current=current,
+        cost_model=CostModel(CostConfig(spread_bps=1.0, sharesies_monthly_fee_nzd=0.0)),
+        no_trade_threshold=0.0,
+        size_floor_nzd=0.0,
+        size_floor_cost_multiple=2.0,
+        sharesies_coverage_nzd=5_000.0,
+        sharesies_excess_bps=190.0,
+        config_hash="test",
+        per_ticker_spread_bps=pd.Series({"AIR": 6_000.0}),
+    )
+
+    row = trades.trades.iloc[0]
+    assert row["action"] == "HOLD"
+    assert bool(row["below_size_floor"]) is True
+    assert row["est_round_trip_cost_nzd"] == pytest.approx(600.0)
+    assert trades.total_estimated_cost_nzd == pytest.approx(0.0)

@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
-
+from typing import Any
 
 # Implicit hypothesis tests baked into M0.5–M4
 n_trials_prior: int = 30
@@ -30,7 +30,7 @@ class TrialLedger:
         root: base directory for ledger files.
         scope: subdirectory name (e.g., "production", "exploration").
     """
-    
+
     def __init__(self, root: Path, scope: str):
         self.root = self._resolve_root(root, scope)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -57,7 +57,7 @@ class TrialLedger:
                     stripped = line.strip()
                     if stripped:
                         yield json.loads(stripped)
-    
+
     def append(self, entry: dict) -> None:
         """Append an entry to the ledger.
         
@@ -67,15 +67,15 @@ class TrialLedger:
 
         with file_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry) + "\n")
-    
+
     def all_entries(self) -> list[dict]:
         """Read all entries across all years."""
         return list(self._iter_entries())
-    
+
     def n_unique_trials(self) -> int:
         """Count unique spec_hash values (dedup at read time)."""
         return len({entry["spec_hash"] for entry in self._iter_entries()})
-    
+
     def contains(self, spec_hash: str) -> bool:
         """Check if a spec_hash exists in the ledger."""
         return any(entry["spec_hash"] == spec_hash for entry in self._iter_entries())
@@ -83,13 +83,13 @@ class TrialLedger:
 
 class ProductionTrialLedger(TrialLedger):
     """Production trial ledger."""
-    
+
     def __init__(self, root: Path = Path("trial_ledger") / "production"):
         super().__init__(root=root, scope="production")
 
 
 class ExplorationTrialLedger(TrialLedger):
     """Exploration trial ledger."""
-    
+
     def __init__(self, root: Path = Path("trial_ledger") / "exploration"):
         super().__init__(root=root, scope="exploration")

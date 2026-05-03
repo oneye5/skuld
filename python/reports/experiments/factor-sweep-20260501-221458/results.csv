@@ -1,0 +1,18 @@
+label,lane,status,spec_hash,oos_sharpe_raw,oos_sharpe_delisting_adjusted,total_return,max_drawdown,turnover_mean,n_kept_folds,n_rejected_folds,gating_passes,error
+disc-mom-bme-mcap0-flat,discovery,ok,fde17d81681f5632e075e9b5f5dfd92a93122b6d48e83d372b8821464b1812c9,-0.3323791901022986,-0.37496266088190067,,,,21,0,False,
+disc-mom-bme-mcap0-flat-overlay,discovery,ok,2073924cb3b8af880dfb419c9fd8781f5ad4215666037d84903d908aeed89f02,-0.3323791901022986,-0.37496266088190067,,,,21,0,False,
+disc-mom-bme-mcap0-abdi_ranaldo,discovery,ok,ff3d6d7cd5d969c566ef761aace86cd52a7678181682302c0b170ac75c315893,0.77070649124188,0.726417293346341,,,,21,0,False,
+disc-mom-bme-mcap0-abdi_ranaldo-overlay,discovery,ok,1aafe99fb793fad6fd08d6ed454319ab98476c28c9e904ee26fbb8698d6388b0,0.77070649124188,0.726417293346341,,,,21,0,False,
+disc-mom-bme-mcap20-flat,discovery,ok,c6f98625fd9e029a2e3853f6aae109715ff4cab71ef2bd518e6740cbd51992af,0.03189416885326688,-0.006439609752321662,,,,9,3,False,
+disc-mom-bme-mcap20-flat-overlay,discovery,ok,75dcdf63cca5bfcee9b5b027296ac583594be605dfecff805d4a873e225125fb,0.03189416885326688,-0.006439609752321662,,,,9,3,False,
+disc-mom-bme-mcap20-abdi_ranaldo,discovery,failed,,,,,,,,,,"MemoryError: Unable to allocate 44.6 MiB for an array with shape (5849093,) and data type object"
+disc-mom-bme-mcap20-abdi_ranaldo-overlay,discovery,failed,,,,,,,,,,"MemoryError: Unable to allocate 44.6 MiB for an array with shape (5849093,) and data type int64"
+disc-mom-bqe-mcap0-flat,discovery,ok,19668ccbf16a80d03fc2fc0ac0ea619ffbbfa5ca418eb4a1dad0d021d21a4077,0.1558002760051195,0.1341463550604709,,,,21,0,False,
+disc-mom-bqe-mcap0-flat-overlay,discovery,ok,eb1db99565ff21eaf75e29c8da2f9d9b72682cb7bf1c25dc116551aeedab5681,0.1558002760051195,0.1341463550604709,,,,21,0,False,
+disc-mom-bqe-mcap0-abdi_ranaldo,discovery,failed,,,,,,,,,,"MemoryError: Unable to allocate 5.58 MiB for an array with shape (5849093,) and data type uint8"
+disc-mom-bqe-mcap0-abdi_ranaldo-overlay,discovery,ok,c3fda9bffbbc24bf072cdac9c0879ffe3186f1fedcd60d9c2d5b806fe8a910df,1.0634602969716107,1.0416617160626116,,,,21,0,False,
+disc-mom-bqe-mcap20-flat,discovery,ok,3bff4cb0483f8135cec499bbc01cc2eb63d4162dbcb2356985b9eb935c0e61cf,0.22431032940998263,0.19146279224189158,,,,9,3,False,
+disc-mom-bqe-mcap20-flat-overlay,discovery,ok,4bf48c80223f62aa53e897c738a2326dce22899f054fa438ffa4fde426158e94,0.22431032940998263,0.19146279224189158,,,,9,3,False,
+disc-mom-bqe-mcap20-abdi_ranaldo,discovery,ok,664781834aa6d9f5d3c2cabba2c8ff5b8694351412f43bd32c801254599f7df0,1.1317592011345126,1.0990201110513085,,,,9,3,False,
+disc-mom-bqe-mcap20-abdi_ranaldo-overlay,discovery,ok,fb4c48fec3b96830f6c0bfbd1d70a741edec53e7f17b7aaa5d858bd841642097,1.1317592011345126,1.0990201110513085,,,,9,3,False,
+disc-mom-s3-bme-mcap0-flat,discovery,ok,682e06dfa68e4f22119ba8464641d04e7e8dbef1f25fb7671fb094e1130e140e,-0.08094800555478592,-0.12398367687275277,,,,21,0,False,

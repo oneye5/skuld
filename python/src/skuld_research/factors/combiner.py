@@ -17,7 +17,6 @@ grand mean (≈ 0 after z-scoring).
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from skuld_common.contracts import CombinedScores

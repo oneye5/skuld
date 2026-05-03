@@ -41,24 +41,24 @@ def write_recommendations_csv(
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Build output DataFrame
     df = trades.trades.copy()
-    
+
     # Rebalance date (same for all rows)
     df.insert(0, "rebalance_date", trades.asof.date().isoformat())
-    
+
     # Weights: use equity NAV (sum of target values) as denominator.
     equity_nav = df["target_value_nzd"].sum()
     df["current_weight"] = df["current_value_nzd"] / equity_nav if equity_nav > 0 else 0.0
     df["target_weight"] = df["target_value_nzd"] / equity_nav if equity_nav > 0 else 0.0
-    
+
     # combined_score_z: populated from CombinedScores when available.
     if combined_scores is not None:
         df["combined_score_z"] = df["ticker"].map(combined_scores.scores).fillna(0.0)
     else:
         df["combined_score_z"] = 0.0
-    
+
     # Dynamic factor columns: factor_<kind>_z, one per factor in spec.
     for factor_spec in spec.factors:
         col_name = f"factor_{factor_spec.kind}_z"
@@ -72,20 +72,20 @@ def write_recommendations_csv(
                 df[col_name] = 0.0
         else:
             df[col_name] = 0.0
-    
+
     # Rationale (simplified)
     df["rationale"] = df["action"].apply(
         lambda a: f"{a} per target portfolio" if a in ["BUY", "SELL"] else "Hold or deferred"
     )
-    
+
     # Write main CSV
     df.to_csv(output_path, index=False)
-    
+
     # Write sidecar JSON
     meta_path = output_path.with_suffix(".meta.json")
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
-    
+
     # Write empty overrides log
     asof_date = pd.Timestamp(trades.asof).date().isoformat()
     overrides_path = output_path.parent / f"overrides_log_{asof_date}.csv"

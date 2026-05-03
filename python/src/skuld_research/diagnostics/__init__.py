@@ -6,6 +6,12 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from skuld_research.diagnostics.attribution import AttributionReport, attribute_returns
+    from skuld_research.diagnostics.factor_comparison import (
+        FactorComparisonReport,
+        compare_factors,
+    )
+    from skuld_research.diagnostics.audit import PipelineAuditReport, audit_pipeline
     from skuld_research.diagnostics.decay import alpha_decay
     from skuld_research.diagnostics.decomposition import factor_decomposition
     from skuld_research.diagnostics.ic import ranking_ic
@@ -22,6 +28,15 @@ _EXPORTS = {
         "skuld_research.diagnostics.report",
         "write_diagnostics_report",
     ),
+    "audit_pipeline": ("skuld_research.diagnostics.audit", "audit_pipeline"),
+    "PipelineAuditReport": ("skuld_research.diagnostics.audit", "PipelineAuditReport"),
+    "attribute_returns": ("skuld_research.diagnostics.attribution", "attribute_returns"),
+    "AttributionReport": ("skuld_research.diagnostics.attribution", "AttributionReport"),
+    "compare_factors": ("skuld_research.diagnostics.factor_comparison", "compare_factors"),
+    "FactorComparisonReport": (
+        "skuld_research.diagnostics.factor_comparison",
+        "FactorComparisonReport",
+    ),
 }
 
 __all__ = [
@@ -29,6 +44,12 @@ __all__ = [
     "alpha_decay",
     "factor_decomposition",
     "write_diagnostics_report",
+    "audit_pipeline",
+    "PipelineAuditReport",
+    "attribute_returns",
+    "AttributionReport",
+    "compare_factors",
+    "FactorComparisonReport",
 ]
 
 

@@ -100,8 +100,13 @@ def compute_abdi_ranaldo_spread_panel(
     raw = raw.clip(lower=0.0)
     s_daily = 2.0 * np.sqrt(raw)  # effective spread as fraction of price
 
-    # Trailing-window mean over valid observations
-    s_window = s_daily.rolling(window=window, min_periods=min_obs).mean()
+    # Collapse intra-day timestamps to one row per date to densify the index.
+    if isinstance(s_daily.index, pd.DatetimeIndex):
+        s_daily_normalized = s_daily.groupby(s_daily.index.normalize()).last()
+        s_window = s_daily_normalized.rolling(window=window, min_periods=min_obs).mean()
+        s_window = s_window.reindex(s_daily.index.normalize()).set_axis(s_daily.index)
+    else:
+        s_window = s_daily.rolling(window=window, min_periods=min_obs).mean()
 
     # Convert to per-side bps. Effective spread is the round-trip cost as a
     # fraction of price; per side is half.

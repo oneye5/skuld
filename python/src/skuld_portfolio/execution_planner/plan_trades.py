@@ -25,6 +25,7 @@ def plan_trades(
     config_hash: str,
     expected_alpha: pd.Series | None = None,
     execution_policy: ExecutionPolicyConfig | None = None,
+    per_ticker_spread_bps: pd.Series | None = None,
 ) -> TradeList:
     """Plan trades from current holdings to target portfolio.
 
@@ -98,7 +99,13 @@ def plan_trades(
 
     # 6. Size floor (matches engine logic exactly)
     delta_values_abs = delta_values.abs()
-    spread_cost_per_trade = delta_values_abs * cost_model.config.spread_bps / 10_000
+    if per_ticker_spread_bps is None:
+        spread_bps = pd.Series(cost_model.config.spread_bps, index=all_tickers)
+    else:
+        spread_bps = per_ticker_spread_bps.reindex(all_tickers).fillna(
+            cost_model.config.spread_bps
+        )
+    spread_cost_per_trade = delta_values_abs * spread_bps / 10_000
     size_floor_per_trade = np.maximum(
         size_floor_nzd,
         size_floor_cost_multiple * spread_cost_per_trade,
@@ -195,7 +202,12 @@ def plan_trades(
         if not executed.empty
         else pd.Series(dtype=float)
     )
-    cost_bd = cost_model.compute_period_costs(exec_values)
+    if not executed.empty:
+        exec_values.index = executed["ticker"]
+    cost_bd = cost_model.compute_period_costs(
+        exec_values,
+        per_ticker_spread_bps=per_ticker_spread_bps,
+    )
     total_cost = cost_bd.total_cost_nzd
 
     return TradeList(

@@ -3,7 +3,6 @@
 import pandas as pd
 
 from skuld_common.validation import (
-    ValidationReport,
     detect_duplicate_observations,
     detect_gaps,
     detect_invalid_corporate_actions,

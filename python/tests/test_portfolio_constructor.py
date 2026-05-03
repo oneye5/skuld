@@ -5,6 +5,8 @@ These tests are written before the implementation (TDD red phase).
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -181,6 +183,35 @@ def test_portfolio_respects_per_name_cap():
     )
 
 
+def test_build_target_portfolio_caps_weight_by_adv_and_nav():
+    """ADV participation caps should limit a name by rebalance-date ADV and NAV."""
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = [f"T{i:02d}.NZ" for i in range(10)]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    scores = _make_combined_scores(
+        tickers,
+        [10.0, 9.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0],
+        t,
+    )
+
+    result = build_target_portfolio(
+        scores,
+        panel,
+        t,
+        cash_floor=0.0,
+        max_position=1.0,
+        min_return_obs=1,
+        adv=pd.Series({"T00.NZ": 2_000.0, "T01.NZ": 1_000_000.0}),
+        portfolio_nav=10_000.0,
+        adv_participation_cap=0.02,
+    )
+
+    assert result.weights["T00.NZ"] == pytest.approx(0.004)
+    assert result.cash_weight > 0.0
+
+
 def test_single_candidate_fallback_respects_per_name_cap():
     """Single-name fallback leaves excess cash instead of breaching max_position."""
     from skuld_research.portfolio.optimizer import build_target_portfolio
@@ -201,6 +232,108 @@ def test_single_candidate_fallback_respects_per_name_cap():
 
     assert result.weights.to_dict() == pytest.approx({"A.NZ": 0.25})
     assert result.cash_weight == pytest.approx(0.75)
+
+
+def test_min_names_tightens_effective_per_name_cap():
+    """A breadth target should leave excess cash rather than concentrate in few names."""
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    scores = _make_combined_scores(tickers, [2.0, -1.0, -2.0, -3.0], t)
+
+    result = build_target_portfolio(
+        scores,
+        panel,
+        t,
+        cash_floor=0.0,
+        max_position=0.25,
+        min_names=10,
+        min_return_obs=1,
+    )
+
+    assert result.weights.to_dict() == pytest.approx({"A.NZ": 0.10})
+    assert result.cash_weight == pytest.approx(0.90)
+
+
+def test_min_names_admits_more_than_top_quintile_candidates():
+    """Minimum breadth should expand the candidate set when enough positive names exist."""
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = [f"T{i:02d}.NZ" for i in range(20)]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    scores = _make_combined_scores(tickers, list(range(20, 0, -1)), t)
+
+    result = build_target_portfolio(
+        scores,
+        panel,
+        t,
+        cash_floor=0.0,
+        max_position=0.25,
+        min_names=10,
+        min_return_obs=1,
+    )
+
+    assert (result.weights > 1e-6).sum() >= 10
+    assert result.weights.max() <= 0.10 + 1e-6
+
+
+def test_single_candidate_fallback_respects_adv_participation_cap():
+    """Single-name fallback should still respect the ADV participation cap."""
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    scores = _make_combined_scores(tickers, [2.0, -1.0, -2.0, -3.0], t)
+
+    result = build_target_portfolio(
+        scores,
+        panel,
+        t,
+        cash_floor=0.05,
+        max_position=1.0,
+        min_return_obs=1,
+        adv=pd.Series({"A.NZ": 2_000.0}),
+        portfolio_nav=10_000.0,
+        adv_participation_cap=0.02,
+    )
+
+    assert result.weights.to_dict() == pytest.approx({"A.NZ": 0.004})
+    assert result.cash_weight == pytest.approx(0.996)
+
+
+def test_history_screened_fallback_excludes_invalid_candidates():
+    """Fallback allocation should only include names that passed the return-history screen."""
+    from skuld_research.portfolio.optimizer import build_target_portfolio
+
+    tickers = [f"T{i:02d}.NZ" for i in range(10)]
+    t = pd.Timestamp("2024-09-30")
+    panel = _make_panel_for_portfolio(tickers)
+    returns_daily = panel.returns_daily.copy()
+    returns_daily["T01.NZ"] = np.nan
+    returns_daily.loc[returns_daily.index[-1], "T01.NZ"] = 0.01
+    panel = replace(panel, returns_daily=returns_daily)
+    scores = _make_combined_scores(
+        tickers,
+        [10.0, 9.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0],
+        t,
+    )
+
+    result = build_target_portfolio(
+        scores,
+        panel,
+        t,
+        cash_floor=0.0,
+        max_position=1.0,
+        return_window_days=10,
+        min_return_obs=5,
+    )
+
+    assert result.weights.to_dict() == pytest.approx({"T00.NZ": 1.0})
+    assert "T01.NZ" not in result.weights.index
 
 
 def test_no_positive_scores_returns_cash_instead_of_equal_weight_universe():

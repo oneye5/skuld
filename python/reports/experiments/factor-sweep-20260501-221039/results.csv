@@ -1,0 +1,2 @@
+label,lane,status,spec_hash,oos_sharpe_raw,oos_sharpe_delisting_adjusted,total_return,max_drawdown,turnover_mean,n_kept_folds,n_rejected_folds,gating_passes,error
+disc-mom-bme-mcap0-abdi_ranaldo-overlay,discovery,ok,85b685c7ae0c05eb46f264f024b75656f515d0f97c550444e4830130dd24d557,0.7707064912418798,0.7264172933463408,,,,21,0,False,

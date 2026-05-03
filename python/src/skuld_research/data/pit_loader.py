@@ -33,6 +33,7 @@ class PITLoader:
         Returns:
             PITSnapshot with all frames filtered to dates < t.
         """
+        t = pd.Timestamp(t)
         t_naive = t.tz_localize(None) if t.tzinfo else t
 
         prices = self._filter_by_index(self._raw.prices, t_naive)

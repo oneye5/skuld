@@ -10,7 +10,7 @@ from skuld_research.config.spec import BacktestSpec
 def spec_hash(spec: BacktestSpec) -> str:
     """Compute SHA-256 hash of spec in canonical JSON form.
 
-    The `overlay` and `execution_policy` fields are omitted from the hash when
+    The `overlay` and other opt-in fields are omitted from the hash when
     disabled. This ensures backward compatibility: specs without those blocks
     produce the same hash as before the fields were added.
 
@@ -38,6 +38,21 @@ def spec_hash(spec: BacktestSpec) -> str:
     ):
         del dump["scrubbing"]
 
+    # Omit anomaly filtering if absent or kind == "none". Disabled anomaly
+    # masking must not change hashes for specs registered before the field
+    # was added.
+    if "anomaly_filter" in dump and (
+        dump["anomaly_filter"] is None or dump["anomaly_filter"].get("kind") == "none"
+    ):
+        del dump["anomaly_filter"]
+
+    # Omit chronic_ticker_max_extreme_days from hash when at its default (5)
+    # to preserve backward compatibility with specs registered before the field
+    # was added.
+    af = dump.get("anomaly_filter")
+    if isinstance(af, dict) and af.get("chronic_ticker_max_extreme_days") == 5:
+        af.pop("chronic_ticker_max_extreme_days", None)
+
     # Omit adjustments if absent or kind == "off". Disabled corp-action
     # audit/repair must not change hashes for specs registered before the
     # field was added.
@@ -60,6 +75,28 @@ def spec_hash(spec: BacktestSpec) -> str:
     universe = dump.get("universe")
     if isinstance(universe, dict) and universe.get("rebalance_freq") == "BME":
         del universe["rebalance_freq"]
+
+    # Omit backtest fields when at their defaults — preserves backward
+    # compatibility for specs registered before these fields were added.
+    backtest = dump.get("backtest")
+    if isinstance(backtest, dict):
+        # smoothing_alpha: weight-blending, added after initial registration
+        if backtest.get("smoothing_alpha") == 0.0:
+            backtest.pop("smoothing_alpha", None)
+        # min_names: minimum positions floor, None means disabled
+        if backtest.get("min_names") is None:
+            backtest.pop("min_names", None)
+        # adv_participation_cap: ADV cap, 0.01 was the implicit default
+        if backtest.get("adv_participation_cap") == 0.01:
+            backtest.pop("adv_participation_cap", None)
+        # turnover_budget_frac: turnover cap, None means disabled
+        if backtest.get("turnover_budget_frac") is None:
+            backtest.pop("turnover_budget_frac", None)
+
+    # Omit benchmarks.sixty_forty_bond_duration_years when at default (0.0)
+    benchmarks = dump.get("benchmarks")
+    if isinstance(benchmarks, dict) and benchmarks.get("sixty_forty_bond_duration_years") == 0.0:
+        benchmarks.pop("sixty_forty_bond_duration_years", None)
 
     # Omit cost spread-model fields when at defaults — preserves backward
     # compatibility for specs registered before the AR estimator was added.

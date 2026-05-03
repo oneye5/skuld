@@ -34,7 +34,7 @@
 - `java/src/main/java/lazic/sources/GlobalFoodPrices.java`
 - `java/src/main/java/lazic/sources/GlobalAquacultureProduction.java`
 - `java/src/main/java/lazic/sources/WikimediaPageviews.java`
-- `java/docs/DATA_SOURCES.md` (convention note)
+
 
 ---
 
@@ -169,7 +169,7 @@ import java.time.LocalDateTime;
  * Lag is added to the period END (computed from cadence), not the period start.
  *
  * Convention: all DataPoint timestamps in this codebase represent knowledge-time, not
- * event-time. See java/docs/DATA_SOURCES.md.
+ * event-time.
  */
 public final class ReleaseDate {
     private ReleaseDate() {}
@@ -563,24 +563,9 @@ Expected: BUILD SUCCESS.
 ## Task 12: Documentation
 
 **Files:**
-- Modify: `java/docs/DATA_SOURCES.md`
 - Modify: `.github/copilot-instructions.md` (docs index)
 
-- [ ] **Step 1: Add convention note to `java/docs/DATA_SOURCES.md`**
-
-At the top of the document, immediately after any existing intro paragraph, insert:
-
-```markdown
-## Timestamp convention
-
-All `DataPoint.timestamp` values represent the **earliest moment the datapoint was first publicly knowable in NZ time**, not the underlying period it describes. For example, NZ Q1 2024 GDP — covering Jan–Mar — is stamped around mid-June 2024, reflecting the typical Stats NZ release lag.
-
-Each source declares its release lag as a `RELEASE_LAG` constant near the top of the class, with a comment citing the publishing agency's release calendar. Lag is applied via `lazic.utils.ingest.ReleaseDate.applyLag(periodStart, cadence, lag)` at the single point each `DataPoint` is constructed. See spec `docs/specs/2026-04-30-lookahead-bias-remediation.md`.
-
-Sources unaffected by this convention (price/intraday data already correctly stamped): `YfPrices`, `YfFinances`, `NzRatesFx`.
-```
-
-- [ ] **Step 2: Add spec to docs index in `.github/copilot-instructions.md`**
+- [ ] **Step 1: Add spec to docs index in `.github/copilot-instructions.md`**
 
 Find the "Plans and specs" → spec list under the `## Documentation index` section. Add an entry (kept alphabetically/chronologically correct):
 

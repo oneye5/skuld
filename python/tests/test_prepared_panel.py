@@ -283,3 +283,494 @@ def test_prepared_panel_rebalance_freq_returns_monthly_unchanged():
     panel_m = build_prepared_panel(snap)
     panel_q = build_prepared_panel(snap, rebalance_freq="BQE")
     pd.testing.assert_frame_equal(panel_m.returns_monthly, panel_q.returns_monthly)
+
+
+def test_prepared_panel_anomaly_masks_extreme_daily_move_without_volume_confirmation():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-01-02", periods=4)
+    prices = pd.DataFrame(
+        {"SPK.NZ": [10.0, 50.0, 50.0, 50.0]},
+        index=dates,
+    )
+    prices.index.name = "date"
+    volumes = pd.DataFrame(
+        {"SPK.NZ": [1_000.0, 0.0, 1_000.0, 1_000.0]},
+        index=dates,
+    )
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-01-02"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2024-02-01", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=10.0,
+            volume_gate_threshold=0.20,
+            require_volume_confirmation=True,
+            corporate_action_buffer_days=5,
+        ),
+    )
+
+    assert pd.isna(panel.prices.loc[dates[1], "SPK.NZ"])
+    assert pd.isna(panel.returns_daily.loc[dates[1], "SPK.NZ"])
+
+
+def test_prepared_panel_anomaly_masks_extreme_monthly_move_without_corporate_action():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-01-02", "2024-01-31")
+    prices = pd.DataFrame(
+        {"SPK.NZ": [10.0] * (len(dates) - 1) + [20.0]},
+        index=dates,
+    )
+    prices.index.name = "date"
+    volumes = pd.DataFrame(
+        {"SPK.NZ": np.full(len(dates), 1_000.0)},
+        index=dates,
+    )
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-01-02"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2024-02-10", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=0.50,
+            volume_gate_threshold=10.0,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=5,
+        ),
+    )
+
+    month_end = panel.returns_monthly.index[-1]
+    assert panel.prices.loc[dates[-1], "SPK.NZ"] == pytest.approx(20.0)
+    assert panel.returns_daily.loc[dates[-1], "SPK.NZ"] == pytest.approx(1.0)
+    assert pd.isna(panel.returns_monthly.loc[month_end, "SPK.NZ"])
+
+
+def test_prepared_panel_anomaly_invalidates_monthly_return_when_bme_label_is_not_bad_price_row():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-03-01", "2024-03-28")
+    prices = pd.DataFrame(
+        {"SPK.NZ": [10.0] * (len(dates) - 1) + [20.0]},
+        index=dates,
+    )
+    prices.index.name = "date"
+    volumes = pd.DataFrame(
+        {"SPK.NZ": np.full(len(dates), 1_000.0)},
+        index=dates,
+    )
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-03-01"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2024-04-10", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=0.50,
+            volume_gate_threshold=10.0,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=5,
+        ),
+    )
+
+    month_end = pd.Timestamp("2024-03-29")
+    assert panel.prices.loc[pd.Timestamp("2024-03-28"), "SPK.NZ"] == pytest.approx(20.0)
+    assert panel.returns_daily.loc[pd.Timestamp("2024-03-28"), "SPK.NZ"] == pytest.approx(1.0)
+    assert pd.isna(panel.returns_monthly.loc[month_end, "SPK.NZ"])
+
+
+def test_prepared_panel_anomaly_keeps_large_reversing_daily_move():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-01-02", periods=4)
+    prices = pd.DataFrame(
+        {"SPK.NZ": [10.0, 30.0, 10.0, 10.0]},
+        index=dates,
+    )
+    prices.index.name = "date"
+    volumes = pd.DataFrame(
+        {"SPK.NZ": [1_000.0, 1_000.0, 1_000.0, 1_000.0]},
+        index=dates,
+    )
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-01-02"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2024-02-01", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=1.0,
+            monthly_abs_return_threshold=10.0,
+            volume_gate_threshold=10.0,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=5,
+        ),
+    )
+
+    assert panel.prices.loc[dates[1], "SPK.NZ"] == pytest.approx(30.0)
+    assert panel.returns_daily.loc[dates[1], "SPK.NZ"] == pytest.approx(2.0)
+    assert panel.returns_daily.loc[dates[2], "SPK.NZ"] == pytest.approx(-2.0 / 3.0)
+
+
+def test_prepared_panel_anomaly_masks_intraday_prices_after_daily_normalization():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.to_datetime(
+        [
+            "2024-01-02 10:00:00",
+            "2024-01-02 16:00:00",
+            "2024-01-03 10:00:00",
+            "2024-01-03 16:00:00",
+            "2024-01-04 10:00:00",
+            "2024-01-04 16:00:00",
+        ]
+    )
+    prices = pd.DataFrame(
+        {"SPK.NZ": [10.0, 10.0, 50.0, 50.0, 50.0, 50.0]},
+        index=dates,
+    )
+    prices.index.name = "date"
+    volumes = pd.DataFrame(
+        {"SPK.NZ": [1_000.0, 1_000.0, 0.0, 0.0, 1_000.0, 1_000.0]},
+        index=dates,
+    )
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-01-02"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2024-02-01", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=10.0,
+            volume_gate_threshold=0.20,
+            require_volume_confirmation=True,
+            corporate_action_buffer_days=5,
+        ),
+    )
+
+    assert pd.isna(panel.prices.loc[pd.Timestamp("2024-01-03"), "SPK.NZ"])
+    assert pd.isna(panel.returns_daily.loc[pd.Timestamp("2024-01-03"), "SPK.NZ"])
+
+
+def test_prepared_panel_anomaly_does_not_auto_fail_final_date_volume_confirmation():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-01-02", periods=2)
+    prices = pd.DataFrame({"SPK.NZ": [10.0, 50.0]}, index=dates)
+    prices.index.name = "date"
+    volumes = pd.DataFrame({"SPK.NZ": [1_000.0, 1_000.0]}, index=dates)
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-01-02"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2024-02-01", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=10.0,
+            volume_gate_threshold=0.20,
+            require_volume_confirmation=True,
+            corporate_action_buffer_days=5,
+        ),
+    )
+
+    assert panel.prices.loc[dates[-1], "SPK.NZ"] == pytest.approx(50.0)
+    assert panel.returns_daily.loc[dates[-1], "SPK.NZ"] == pytest.approx(4.0)
+
+
+def test_prepared_panel_anomaly_monthly_corporate_action_uses_offending_trading_date():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-03-01", "2024-03-28")
+    prices = pd.DataFrame(
+        {"SPK.NZ": [10.0] * (len(dates) - 1) + [20.0]},
+        index=dates,
+    )
+    prices.index.name = "date"
+    volumes = pd.DataFrame(
+        {"SPK.NZ": np.full(len(dates), 1_000.0)},
+        index=dates,
+    )
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-03-01"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    corporate_actions = pd.DataFrame(
+        {
+            "ticker": ["SPK.NZ"],
+            "ex_date": [pd.Timestamp("2024-03-28")],
+            "type": ["split"],
+            "factor": [2.0],
+        }
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=corporate_actions,
+        asof=pd.Timestamp("2024-04-10", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=0.50,
+            volume_gate_threshold=10.0,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=0,
+        ),
+    )
+
+    assert panel.returns_monthly.loc[pd.Timestamp("2024-03-29"), "SPK.NZ"] == pytest.approx(1.0)
+
+
+def test_prepared_panel_anomaly_invalidates_extreme_monthly_return_with_mixed_daily_signs():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-01-02", periods=6)
+    prices = pd.DataFrame(
+        {"SPK.NZ": [10.0, 30.0, 20.0, 80.0, 70.0, 80.0]},
+        index=dates,
+    )
+    prices.index.name = "date"
+    volumes = pd.DataFrame({"SPK.NZ": np.full(len(dates), 1_000.0)}, index=dates)
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-01-02"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2024-02-10", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=5.0,
+            volume_gate_threshold=10.0,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=5,
+        ),
+    )
+
+    month_end = panel.returns_monthly.index[-1]
+    assert pd.isna(panel.returns_monthly.loc[month_end, "SPK.NZ"])
+
+
+def test_prepared_panel_volume_gate_respects_nearby_corporate_action():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    dates = pd.bdate_range("2024-01-02", periods=4)
+    prices = pd.DataFrame({"SPK.NZ": [10.0, 50.0, 50.0, 50.0]}, index=dates)
+    prices.index.name = "date"
+    volumes = pd.DataFrame({"SPK.NZ": [1_000.0, 0.0, 1_000.0, 1_000.0]}, index=dates)
+    volumes.index.name = "date"
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [1_000_000.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("SPK.NZ", pd.Timestamp("2024-01-02"))],
+            names=["ticker", "publication_date"],
+        ),
+    )
+    corporate_actions = pd.DataFrame(
+        {"ticker": ["SPK.NZ"], "ex_date": [dates[1]], "type": ["split"], "factor": [5.0]}
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=corporate_actions,
+        asof=pd.Timestamp("2024-02-10", tz="UTC"),
+    )
+
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=10.0,
+            monthly_abs_return_threshold=10.0,
+            volume_gate_threshold=0.20,
+            require_volume_confirmation=True,
+            corporate_action_buffer_days=0,
+        ),
+    )
+
+    assert panel.prices.loc[dates[1], "SPK.NZ"] == pytest.approx(50.0)
+    assert panel.returns_daily.loc[dates[1], "SPK.NZ"] == pytest.approx(4.0)
+
+
+def test_market_cap_proxy_present_and_covers_gaps():
+    """market_cap_proxy should cover pre-publication dates that market_cap misses.
+
+    The synthetic fixture has prices starting 2024-01-02 but only one fundamental
+    publication at 2024-03-01. market_cap is NaN for all dates before that publication.
+    market_cap_proxy should back-fill to cover those pre-publication dates, giving it
+    strictly more non-NaN coverage.
+    """
+    snap = _make_snap(pd.Timestamp("2025-01-01", tz="UTC"))
+    panel = build_prepared_panel(snap)
+
+    assert not panel.market_cap_proxy.empty, "market_cap_proxy should not be empty"
+
+    # Proxy must cover strictly more values: it back-fills pre-publication dates
+    mc_valid = panel.market_cap.notna().sum().sum()
+    proxy_valid = panel.market_cap_proxy.notna().sum().sum()
+    assert proxy_valid > mc_valid, (
+        f"market_cap_proxy ({proxy_valid}) should exceed market_cap ({mc_valid}) coverage "
+        "because proxy back-fills dates before the first fundamental publication"
+    )
+
+    # Verify pre-publication trading dates are NaN in market_cap but non-NaN in proxy
+    pub_date = pd.Timestamp("2024-03-01")
+    pre_pub = panel.market_cap.index[panel.market_cap.index < pub_date]
+    assert len(pre_pub) > 0, "fixture must have dates before publication"
+    # market_cap is NaN pre-publication (shares not yet published)
+    pre_pub_mc = panel.market_cap.loc[pre_pub]
+    assert pre_pub_mc.isna().all().all(), "market_cap should be NaN pre-publication"
+    # proxy is non-NaN wherever prices are non-NaN (bfill provides share count)
+    pre_pub_proxy = panel.market_cap_proxy.loc[pre_pub]
+    prices_pre_pub = panel.prices.loc[pre_pub]
+    price_available = prices_pre_pub.notna()
+    proxy_available = pre_pub_proxy.notna()
+    assert (proxy_available | ~price_available).all().all(), (
+        "market_cap_proxy should be non-NaN wherever prices are available pre-publication"
+    )
+
+    # Magnitudes should be plausible (proxy and market_cap agree post-publication)
+    post_pub = panel.market_cap.index[panel.market_cap.index >= pub_date]
+    if len(post_pub) > 0:
+        mc_post = panel.market_cap.loc[post_pub].stack()
+        proxy_post = panel.market_cap_proxy.loc[post_pub].stack()
+        # Both should be in the same ballpark (ratio close to 1)
+        ratio = (proxy_post / mc_post).dropna()
+        assert (ratio - 1.0).abs().max() < 1e-6, "proxy and market_cap should agree post-publication"
+
+
+def test_market_cap_proxy_no_fundamentals():
+    """market_cap_proxy should be all-NaN (not error) when fundamentals are absent."""
+    dates = pd.bdate_range("2024-01-02", periods=50)
+    prices = pd.DataFrame({"ANZ.NZ": [50.0] * 50}, index=dates)
+    prices.index.name = "date"
+    volumes = pd.DataFrame({"ANZ.NZ": [500_000.0] * 50}, index=dates)
+    volumes.index.name = "date"
+
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=pd.DataFrame(),
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2025-01-01"),
+    )
+    panel = build_prepared_panel(snap)
+    # proxy should exist but be all NaN
+    assert panel.market_cap_proxy.notna().sum().sum() == 0

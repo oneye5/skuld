@@ -41,9 +41,9 @@ def parse_sharesies_csv(path: Path, cash_nzd: float = 0.0) -> CurrentPortfolio:
     """
     if not path.exists():
         raise FileNotFoundError(f"Sharesies CSV not found: {path}")
-    
+
     df = pd.read_csv(path)
-    
+
     # Validate schema
     actual_cols = set(df.columns.tolist())
     if actual_cols != _EXPECTED_COLUMNS:
@@ -58,22 +58,22 @@ def parse_sharesies_csv(path: Path, cash_nzd: float = 0.0) -> CurrentPortfolio:
         msg += "  1. Ensure you exported the 'Shares portfolio' view from Sharesies.\n"
         msg += "  2. Expected columns: " + ", ".join(sorted(_EXPECTED_COLUMNS))
         raise SharesiesSchemaError(msg)
-    
+
     # Empty file (header only) is an error
     if df.empty:
         raise SharesiesSchemaError(
             "Sharesies CSV is empty (header only, no holdings rows).\n"
             "Remediation: Export a non-empty portfolio or check the file."
         )
-    
+
     # Map columns to ticker, shares, price
     tickers = df["Instrument code"].str.strip().tolist()
     shares = df["Shares held"].astype(float).astype(int).tolist()
     prices = df["Latest market price NZD"].astype(float).tolist()
-    
+
     holdings = pd.Series(shares, index=tickers, dtype=int)
     price_series = pd.Series(prices, index=tickers, dtype=float)
-    
+
     return CurrentPortfolio(
         holdings=holdings,
         prices=price_series,

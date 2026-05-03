@@ -1,10 +1,16 @@
-# Momentum + Dividend Yield AR-Spread + Round-Trip Scrubbing Variant
+# Momentum + Dividend Yield AR-Spread + Round-Trip Scrubbing Comparison
 #
-# Identical to `mom-ar-spread-scrubbed.yaml` except for adding a simple
-# trailing dividend-yield factor. The factor sums cash dividend events over the
-# prior 12 months and divides by the last adjusted close strictly before the
-# rebalance date. This uses longer-history corporate-action data rather than
-# sparse post-2021 fundamentals.
+# Comparison-only variant. Identical to `mom-ar-spread-scrubbed.yaml` except for
+# adding a simple trailing dividend-yield factor. The factor sums cash dividend
+# events over the prior 12 months and divides by the last adjusted close
+# strictly before the rebalance date. This uses longer-history corporate-action
+# data rather than sparse post-2021 fundamentals.
+#
+# Methodology status:
+#   Dividend yield should be interpreted as regime-conditional overlay guidance,
+#   not as an always-on production factor, until the engine supports
+#   regime-conditioned factor activation without changing the frozen strategy
+#   semantics. Keep this spec for comparison evidence only.
 #
 # Difference vs mom-ar-spread-scrubbed:
 #   factors:
@@ -13,7 +19,7 @@
 #
 # Read-only — create a new strategy spec instead of editing historical specs.
 name: mom-dividend-yield-ar-spread-scrubbed
-description: "Momentum + dividend yield + AR spread + round-trip scrubber"
+description: "Comparison-only momentum + dividend yield + AR spread + scrubber"
 asof: 2026-01-01
 master_seed: 42
 n_trials_prior: 30
@@ -93,6 +99,7 @@ benchmarks:
   nzx_eq_adv_floor_shares: 10000.0
   sixty_forty_equity_proxy: "FNZ.NZ"
   sixty_forty_bond_macro_field: "long_term_interest_rates"
+  sixty_forty_bond_duration_years: 6.0
   sixty_forty_flat_haircut_bps: 50.0
 
 output:

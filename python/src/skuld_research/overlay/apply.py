@@ -32,17 +32,17 @@ def apply_cash_overlay(
         cash_weight, the target is returned unchanged (same object).
     """
     desired_cash = rule.evaluate(panel, asof)
-    
+
     # Clamp to [0, 1] as a safety (rules should enforce this, but belt-and-suspenders)
     desired_cash = max(0.0, min(1.0, desired_cash))
-    
+
     # Take the maximum of existing cash floor and rule's desired cash
     new_cash = max(target.cash_weight, desired_cash)
-    
+
     # If no change, return the original target
     if abs(new_cash - target.cash_weight) < 1e-9:
         return target
-    
+
     # Re-normalise equity weights to sum to (1 - new_cash)
     old_equity_total = target.weights.sum()
     if old_equity_total < 1e-9:
@@ -52,7 +52,7 @@ def apply_cash_overlay(
         new_equity_total = 1.0 - new_cash
         scale = new_equity_total / old_equity_total
         new_weights = target.weights * scale
-    
+
     # Validate invariants (same as TargetPortfolio's implicit contract)
     equity_sum = new_weights.sum()
     total = equity_sum + new_cash
@@ -61,13 +61,13 @@ def apply_cash_overlay(
             f"apply_cash_overlay produced invalid portfolio: "
             f"equity_sum={equity_sum:.6f}, cash={new_cash:.6f}, total={total:.6f}"
         )
-    
+
     if (new_weights < -1e-9).any():
         raise ValueError(
             f"apply_cash_overlay produced negative weights: "
             f"min={new_weights.min():.6f}"
         )
-    
+
     return TargetPortfolio(
         weights=new_weights,
         cash_weight=new_cash,

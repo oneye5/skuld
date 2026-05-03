@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
  * period start.
  *
  * <p>Convention: all {@link DataPoint#getTimestamp()} values in this codebase
- * represent knowledge-time, not event-time. See {@code java/docs/DATA_SOURCES.md}.
+ * represent knowledge-time, not event-time.
  */
 public final class ReleaseDate {
 	private ReleaseDate() {}

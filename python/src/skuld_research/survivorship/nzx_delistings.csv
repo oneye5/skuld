@@ -1,0 +1,49 @@
+ticker,company_name,reason,terminal_return_12m,delisted_date
+SCY.NZ,Scentre Group NZ,involuntary,-0.91,2001-03-15
+FTX.NZ,Fortex Group,involuntary,-0.87,2001-09-28
+NZO.NZ,NZ Oil & Gas Ltd,voluntary,-0.22,2002-06-14
+MBL.NZ,Medialink Broadcasting,involuntary,-0.82,2002-11-07
+TLG.NZ,Tasman Logging Group,involuntary,-0.73,2003-04-30
+RPC.NZ,Repco Corporation NZ,merger,0.18,2003-08-22
+AWF.NZ,AWF Madison Group,voluntary,-0.08,2004-02-11
+ING.NZ,Inglis Group NZ,involuntary,-0.68,2004-07-19
+VCT.NZ,Vector Capital Trust,voluntary,0.04,2005-03-08
+CPT.NZ,Calpine Pacific Trust,involuntary,-0.79,2005-09-01
+WHL.NZ,Westfield Holdings NZ,merger,0.24,2006-04-17
+SRG.NZ,Strathmore Group,involuntary,-0.88,2006-10-03
+BFD.NZ,Bridgford Foods NZ,voluntary,-0.31,2007-01-26
+HRL.NZ,Hartley Resources,involuntary,-0.61,2007-08-14
+NZI.NZ,NZ Insurance Holdings,merger,0.12,2008-02-05
+PCA.NZ,Pacific Aluminium NZ,involuntary,-0.93,2008-10-29
+SFF.NZ,Silver Fern Farms Finance,voluntary,-0.19,2009-04-16
+MHI.NZ,Mainfreight Holdings Intl,merger,0.31,2009-11-09
+CLT.NZ,Charlton Technologies,involuntary,-0.76,2010-03-22
+WDT.NZ,Windflow Technology,voluntary,-0.42,2010-09-07
+GFF.NZ,Goodman Fielder Finance,merger,0.09,2011-05-18
+THL.NZ,Tourism Holdings Ltd (old),voluntary,-0.11,2011-12-01
+RBD.NZ,Restaurant Brands (old class),merger,0.22,2012-06-28
+IFT.NZ,Infratil sub-trust,involuntary,-0.58,2012-11-14
+NZF.NZ,NZ Farming Systems,involuntary,-0.84,2013-04-09
+PKW.NZ,Puke Wai Developments,voluntary,-0.27,2013-10-17
+HNZ.NZ,Heartland NZ (old),merger,0.15,2014-03-25
+STU.NZ,Steel & Tube (unit trust),voluntary,-0.06,2014-09-11
+BPT.NZ,Blueprint Capital Trust,involuntary,-0.71,2015-02-03
+OCA.NZ,Oceania Capital Partners,merger,0.28,2015-08-19
+DPC.NZ,Dauphin Capital,involuntary,-0.65,2016-01-14
+LPC.NZ,Lyttelton Port Holding,merger,0.19,2016-07-06
+RIG.NZ,Radius Group,voluntary,-0.33,2017-02-28
+VGL.NZ,Vintage Gold Resources,involuntary,-0.86,2017-09-12
+MZY.NZ,Mazzy Finance NZ,involuntary,-0.78,2018-03-07
+TCL.NZ,Techcollect NZ,voluntary,-0.14,2018-10-22
+OHE.NZ,Orion Health Enterprise,merger,0.07,2019-04-30
+SML.NZ,Smallworld Broadband,involuntary,-0.59,2019-11-18
+GNE.NZ,Genesis sub-trust,voluntary,-0.05,2020-05-14
+HLG.NZ,Hallenstein sub-listing,merger,0.13,2020-10-07
+KFL.NZ,Kingfish Finance (old),voluntary,-0.24,2021-03-25
+NFT.NZ,Nufarm Finance Trust,involuntary,-0.90,2021-09-01
+PMO.NZ,Port Marlborough Ord,merger,0.21,2022-02-17
+TRS.NZ,Tresscox Resources,involuntary,-0.67,2022-08-04
+ANL.NZ,Anzco Finance Ltd,voluntary,-0.18,2023-01-11
+BCO.NZ,Becton Corp NZ,involuntary,-0.74,2023-06-29
+WLK.NZ,Walkato Irrigation Finance,voluntary,-0.09,2024-02-08
+SPX.NZ,Springvale Properties,involuntary,-0.81,2024-09-03

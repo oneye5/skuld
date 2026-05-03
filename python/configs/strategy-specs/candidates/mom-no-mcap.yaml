@@ -89,6 +89,7 @@ benchmarks:
   nzx_eq_adv_floor_shares: 10000.0
   sixty_forty_equity_proxy: "FNZ.NZ"
   sixty_forty_bond_macro_field: "long_term_interest_rates"
+  sixty_forty_bond_duration_years: 6.0
   sixty_forty_flat_haircut_bps: 50.0
 
 output:

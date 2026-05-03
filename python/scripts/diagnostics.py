@@ -69,20 +69,20 @@ def main() -> int:
     print(_hr())
 
     # ── imports (deferred so --help is instant) ──────────────────────────────
+    from skuld_research.backtest.engine import BacktestConfig, BacktestEngine
     from skuld_research.data.csv_loader import load_raw_csv
     from skuld_research.data.pit_loader import PITLoader
     from skuld_research.data.prepared_panel import build_prepared_panel
-    from skuld_research.factors.momentum import MomentumFactor
-    from skuld_research.backtest.engine import BacktestConfig, BacktestEngine
-    from skuld_research.diagnostics.panels import (
-        score_panel,
-        quintile_spread_returns,
-        market_proxy_returns,
-    )
-    from skuld_research.diagnostics.ic import ranking_ic
     from skuld_research.diagnostics.decay import alpha_decay
     from skuld_research.diagnostics.decomposition import factor_decomposition
+    from skuld_research.diagnostics.ic import ranking_ic
+    from skuld_research.diagnostics.panels import (
+        market_proxy_returns,
+        quintile_spread_returns,
+        score_panel,
+    )
     from skuld_research.diagnostics.report import write_diagnostics_report
+    from skuld_research.factors.momentum import MomentumFactor
 
     print("Loading data...")
     raw = load_raw_csv(args.data)

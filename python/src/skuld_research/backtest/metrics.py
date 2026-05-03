@@ -1,7 +1,6 @@
 """Pure maths utilities for backtest performance metrics."""
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 

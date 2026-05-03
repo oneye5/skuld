@@ -7,8 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from skuld_common.contracts import BacktestResult, FoldResult, WalkForwardResult
+from skuld_research.stats.excess_return import one_sided_hac_excess_return
 from skuld_research.stats.gating import evaluate
 from skuld_research.stats.ledger import ExplorationTrialLedger, ProductionTrialLedger
 
@@ -101,6 +103,33 @@ def test_bootstrap_ci_gate_fails_when_interval_straddles_zero(tmp_path: Path):
     assert "≤ 0" in reason
 
 
+def test_empty_oos_returns_fail_cleanly_without_bootstrap_error(tmp_path: Path):
+    """Empty OOS input should return a failed decision rather than raising."""
+    empty_index = pd.DatetimeIndex([], freq="ME")
+    result = WalkForwardResult(
+        folds=(),
+        oos_returns=pd.Series(dtype=float, index=empty_index),
+        oos_sharpe_raw=0.0,
+        oos_sharpe_flat_haircut=0.0,
+        oos_sharpe_delisting_adjusted=0.0,
+        oos_drawdown_observed=pd.Series(dtype=float, index=empty_index),
+        oos_max_drawdown_observed=0.0,
+        oos_max_drawdown_augmented_median=0.0,
+        oos_max_drawdown_augmented_p90=0.0,
+        oos_avg_turnover=0.0,
+        oos_total_cost_nzd=0.0,
+        n_kept_folds=0,
+        n_rejected_folds=0,
+    )
+    ledger = ProductionTrialLedger(root=tmp_path / "prod")
+
+    decision = evaluate(result, ledger, sanity_floor=0.0, alpha=0.05, rng_seed=42)
+
+    assert decision.passes is False
+    assert decision.bars["bootstrap_ci"] == (False, "No OOS returns")
+    assert decision.bootstrap.n_resamples == 0
+
+
 def test_dominance_with_benchmark(tmp_path: Path):
     """Strategy with constant alpha over benchmark dominates."""
     result = _make_synthetic_wf_result(sharpe=2.0, n_months=100)
@@ -124,6 +153,66 @@ def test_dominance_with_benchmark(tmp_path: Path):
     assert "dominance_bench" in decision.bars
     # With strong alpha, should dominate
     # (actual result depends on noise, but structure is present)
+
+
+def test_td_gate_uses_one_sided_excess_return_test_not_romano_wolf(tmp_path: Path):
+    """TD should be evaluated via a dedicated excess-return bar, not dominance."""
+    result = _make_synthetic_wf_result(sharpe=2.0, n_months=120)
+    td_floor = result.oos_returns - 0.02 / 12
+    nzx_bench = result.oos_returns - 0.01 / 12
+
+    ledger = ProductionTrialLedger(root=tmp_path / "prod")
+
+    decision = evaluate(
+        result,
+        ledger,
+        benchmarks={
+            "Cash hurdle": td_floor,
+            "NZX equal-weighted": nzx_bench,
+        },
+        td_benchmark_name="Cash hurdle",
+        sanity_floor=0.0,
+        alpha=0.05,
+        n_resamples=300,
+        dominance_n_resamples=300,
+        rng_seed=42,
+    )
+
+    assert "td_excess_return" in decision.bars
+    assert "dominance_Cash hurdle" not in decision.bars
+    assert "dominance_NZX equal-weighted" in decision.bars
+    assert decision.dominance is not None
+    assert "Cash hurdle" not in decision.dominance.benchmark_names
+    assert "NZX equal-weighted" in decision.dominance.benchmark_names
+
+
+def test_td_gate_requires_named_td_benchmark_to_exist(tmp_path: Path):
+    """Named TD benchmark must exist rather than silently falling into dominance."""
+    result = _make_synthetic_wf_result(sharpe=2.0, n_months=24)
+    ledger = ProductionTrialLedger(root=tmp_path / "prod")
+
+    with pytest.raises(ValueError, match="td_benchmark_name"):
+        evaluate(
+            result,
+            ledger,
+            benchmarks={"NZX equal-weighted": result.oos_returns},
+            td_benchmark_name="Cash hurdle",
+            sanity_floor=0.0,
+            alpha=0.05,
+            rng_seed=42,
+        )
+
+
+def test_one_sided_hac_excess_return_passes_for_deterministic_positive_spread():
+    """A strictly positive zero-variance excess return should pass the TD gate helper."""
+    index = pd.date_range("2020-01-31", periods=24, freq="ME")
+    strategy = pd.Series(0.02, index=index)
+    benchmark = pd.Series(0.01, index=index)
+
+    result = one_sided_hac_excess_return(strategy, benchmark, alpha=0.05)
+
+    assert result.passes is True
+    assert result.mean_excess_annual == 0.12
 
 
 def test_reproducibility(tmp_path: Path):

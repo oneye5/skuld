@@ -11,6 +11,7 @@ from skuld_common.contracts import (
     BenchmarkResult,
     DominanceResult,
     GatingDecision,
+    PITSnapshot,
     PreparedPanel,
     WalkForwardResult,
 )
@@ -37,6 +38,43 @@ from skuld_research.reporting._seeds import derive_child_seeds
 from skuld_research.stats.gating import evaluate as evaluate_gating
 from skuld_research.stats.ledger import TrialLedger
 from skuld_research.stats.rolling_walk_forward import RollingWalkForwardEngine
+
+
+def _compute_adv_panel(snap: PITSnapshot, panel: PreparedPanel, adv_window: int) -> pd.DataFrame:
+    """Compute rolling dollar ADV from the PIT snapshot, aligned to panel dates."""
+    if panel.prices.empty:
+        return pd.DataFrame(index=panel.returns_daily.index, columns=panel.returns_daily.columns)
+
+    prices_raw = panel.prices.sort_index()
+    if not isinstance(prices_raw.index, pd.DatetimeIndex):
+        return pd.DataFrame(index=panel.returns_daily.index, columns=panel.returns_daily.columns)
+    prices_daily = prices_raw.resample("D").last()
+
+    volumes_raw = snap.volumes.reindex(columns=prices_daily.columns).sort_index()
+    if volumes_raw.empty or not isinstance(volumes_raw.index, pd.DatetimeIndex):
+        volumes_daily = pd.DataFrame(index=prices_daily.index, columns=prices_daily.columns)
+    else:
+        volumes_daily = volumes_raw.resample("D").sum(min_count=1).reindex(prices_daily.index)
+
+    dollar_volume = (prices_daily * volumes_daily).where(volumes_daily > 0)
+    return dollar_volume.rolling(adv_window, min_periods=1).mean()
+
+
+def _compute_share_adv_panel(snap: PITSnapshot, panel: PreparedPanel, adv_window: int) -> pd.DataFrame:
+    """Compute rolling share ADV from the PIT snapshot, aligned to panel dates."""
+    volumes_raw = snap.volumes.reindex(columns=panel.returns_daily.columns).sort_index()
+    if volumes_raw.empty or not isinstance(volumes_raw.index, pd.DatetimeIndex):
+        return pd.DataFrame(index=panel.returns_daily.index, columns=panel.returns_daily.columns)
+    volumes_daily = volumes_raw.resample("D").sum(min_count=1).reindex(panel.returns_daily.index)
+    return volumes_daily.where(volumes_daily > 0).rolling(adv_window, min_periods=1).mean()
+
+
+def _label_spread_by_next_observation(spread_panel: pd.DataFrame) -> pd.DataFrame:
+    if spread_panel.empty:
+        return spread_panel
+    relabelled = spread_panel.iloc[:-1].copy()
+    relabelled.index = spread_panel.index[1:]
+    return relabelled
 
 
 @dataclass(frozen=True)
@@ -82,7 +120,7 @@ def run_from_spec(
     child_seeds = derive_child_seeds(spec.master_seed)
 
     # Load data
-    raw = load_raw_csv(Path(raw_csv_path), scrub=spec.scrubbing)
+    raw = load_raw_csv(Path(raw_csv_path), scrub=spec.scrubbing, adjustments=spec.adjustments)
     snap = PITLoader(raw).as_of(pd.Timestamp(spec.asof, tz="UTC"))
 
     # Build panel
@@ -95,6 +133,7 @@ def run_from_spec(
         mc_ffill_days=spec.universe.mc_ffill_days,
         nzx_only=spec.universe.nzx_only,
         rebalance_freq=spec.universe.rebalance_freq,
+        anomaly_filter=spec.anomaly_filter,
     )
 
     # Build BacktestConfig
@@ -110,6 +149,7 @@ def run_from_spec(
             if spec.execution_policy.kind == "volume_budget"
             else None
         ),
+        turnover_budget_frac=spec.backtest.turnover_budget_frac,
         min_trade_benefit_bps=(
             spec.execution_policy.min_trade_benefit_bps
             if spec.execution_policy.kind == "volume_budget"
@@ -127,24 +167,31 @@ def run_from_spec(
         cash_floor=spec.backtest.cash_floor,
         max_position=spec.backtest.max_position,
         max_sector=spec.backtest.max_sector,
+        min_names=spec.backtest.min_names,
         score_lambda=spec.backtest.score_lambda,
         no_trade_threshold_frac=spec.backtest.no_trade_threshold_frac,
         size_floor_nzd=spec.backtest.size_floor_nzd,
         size_floor_cost_multiple=spec.backtest.size_floor_cost_multiple,
         return_window_days=spec.backtest.return_window_days,
         min_return_obs=spec.backtest.min_return_obs,
+        adv_participation_cap=spec.backtest.adv_participation_cap,
         cost_config=cost_config,
         flat_haircut_bps=spec.backtest.flat_haircut_bps,
         risk_free_annual=spec.backtest.risk_free_annual,
         min_positions_per_month=spec.backtest.min_positions_per_month,
         degenerate_fold_max_empty_frac=spec.backtest.degenerate_fold_max_empty_frac,
+        turnover_budget_frac=spec.backtest.turnover_budget_frac,
+        smoothing_alpha=spec.backtest.smoothing_alpha,
         execution_policy=execution_policy,
+        adv_panel=_compute_adv_panel(snap, panel, spec.universe.adv_window),
     )
 
     # Build spread panel if requested
     spread_panel: pd.DataFrame | None = None
     if spec.cost.spread_model == "abdi_ranaldo":
-        high, low, close = load_raw_ohlc(Path(raw_csv_path), scrub=spec.scrubbing)
+        high, low, close = load_raw_ohlc(
+            Path(raw_csv_path), scrub=spec.scrubbing, adjustments=spec.adjustments
+        )
         spread_panel = compute_abdi_ranaldo_spread_panel(
             high, low, close,
             window=spec.cost.spread_estimator_window,
@@ -152,6 +199,11 @@ def run_from_spec(
             scale=spec.cost.spread_estimator_scale,
             min_bps_per_side=spec.cost.spread_estimator_min_bps_per_side,
         )
+        # The AR estimator at date t uses eta[t+1], so the row labelled t is
+        # only safe once the next OHLC observation exists. Relabel each row to
+        # that next observed source row, not merely the next business day.
+        if isinstance(spread_panel.index, pd.DatetimeIndex):
+            spread_panel = _label_spread_by_next_observation(spread_panel)
 
     # Build factors
     factors = build_factors_from_specs(spec.factors)
@@ -271,6 +323,7 @@ def run_from_spec(
         panel,
         mcap_floor_nzd=spec.benchmarks.nzx_eq_mcap_floor_nzd,
         adv_floor_shares=spec.benchmarks.nzx_eq_adv_floor_shares,
+        share_adv=_compute_share_adv_panel(snap, panel, spec.universe.adv_window),
         backtest_config=backtest_config,
     )
     nzx_2fold = (
@@ -289,7 +342,7 @@ def run_from_spec(
         coverage_end=nzx_bt.end,
         notes=(
             f"{spec.benchmarks.nzx_eq_mcap_floor_nzd/1e6:.0f}M NZD mcap floor",
-            "ADV filter not implemented",
+            f"{spec.benchmarks.nzx_eq_adv_floor_shares:,} share ADV floor",
         ),
     )
 
@@ -298,6 +351,7 @@ def run_from_spec(
         panel,
         equity_proxy=spec.benchmarks.sixty_forty_equity_proxy,
         bond_macro_field=spec.benchmarks.sixty_forty_bond_macro_field,
+        duration_years=spec.benchmarks.sixty_forty_bond_duration_years,
         flat_haircut_bps=spec.benchmarks.sixty_forty_flat_haircut_bps,
     )
     sf_2fold = (
@@ -320,7 +374,9 @@ def run_from_spec(
     benchmarks = (td_bench, nzx_bench, sf_bench)
 
     bench_oos_returns = {
-        bench.name: bench.wf_rolling.oos_returns for bench in benchmarks
+        bench.name: bench.wf_rolling.oos_returns
+        for bench in benchmarks
+        if not bench.wf_rolling.oos_returns.empty
     }
 
     # Gating
@@ -333,11 +389,13 @@ def run_from_spec(
         strategy_rolling,
         ledger,
         benchmarks=bench_oos_returns,
+        td_benchmark_name=td_bench.name,
         sanity_floor=spec.gating.sanity_floor,
         alpha=spec.gating.alpha,
         n_resamples=spec.gating.bootstrap_n_resamples,
         dominance_n_resamples=spec.gating.dominance_n_resamples,
         rng_seed=child_seeds["bootstrap"],
+        n_trials_prior_override=spec.n_trials_prior,
     )
 
     if gating.dominance is None:

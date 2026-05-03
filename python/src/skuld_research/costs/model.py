@@ -33,6 +33,7 @@ class CostConfig:
     sharesies_monthly_fee_nzd: float = 15.0        # subscription fee charged every month
     sharesies_coverage_nzd: float = 5_000.0        # volume covered by subscription (no extra fee)
     sharesies_excess_bps: float = 190.0            # 1.9% on volume above coverage
+    sharesies_per_order_cap_nzd: float = 25.0      # max fee per single trade
 
 
 @dataclass(frozen=True)
@@ -94,7 +95,15 @@ class CostModel:
         fee = self.config.sharesies_monthly_fee_nzd
         excess = total_volume - self.config.sharesies_coverage_nzd
         if excess > 0:
-            fee += excess * self.config.sharesies_excess_bps / 10_000
+            # We apply the per-order cap. Since we don't know the exact chronological
+            # order to apply the $5000 coverage, we compute the total fee as if there
+            # were no coverage (but with caps), then scale it down by the proportion
+            # of volume that is excess.
+            uncapped_rates = abs_values * self.config.sharesies_excess_bps / 10_000
+            capped_fees = uncapped_rates.clip(upper=self.config.sharesies_per_order_cap_nzd)
+            total_capped_fee = float(capped_fees.sum())
+            excess_ratio = excess / total_volume
+            fee += total_capped_fee * excess_ratio
             band = "subscription_plus_excess"
         else:
             band = "subscription_only"

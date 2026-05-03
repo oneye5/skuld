@@ -8,7 +8,6 @@ import pandas as pd
 import pytest
 
 from skuld_research.survivorship import (
-    DelistingStats,
     SurvivorshipAdjuster,
     compute_drawdown_series,
     compute_max_drawdown,

@@ -84,7 +84,7 @@ public class YfPrices extends DataSourceBase {
 					addPoint(dataPoints, date, ticker, "High", quote.high, i);
 					addPoint(dataPoints, date, ticker, "Low", quote.low, i);
 					addPoint(dataPoints, date, ticker, "Volume", quote.volume, i);
-					addPoint(dataPoints, date, ticker, "AdjClose", adjCloseValues, i);
+					addAdjustedClosePoint(dataPoints, date, ticker, quote.close, adjCloseValues, i);
 				}
 
 				// 6. Extract stock split events (also kept for back-adjusting dividends below)
@@ -134,6 +134,24 @@ public class YfPrices extends DataSourceBase {
 		if (values != null && index < values.size() && values.get(index) != null) {
 			points.add(new DataPoint(date, ticker, feature, values.get(index)));
 		}
+	}
+
+	private void addAdjustedClosePoint(Set<DataPoint> points, LocalDateTime date, String ticker, List<Double> closeValues, List<Double> adjCloseValues, int index) {
+		if (adjCloseValues == null || index >= adjCloseValues.size() || adjCloseValues.get(index) == null) {
+			return;
+		}
+		Double close = closeValues != null && index < closeValues.size() ? closeValues.get(index) : null;
+		points.add(new DataPoint(date, ticker, "AdjClose", safeAdjustedClose(close, adjCloseValues.get(index))));
+	}
+
+	static double safeAdjustedClose(Double close, Double yahooAdjClose) {
+		if (yahooAdjClose != null && yahooAdjClose > 0) {
+			return yahooAdjClose;
+		}
+		if (close != null && close > 0) {
+			return close;
+		}
+		return yahooAdjClose == null ? Double.NaN : yahooAdjClose;
 	}
 
 	/**

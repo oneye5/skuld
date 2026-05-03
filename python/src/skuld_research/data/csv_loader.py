@@ -193,10 +193,48 @@ def _build_fundamentals(df: pd.DataFrame, mask: pd.Series) -> pd.DataFrame:
 
 
 def _build_macro(df: pd.DataFrame, mask: pd.Series) -> pd.DataFrame:
-    """Build macro DataFrame: date × feature for ticker-less rows."""
+    """Build macro DataFrame: date × feature for ticker-less rows.
+
+    Duplicate (date, feature) pairs are resolved by keeping the last row in
+    CSV order (``aggfunc="last"``).  Pairs where the duplicate values differ
+    are flagged as a WARNING so the upstream Java ingester can be fixed.
+    """
     subset = df.loc[mask, ["date", "feature", "value"]]
     if subset.empty:
         return pd.DataFrame()
+
+    # Detect conflicting duplicates before pivoting.
+    dup_mask = subset.duplicated(subset=["date", "feature"], keep=False)
+    if dup_mask.any():
+        dups = subset[dup_mask]
+        conflict_counts = (
+            dups.groupby(["date", "feature"])["value"].nunique()
+        )
+        n_conflicts = int((conflict_counts > 1).sum())
+        n_exact = int((conflict_counts == 1).sum())
+        if n_conflicts:
+            # Summarise by feature for a compact log entry.
+            conflict_features = (
+                dups.groupby(["date", "feature"])["value"]
+                .nunique()
+                .pipe(lambda s: s[s > 1])
+                .reset_index()["feature"]
+                .value_counts()
+            )
+            _LOG.warning(
+                "Macro pivot: %d (date, feature) pairs have conflicting "
+                "values — last-row wins but upstream Java ingest should be "
+                "fixed.  Feature breakdown: %s",
+                n_conflicts,
+                conflict_features.to_dict(),
+            )
+        if n_exact:
+            _LOG.debug(
+                "Macro pivot: %d exact-duplicate (date, feature) pairs "
+                "dropped (same value, safe to ignore).",
+                n_exact,
+            )
+
     pivoted = subset.pivot_table(index="date", columns="feature", values="value", aggfunc="last")
     pivoted.index.name = "date"
     return pivoted.sort_index()

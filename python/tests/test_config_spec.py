@@ -184,6 +184,114 @@ def test_disabled_scrubbing_hash_neutral_even_with_unused_fields():
     assert spec_hash(spec) == spec_hash(disabled_with_unused_fields)
 
 
+def test_anomaly_filter_spec_round_trip_and_hash_neutral_when_disabled():
+    """Disabled anomaly filtering must round-trip and stay hash-neutral."""
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    spec = BacktestSpec(
+        name="test_anomaly_filter",
+        asof=datetime.date(2026, 1, 1),
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=1.5,
+            monthly_abs_return_threshold=3.0,
+            volume_gate_threshold=0.25,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=7,
+        ),
+    )
+
+    dumped = spec.model_dump()
+    reloaded = BacktestSpec.model_validate(dumped)
+
+    assert reloaded.anomaly_filter is not None
+    assert reloaded.anomaly_filter.kind == "mask_extremes"
+    assert reloaded.anomaly_filter.daily_abs_return_threshold == 1.5
+    assert reloaded.anomaly_filter.monthly_abs_return_threshold == 3.0
+    assert reloaded.anomaly_filter.volume_gate_threshold == 0.25
+    assert reloaded.anomaly_filter.require_volume_confirmation is False
+    assert reloaded.anomaly_filter.corporate_action_buffer_days == 7
+
+    explicit_none = BacktestSpec(
+        name="test_anomaly_filter",
+        asof=datetime.date(2026, 1, 1),
+        anomaly_filter=AnomalyFilterSpec(kind="none"),
+    )
+    disabled_with_unused_fields = BacktestSpec(
+        name="test_anomaly_filter",
+        asof=datetime.date(2026, 1, 1),
+        anomaly_filter=AnomalyFilterSpec(
+            kind="none",
+            daily_abs_return_threshold=9.0,
+            monthly_abs_return_threshold=9.0,
+            volume_gate_threshold=0.01,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=99,
+        ),
+    )
+
+    baseline = BacktestSpec(
+        name="test_anomaly_filter",
+        asof=datetime.date(2026, 1, 1),
+    )
+
+    assert spec_hash(baseline) == spec_hash(explicit_none)
+    assert spec_hash(baseline) == spec_hash(disabled_with_unused_fields)
+    assert spec_hash(baseline) != spec_hash(spec)
+
+
+def test_anomaly_filter_rejects_negative_thresholds_and_buffer():
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    with pytest.raises(ValidationError):
+        AnomalyFilterSpec(daily_abs_return_threshold=-0.1)
+
+    with pytest.raises(ValidationError):
+        AnomalyFilterSpec(monthly_abs_return_threshold=-0.1)
+
+    with pytest.raises(ValidationError):
+        AnomalyFilterSpec(volume_gate_threshold=-0.1)
+
+    with pytest.raises(ValidationError):
+        AnomalyFilterSpec(corporate_action_buffer_days=-1)
+
+
+def test_adv_participation_cap_rejects_out_of_bounds_values():
+    from skuld_research.config.spec import BacktestEngineSpec
+
+    with pytest.raises(ValidationError):
+        BacktestEngineSpec(adv_participation_cap=-0.01)
+
+    with pytest.raises(ValidationError):
+        BacktestEngineSpec(adv_participation_cap=1.01)
+
+    assert BacktestEngineSpec(adv_participation_cap=None).adv_participation_cap is None
+
+
+def test_backtest_engine_spec_realism_controls_round_trip_and_validate():
+    from skuld_research.config.spec import BacktestEngineSpec
+
+    spec = BacktestSpec(
+        name="test_realism_controls",
+        asof=datetime.date(2026, 1, 1),
+        backtest=BacktestEngineSpec(min_names=10, turnover_budget_frac=0.25),
+    )
+
+    reloaded = BacktestSpec.model_validate(spec.model_dump())
+
+    assert reloaded.backtest.min_names == 10
+    assert reloaded.backtest.turnover_budget_frac == 0.25
+
+    with pytest.raises(ValidationError):
+        BacktestEngineSpec(min_names=0)
+
+    with pytest.raises(ValidationError):
+        BacktestEngineSpec(turnover_budget_frac=-0.01)
+
+    with pytest.raises(ValidationError):
+        BacktestEngineSpec(turnover_budget_frac=1.01)
+
+
 def test_spec_extra_forbid():
     """extra='forbid' rejects unknown keys."""
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):

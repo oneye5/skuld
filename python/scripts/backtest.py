@@ -49,14 +49,14 @@ def _get_git_sha() -> str:
         # Find workspace root (parent of python/)
         python_dir = Path(__file__).resolve().parent.parent
         workspace_dir = python_dir.parent
-        
+
         sha = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=workspace_dir,
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        
+
         # Check if dirty
         dirty = subprocess.call(
             ["git", "diff-index", "--quiet", "HEAD", "--"],
@@ -65,7 +65,7 @@ def _get_git_sha() -> str:
         )
         if dirty != 0:
             sha += "-dirty"
-        
+
         return sha
     except Exception:
         return "unknown"
@@ -73,22 +73,22 @@ def _get_git_sha() -> str:
 
 def main() -> int:
     args = _parse_args()
-    
+
     # Resolve python root
     python_dir = Path(__file__).resolve().parent.parent
-    
+
     # Default raw_csv path
     if args.raw_csv is None:
         args.raw_csv = python_dir.parent / "data" / "data_long.csv"
-    
+
     if not args.raw_csv.exists():
         print(f"ERROR: data file not found: {args.raw_csv}", file=sys.stderr)
         return 1
-    
+
     if not args.spec.exists():
         print(f"ERROR: spec file not found: {args.spec}", file=sys.stderr)
         return 1
-    
+
     print("=" * 60)
     print("  Skuld - Backtest from Spec")
     print("=" * 60)
@@ -96,11 +96,11 @@ def main() -> int:
     print(f"  Data:        {args.raw_csv}")
     print(f"  Write ledger: {not args.no_write_ledger}")
     print("-" * 60)
-    
+
     # Deferred imports for fast --help
-    from skuld_research.config import load_spec, spec_hash, run_from_spec
+    from skuld_research.config import load_spec, run_from_spec, spec_hash
     from skuld_research.reporting import build_methodology_report, write_methodology_report
-    
+
     # Load spec
     print("Loading spec...", end=" ", flush=True)
     try:
@@ -108,10 +108,10 @@ def main() -> int:
         h = spec_hash(spec)
         print(f"done [hash: {h[:12]}...]")
     except Exception as e:
-        print(f"FAILED", file=sys.stderr)
+        print("FAILED", file=sys.stderr)
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    
+
     # Run backtest
     print("Running backtest...", flush=True)
     try:
@@ -127,11 +127,11 @@ def main() -> int:
         import traceback
         traceback.print_exc()
         return 1
-    
+
     # Build report
     print("Building methodology report...", end=" ", flush=True)
     git_sha = _get_git_sha()
-    
+
     report = build_methodology_report(
         strategy_name=spec.name,
         strategy_two_fold=result.strategy_two_fold or result.strategy_rolling,
@@ -148,18 +148,18 @@ def main() -> int:
         n_trials_prior=spec.n_trials_prior,
     )
     print("done")
-    
+
     # Write report
     report_dir = python_dir / spec.output.report_dir_relpath
     report_dir.mkdir(parents=True, exist_ok=True)
-    
+
     asof_str = spec.asof.strftime("%Y-%m-%d")
     output_path = report_dir / f"{asof_str}_methodology.md"
-    
+
     print(f"Writing report to {output_path}...", end=" ", flush=True)
     write_methodology_report(report, output_path)
     print("done")
-    
+
     # Summary (ASCII only, no box-drawing characters)
     print("-" * 60)
     print("Summary:")
@@ -169,7 +169,7 @@ def main() -> int:
     print(f"  * Gating:       {'PASS' if result.gating.passes else 'FAIL'}")
     print(f"  * Report:       {output_path}")
     print("=" * 60)
-    
+
     return 0
 
 

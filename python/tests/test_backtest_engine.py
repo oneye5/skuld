@@ -301,6 +301,47 @@ def test_execution_policy_defers_low_benefit_rebalance_trade():
     assert result.turnover.iloc[0] < 0.5
 
 
+def test_backtest_turnover_budget_limits_rebalance_volume():
+    """BacktestConfig turnover budget is enforced during each rebalance."""
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-04-30"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30"])
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=monthly_dates, columns=tickers),
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-05-31"),
+    )
+    cfg = BacktestConfig(
+        initial_nav_nzd=10_000.0,
+        cash_floor=0.0,
+        max_position=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        turnover_budget_frac=0.25,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+    factor = _FixedScoreFactor(
+        pd.Series({"A.NZ": 3.0, "B.NZ": 2.0, "C.NZ": 1.0, "D.NZ": 0.5})
+    )
+
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    assert result.executed_volume_nzd.iloc[0] <= 2_500.0
+    assert result.deferred_volume_nzd.iloc[0] > 0.0
+    assert result.turnover.iloc[0] <= 0.125
+
+
 def test_execution_policy_forced_exit_bypasses_trade_filters():
     """BacktestEngine liquidates stale holdings even below size/no-trade filters."""
     tickers = ["A.NZ", "B.NZ"]
@@ -398,6 +439,91 @@ def test_subscription_costs_drift_weights_by_reducing_cash_first():
 
     assert result.turnover.iloc[1] == pytest.approx(((0.90 / 0.99) - 0.90) / 2.0)
 
+
+def test_backtest_engine_passes_rebalance_adv_into_optimizer(monkeypatch: pytest.MonkeyPatch):
+    """Engine should pass rebalance-date ADV, NAV, and cap through to the optimizer."""
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-04-30"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30"])
+    prices = pd.DataFrame(
+        {
+            "A.NZ": 10.0,
+            "B.NZ": 20.0,
+            "C.NZ": 30.0,
+            "D.NZ": 40.0,
+        },
+        index=daily_dates,
+    )
+    market_cap = prices * 100_000.0
+    adv_panel = pd.DataFrame(
+        {
+            "A.NZ": [100_000.0],
+            "B.NZ": [400_000.0],
+            "C.NZ": [900_000.0],
+            "D.NZ": [1_600_000.0],
+        },
+        index=[daily_dates[-1]],
+    )
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=monthly_dates, columns=tickers),
+        market_cap=market_cap,
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-05-31"),
+        prices=prices,
+    )
+    cfg = BacktestConfig(
+        initial_nav_nzd=10_000.0,
+        cash_floor=0.0,
+        max_position=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        adv_participation_cap=0.02,
+        adv_panel=adv_panel,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+    factor = _FixedScoreFactor(
+        pd.Series({"A.NZ": 4.0, "B.NZ": 3.0, "C.NZ": 2.0, "D.NZ": 1.0})
+    )
+    captured: dict[str, object] = {}
+
+    def fake_build_target_portfolio(*args, **kwargs):
+        captured["adv"] = kwargs.get("adv")
+        captured["portfolio_nav"] = kwargs.get("portfolio_nav")
+        captured["adv_participation_cap"] = kwargs.get("adv_participation_cap")
+        return _make_target_portfolio({"A.NZ": 1.0}, asof=args[2])
+
+    monkeypatch.setattr("skuld_research.backtest.engine.build_target_portfolio", fake_build_target_portfolio)
+
+    BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    assert isinstance(captured["adv"], pd.Series)
+    assert captured["portfolio_nav"] == pytest.approx(10_000.0)
+    assert captured["adv_participation_cap"] == pytest.approx(0.02)
+    assert captured["adv"]["A.NZ"] == pytest.approx(100_000.0)
+    assert captured["adv"]["B.NZ"] == pytest.approx(400_000.0)
+
+
+def _make_target_portfolio(weights: dict[str, float], asof: pd.Timestamp):
+    from skuld_common.contracts import TargetPortfolio
+
+    series = pd.Series(weights, dtype=float)
+    return TargetPortfolio(
+        weights=series,
+        cash_weight=max(0.0, 1.0 - float(series.sum())),
+        method="test",
+        asof=asof,
+    )
+
 def test_engine_returns_backtest_result():
     """engine.run() returns BacktestResult with at least one return period."""
     engine = _make_engine()
@@ -471,6 +597,25 @@ def test_minimum_rebalance_dates_raises():
         engine.run()
 
 
+def test_backtest_config_rejects_out_of_bounds_adv_participation_cap():
+    with pytest.raises(ValueError, match="adv_participation_cap"):
+        BacktestConfig(adv_participation_cap=-0.01)
+
+    with pytest.raises(ValueError, match="adv_participation_cap"):
+        BacktestConfig(adv_participation_cap=1.01)
+
+
+def test_backtest_config_rejects_out_of_bounds_min_names_and_turnover_budget():
+    with pytest.raises(ValueError, match="min_names"):
+        BacktestConfig(min_names=0)
+
+    with pytest.raises(ValueError, match="turnover_budget_frac"):
+        BacktestConfig(turnover_budget_frac=-0.01)
+
+    with pytest.raises(ValueError, match="turnover_budget_frac"):
+        BacktestConfig(turnover_budget_frac=1.01)
+
+
 def test_drift_weights_wipeout_does_not_crash():
     """_drift_weights handles total loss without negative weights."""
     from skuld_research.backtest.engine import _drift_weights
@@ -519,3 +664,106 @@ def test_synthetic_backtest_returns_in_plausible_range():
     assert float(result.returns.min()) >= -0.30, (
         f"Suspiciously large monthly loss: {result.returns.min():.4f}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Smoothing alpha tests
+# ---------------------------------------------------------------------------
+
+def _make_smoothing_panel() -> PreparedPanel:
+    """5 tickers, 24 months of synthetic data for smoothing tests."""
+    return _make_panel(n_tickers=5, n_days=520, seed=7)
+
+
+def test_smoothing_alpha_zero_no_change():
+    """smoothing_alpha=0.0 should produce identical results to the default (no smoothing)."""
+    panel = _make_smoothing_panel()
+    cfg_default = BacktestConfig()
+    cfg_zero = BacktestConfig(smoothing_alpha=0.0)
+
+    result_default = BacktestEngine(factors=[MomentumFactor()], panel=panel, config=cfg_default).run()
+    result_zero = BacktestEngine(factors=[MomentumFactor()], panel=panel, config=cfg_zero).run()
+
+    pd.testing.assert_series_equal(result_default.returns, result_zero.returns)
+    pd.testing.assert_series_equal(result_default.turnover, result_zero.turnover)
+
+
+def test_smoothing_reduces_turnover():
+    """smoothing_alpha=0.5 reduces per-period trade deltas vs alpha=0.0.
+
+    Smoothing moves the target weights toward current weights, so the max
+    single-period turnover must be lower with smoothing than without, given
+    the same signal.  We verify this on a controlled two-period scenario.
+    """
+    tickers = ["A.NZ", "B.NZ", "C.NZ", "D.NZ"]
+    rebalance_dates = pd.to_datetime(["2024-03-31", "2024-04-30", "2024-05-31"])
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-29")
+    monthly_dates = pd.to_datetime(["2024-04-30", "2024-05-31"])
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=monthly_dates, columns=tickers),
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-06-30"),
+    )
+    zero_cost = CostConfig(
+        spread_bps=0.0,
+        sharesies_monthly_fee_nzd=0.0,
+        sharesies_coverage_nzd=1_000_000.0,
+        sharesies_excess_bps=0.0,
+    )
+
+    # Signal flips completely from period 1 to period 2 → big rebalance
+    class FlippingFactor:
+        name = "flip"
+        def score(self, panel, t, universe):
+            if t == rebalance_dates[0]:
+                return pd.Series({"A.NZ": 3.0, "B.NZ": 2.0, "C.NZ": 1.0, "D.NZ": 0.5}).reindex(universe)
+            return pd.Series({"A.NZ": 0.5, "B.NZ": 1.0, "C.NZ": 2.0, "D.NZ": 3.0}).reindex(universe)
+
+    base_cfg = dict(
+        initial_nav_nzd=10_000.0,
+        cash_floor=0.0,
+        max_position=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=zero_cost,
+    )
+
+    result_no_smooth = BacktestEngine(
+        factors=[FlippingFactor()], panel=panel,
+        config=BacktestConfig(**base_cfg, smoothing_alpha=0.0)
+    ).run()
+    result_smooth = BacktestEngine(
+        factors=[FlippingFactor()], panel=panel,
+        config=BacktestConfig(**base_cfg, smoothing_alpha=0.5)
+    ).run()
+
+    # On the second period, smoothing should reduce turnover
+    assert result_smooth.turnover.iloc[1] <= result_no_smooth.turnover.iloc[1] + 1e-9
+
+
+def test_smoothing_alpha_validation():
+    """smoothing_alpha must be in [0, 1); 1.0 and negatives raise ValueError."""
+    with pytest.raises(ValueError, match="smoothing_alpha"):
+        BacktestConfig(smoothing_alpha=1.0)
+
+    with pytest.raises(ValueError, match="smoothing_alpha"):
+        BacktestConfig(smoothing_alpha=-0.1)
+
+    # 0.9 is valid
+    cfg = BacktestConfig(smoothing_alpha=0.9)
+    assert cfg.smoothing_alpha == pytest.approx(0.9)
+
+
+def test_smoothing_weights_sum_to_one():
+    """With smoothing_alpha=0.3, equity_weight + cash_weight ≈ 1.0 each period."""
+    panel = _make_smoothing_panel()
+    cfg = BacktestConfig(smoothing_alpha=0.3)
+    result = BacktestEngine(factors=[MomentumFactor()], panel=panel, config=cfg).run()
+
+    total = result.equity_weight + result.cash_weight
+    assert (total - 1.0).abs().max() < 1e-4

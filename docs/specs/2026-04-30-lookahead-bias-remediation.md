@@ -37,7 +37,6 @@ Affected sources:
 ## Out of scope
 
 - Fixing OECD SDMX regex parsing fragility (separate workstream).
-- Reconciling `DATA_SOURCES.md` endpoint claims with actual code (separate workstream).
 - The `YfPrices` Yahoo silent-forward-adjust quirk (separate workstream).
 - Producing before/after backtest metrics (user-deferred).
 
@@ -107,7 +106,7 @@ These are conservative typical lags. Any source whose actual publishing schedule
 1. `ReleaseDate.applyLag` and `Cadence` exist with unit tests covering each cadence × leap-year × end-of-year boundary.
 2. Each of the 12 affected sources references its lag constant exactly once, applied at the single point where `DataPoint` is constructed.
 3. `mvn -q compile` clean.
-4. `java/docs/DATA_SOURCES.md` documents the new convention: "All `timestamp` values represent the date the datapoint was first publicly knowable in NZ time, not the underlying period."
+4. The timestamp convention ("knowledge-time, not event-time") is documented in `ReleaseDate.java` javadoc.
 5. A diagnostic main class (`DiagReleaseDate.java`) exists temporarily, prints one row per affected source confirming the shift, and is deleted before the work is considered complete.
 6. The Python pipeline is **not modified** — it already treats `date` as knowledge-time. (Verified by skim, not by test, in this spec.)
 

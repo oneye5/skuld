@@ -114,6 +114,46 @@ def test_policy_forced_trade_executes_even_without_budget():
     assert result.executed_volume_nzd == 4_000.0
 
 
+def test_policy_turnover_budget_caps_executed_volume():
+    """A turnover budget limits total non-forced volume per rebalance."""
+    delta = pd.Series({"A.NZ": 0.20, "B.NZ": 0.15, "C.NZ": 0.20})
+    alpha = pd.Series({"A.NZ": 300.0, "B.NZ": 250.0, "C.NZ": 200.0})
+
+    result = apply_execution_policy(
+        delta,
+        nav_nzd=10_000.0,
+        expected_alpha_bps=alpha,
+        config=ExecutionPolicyConfig(turnover_budget_frac=0.25),
+    )
+
+    assert result.executable_delta_weights.to_dict() == {
+        "A.NZ": 0.20,
+        "B.NZ": 0.15,
+        "C.NZ": 0.0,
+    }
+    assert result.executed_volume_nzd == 3_500.0
+    assert result.deferred_volume_nzd == 2_000.0
+
+
+def test_policy_forced_trade_bypasses_turnover_budget():
+    """Forced exits execute even when they exceed the turnover budget."""
+    delta = pd.Series({"EXIT.NZ": -0.40, "BUY.NZ": 0.11})
+    forced = pd.Series({"EXIT.NZ": True, "BUY.NZ": False})
+
+    result = apply_execution_policy(
+        delta,
+        nav_nzd=10_000.0,
+        expected_alpha_bps=pd.Series({"EXIT.NZ": 0.0, "BUY.NZ": 300.0}),
+        config=ExecutionPolicyConfig(turnover_budget_frac=0.05),
+        forced=forced,
+    )
+
+    assert result.executable_delta_weights["EXIT.NZ"] == -0.40
+    assert result.executable_delta_weights["BUY.NZ"] == 0.0
+    assert result.executed_volume_nzd == 4_000.0
+    assert result.deferred_volume_nzd == 1_100.0
+
+
 def test_disabled_policy_executes_all_filtered_trades():
     """Default config is inert unless an execution policy is explicitly enabled."""
     delta = pd.Series({"A.NZ": 0.30, "B.NZ": 0.30})

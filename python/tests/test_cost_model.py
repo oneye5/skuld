@@ -1,11 +1,10 @@
 """Tests for skuld_research.costs.model (CostModel, CostConfig, CostBreakdown)."""
 from __future__ import annotations
 
-import pytest
 import pandas as pd
+import pytest
 
-from skuld_research.costs import CostBreakdown, CostConfig, CostModel
-
+from skuld_research.costs import CostConfig, CostModel
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,12 +78,13 @@ def test_exact_cap_uses_flat_fee():
 def test_above_cap_uses_percent_fee():
     # volume = 10_000 NZD; excess = 5_000
     # spread = 10000 * 200/10000 = 200
-    # fee    = 15 (subscription) + 5000 * 190/10000 = 15 + 95 = 110
+    # uncapped fee = 190, capped fee = 25. excess ratio = 0.5.
+    # fee = 15 (subscription) + 25 * 0.5 = 27.5
     result = _model().compute_period_costs(_series(10_000.0))
     assert result.sharesies_fee_band == "subscription_plus_excess"
     assert result.spread_cost_nzd == pytest.approx(200.0)
-    assert result.sharesies_fee_nzd == pytest.approx(110.0)
-    assert result.total_cost_nzd == pytest.approx(310.0)
+    assert result.sharesies_fee_nzd == pytest.approx(27.5)
+    assert result.total_cost_nzd == pytest.approx(227.5)
 
 
 def test_just_above_cap():

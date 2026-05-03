@@ -33,7 +33,7 @@ class RollingWalkForwardEngine:
             for benchmark pass-through.
         overlay_rule: optional OverlayRule for cash overlay. Defaults to NoOverlay().
     """
-    
+
     def __init__(
         self,
         panel: PreparedPanel,
@@ -61,7 +61,7 @@ class RollingWalkForwardEngine:
         self.precomputed_returns = precomputed_returns
         self.overlay_rule = overlay_rule
         self.spread_panel = spread_panel
-    
+
     def _build_folds(self) -> list[FoldSpec]:
         """Build rolling folds for the panel.
         
@@ -69,35 +69,35 @@ class RollingWalkForwardEngine:
             List of FoldSpec instances.
         """
         rebalance_dates = self.panel.universe_mask.index.tolist()
-        
+
         if len(rebalance_dates) < 2:
             raise ValueError("Need at least 2 rebalance dates")
-        
+
         start_date = rebalance_dates[0]
         end_date = rebalance_dates[-1]
-        
+
         # First OOS start: start_date + train_years
         first_oos_start = start_date + pd.DateOffset(years=self.train_years)
-        
+
         # Generate folds
         folds = []
         fold_id = 0
         current_oos_start = first_oos_start
-        
+
         while current_oos_start <= end_date:
             oos_end = current_oos_start + pd.DateOffset(years=self.oos_years)
-            
+
             # Find rebalance dates in [current_oos_start, oos_end)
             fold_dates = [
                 d for d in rebalance_dates
                 if current_oos_start <= d < oos_end
             ]
-            
+
             if not fold_dates:
                 # No rebalance dates in this window → skip
                 current_oos_start = current_oos_start + pd.DateOffset(years=self.step_years)
                 continue
-            
+
             test_start = fold_dates[0]
             test_end = fold_dates[-1]
 
@@ -119,19 +119,19 @@ class RollingWalkForwardEngine:
 
             fold_id += 1
             current_oos_start = current_oos_start + pd.DateOffset(years=self.step_years)
-        
+
         if not folds:
             raise ValueError(
                 f"No OOS folds generated. Panel spans {start_date} to {end_date}; "
                 f"train_years={self.train_years}, oos_years={self.oos_years}"
             )
-        
+
         return folds
-    
+
     def run(self) -> WalkForwardResult:
         """Run rolling walk-forward and return aggregated result."""
         folds = self._build_folds()
-        
+
         # Delegate to WalkForwardEngine
         wf = WalkForwardEngine(
             factors=self.factors,
@@ -145,5 +145,5 @@ class RollingWalkForwardEngine:
             overlay_rule=self.overlay_rule,
             spread_panel=self.spread_panel,
         )
-        
+
         return wf.run()

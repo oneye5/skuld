@@ -198,11 +198,12 @@ def test_momentum_walk_forward_on_real_data():
     observed + augmented drawdown, and raw + delisting-adjusted Sharpe.
     """
     from pathlib import Path
-    from skuld_research.backtest.walk_forward import FoldSpec, WalkForwardEngine
+
+    from skuld_common.contracts import WalkForwardResult
     from skuld_research.backtest.engine import BacktestConfig
+    from skuld_research.backtest.walk_forward import FoldSpec, WalkForwardEngine
     from skuld_research.data import PITLoader, build_prepared_panel
     from skuld_research.factors.momentum import MomentumFactor
-    from skuld_common.contracts import WalkForwardResult
 
     raw = _load_real()
     snap = PITLoader(raw).as_of(pd.Timestamp("2026-01-01", tz="UTC"))
@@ -282,16 +283,17 @@ def test_momentum_diagnostics_on_real_data():
     renders without error.
     """
     import numpy as np
+
     from skuld_research.data import PITLoader, build_prepared_panel
-    from skuld_research.factors.momentum import MomentumFactor
-    from skuld_research.diagnostics.panels import (
-        score_panel,
-        quintile_spread_returns,
-        market_proxy_returns,
-    )
-    from skuld_research.diagnostics.ic import ranking_ic
     from skuld_research.diagnostics.decay import alpha_decay
     from skuld_research.diagnostics.decomposition import factor_decomposition
+    from skuld_research.diagnostics.ic import ranking_ic
+    from skuld_research.diagnostics.panels import (
+        market_proxy_returns,
+        quintile_spread_returns,
+        score_panel,
+    )
+    from skuld_research.factors.momentum import MomentumFactor
 
     raw = _load_real()
     snap = PITLoader(raw).as_of(pd.Timestamp("2026-01-01", tz="UTC"))
@@ -349,12 +351,12 @@ def test_momentum_diagnostics_on_real_data():
     print(f"IC Std:                                    {ic.ic_std:.4f}")
     print(f"IC IR (annualized):                        {ic.ic_ir:.4f}")
     print(f"Observations:                              {ic.n_obs}")
-    print(f"\nAlpha Decay:")
+    print("\nAlpha Decay:")
     for h in sorted(decay.horizons):
         ic_h = decay.ic_by_horizon[h]
         print(f"  {h:2d} months: IC={ic_h.ic_mean:.4f}, IR={ic_h.ic_ir:.4f}, t={ic_h.t_stat_newey_west:.2f}")
     print(f"Peak horizon:                              {decay.peak_horizon} months")
-    print(f"\nFactor Decomposition:")
+    print("\nFactor Decomposition:")
     for reg in decomp.regressors:
         beta = decomp.coefficients[reg]
         t = decomp.t_stats[reg]

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from skuld_research.costs.spread_estimator import (
     DEFAULT_MIN_BPS_PER_SIDE,

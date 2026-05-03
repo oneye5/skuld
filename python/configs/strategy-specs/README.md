@@ -48,6 +48,7 @@ Archive:
 - `archive/m8-mom-lowvol-size.yaml` — M8 momentum, low-volatility, and size factor screen.
 - `archive/mom-baseline.yaml` — momentum baseline selected after M8 factor evaluation.
 - `archive/mom-overlay.yaml` — momentum baseline with NZX MA200 and aggregate momentum cash overlay.
+- `archive/mom-ar-spread-scrubbed-overlay.yaml` — scrubbed AR-spread variant with the defensive cash overlay; archived after methodology review, with deterministic overlay trigger/non-trigger tests retained.
 
 Candidates:
 
@@ -56,7 +57,8 @@ Candidates:
 - `candidates/mom-no-mcap.yaml` — smoothed momentum with the market-cap filter disabled.
 - `candidates/mom-ar-spread.yaml` — no-market-cap smoothed momentum with Abdi-Ranaldo per-ticker spread estimates.
 - `candidates/mom-ar-spread-scrubbed.yaml` — AR-spread variant with round-trip raw-data scrubbing.
-- `candidates/mom-ar-spread-scrubbed-overlay.yaml` — scrubbed AR-spread variant with the defensive cash overlay.
+- `candidates/mom-s6.yaml` — scrubbed AR-spread candidate with 6-month momentum score smoothing.
+- `candidates/mom-dividend-yield-ar-spread-scrubbed.yaml` — comparison-only dividend-yield variant; treat dividend yield as regime-conditional overlay guidance until engine support exists for regime-conditioned factor activation.
 
 Production:
 

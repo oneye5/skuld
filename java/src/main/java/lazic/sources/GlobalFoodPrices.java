@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -33,6 +35,8 @@ public class GlobalFoodPrices extends DataSourceBase {
 	
 	private static final String URL_TEMPLATE = 
 		"https://www.fao.org/media/docs/worldfoodsituationlibraries/default-document-library/food_price_indices_data_csv_%s.csv";
+	private static final String CURRENT_CSV_URL =
+		"https://www.fao.org/media/docs/worldfoodsituationlibraries/default-document-library/food_price_indices_data_csv.csv?download=true";
 	
 	// Local fallback file path (relative to project root)
 	private static final String LOCAL_FALLBACK_PATH = "data/fao_food_prices.csv";
@@ -76,24 +80,11 @@ public class GlobalFoodPrices extends DataSourceBase {
 	 * Falls back to local file if all remote fetches fail.
 	 */
 	private String fetchDataWithFallback() {
-		YearMonth currentMonth = YearMonth.now();
-		
-		// Try current month first
-		String currentMonthStr = formatMonthForUrl(currentMonth);
-		String result = tryFetchUrl(currentMonthStr);
-		if (result != null) return result;
-		
-		// Try previous month as fallback
-		YearMonth previousMonth = currentMonth.minusMonths(1);
-		String previousMonthStr = formatMonthForUrl(previousMonth);
-		result = tryFetchUrl(previousMonthStr);
-		if (result != null) return result;
-		
-		// Try two months back as last resort
-		YearMonth twoMonthsAgo = currentMonth.minusMonths(2);
-		String twoMonthsAgoStr = formatMonthForUrl(twoMonthsAgo);
-		result = tryFetchUrl(twoMonthsAgoStr);
-		if (result != null) return result;
+		String result;
+		for (String url : candidateUrls(YearMonth.now())) {
+			result = tryFetchUrl(url);
+			if (result != null) return result;
+		}
 		
 		System.err.println("GlobalFoodPrices: All remote fetch attempts failed, trying local fallback...");
 		
@@ -137,8 +128,16 @@ public class GlobalFoodPrices extends DataSourceBase {
 	/**
 	 * Attempts to fetch data from a specific month URL with detailed logging.
 	 */
-	private String tryFetchUrl(String monthStr) {
-		String url = String.format(URL_TEMPLATE, monthStr);
+	static List<String> candidateUrls(YearMonth currentMonth) {
+		List<String> urls = new ArrayList<>();
+		urls.add(CURRENT_CSV_URL);
+		urls.add(String.format(URL_TEMPLATE, formatMonthForUrl(currentMonth)));
+		urls.add(String.format(URL_TEMPLATE, formatMonthForUrl(currentMonth.minusMonths(1))));
+		urls.add(String.format(URL_TEMPLATE, formatMonthForUrl(currentMonth.minusMonths(2))));
+		return urls;
+	}
+
+	private String tryFetchUrl(String url) {
 		System.out.println("GlobalFoodPrices: Attempting to fetch from: " + url);
 		
 		try {
@@ -146,25 +145,25 @@ public class GlobalFoodPrices extends DataSourceBase {
 			
 			// Log response info
 			if (data == null) {
-				System.err.println("GlobalFoodPrices: Response was null for " + monthStr);
+				System.err.println("GlobalFoodPrices: Response was null for " + url);
 				return null;
 			}
 			
-			System.out.println("GlobalFoodPrices: Received " + data.length() + " bytes for " + monthStr);
+			System.out.println("GlobalFoodPrices: Received " + data.length() + " bytes for " + url);
 			
 			// Show first 200 chars of response for debugging
 			String preview = data.substring(0, Math.min(200, data.length())).replace("\n", "\\n").replace("\r", "\\r");
 			System.out.println("GlobalFoodPrices: Response preview: [" + preview + "]");
 			
 			if (isValidCsvData(data)) {
-				System.out.println("GlobalFoodPrices: Valid CSV data found for " + monthStr);
+				System.out.println("GlobalFoodPrices: Valid CSV data found for " + url);
 				return data;
 			} else {
-				System.err.println("GlobalFoodPrices: Response for " + monthStr + " is not valid CSV (missing 'FAO Food Price Index' header)");
+				System.err.println("GlobalFoodPrices: Response for " + url + " is not valid CSV (missing 'FAO Food Price Index' header)");
 				return null;
 			}
 		} catch (Exception e) {
-			System.err.println("GlobalFoodPrices: Exception fetching " + monthStr + ": " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			System.err.println("GlobalFoodPrices: Exception fetching " + url + ": " + e.getClass().getSimpleName() + ": " + e.getMessage());
 			return null;
 		}
 	}
@@ -172,7 +171,7 @@ public class GlobalFoodPrices extends DataSourceBase {
 	/**
 	 * Formats YearMonth to the URL format (e.g., "jan" for January).
 	 */
-	private String formatMonthForUrl(YearMonth yearMonth) {
+	private static String formatMonthForUrl(YearMonth yearMonth) {
 		// Format: 3-letter month abbreviation lowercase (e.g., "jan", "dec")
 		return yearMonth.getMonth().toString().substring(0, 3).toLowerCase(Locale.ENGLISH);
 	}
@@ -214,16 +213,16 @@ public class GlobalFoodPrices extends DataSourceBase {
 		}
 		
 		for (int lineNum = 0; lineNum < lines.length; lineNum++) {
-			String line = lines[lineNum].trim();
+			String line = stripBom(lines[lineNum].trim());
 			
 			// Skip empty lines
-			if (line.isEmpty()) {
+			if (line.isEmpty() || line.replace(",", "").isBlank()) {
 				skippedEmpty++;
 				continue;
 			}
 			
 			// Skip header lines
-			if (line.startsWith("FAO") || line.startsWith("2014-2016") || line.startsWith("Date,")) {
+			if (line.contains("FAO Food Price Index") || line.startsWith("2014-2016") || line.startsWith("Date,")) {
 				skippedHeader++;
 				continue;
 			}
@@ -303,5 +302,9 @@ public class GlobalFoodPrices extends DataSourceBase {
 		YearMonth yearMonth = YearMonth.parse(monthStr, formatter);
 		LocalDateTime periodStart = yearMonth.atDay(1).atStartOfDay();
 		return ReleaseDate.applyLag(periodStart, Cadence.MONTHLY, RELEASE_LAG);
+	}
+
+	private String stripBom(String line) {
+		return line.startsWith("\uFEFF") ? line.substring(1) : line;
 	}
 }

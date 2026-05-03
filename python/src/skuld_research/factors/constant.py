@@ -13,11 +13,11 @@ class ConstantOneSignal(SignalGenerator):
     Used only by the equal-weighted benchmark to produce uniform cross-sectional
     scores that the optimizer then weights equally.
     """
-    
+
     @property
     def name(self) -> str:
         return "constant_one"
-    
+
     def score(
         self,
         panel: PreparedPanel,

@@ -12,6 +12,7 @@ import com.google.gson.Gson;
 import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
+import lazic.utils.ingest.ReleaseFilter;
 import lazic.utils.ingest.ReleaseDate;
 import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
@@ -136,6 +137,8 @@ public class NzLaborTaxation extends DataSourceBase {
 					periodStart = LocalDateTime.parse(timeId + "-01-01T00:00:00");
 				}
 				LocalDateTime timestamp = ReleaseDate.applyLag(periodStart, Cadence.ANNUAL, RELEASE_LAG);
+
+				if (!ReleaseFilter.isKnowableNow(timestamp)) continue;
 
 				// Create DataPoint
 				// Ticker is null as this is macroeconomic data

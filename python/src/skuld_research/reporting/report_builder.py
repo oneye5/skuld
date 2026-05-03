@@ -13,6 +13,22 @@ from skuld_common.contracts import (
 from skuld_research.reporting._seeds import SPAWN_ORDER_DOC
 
 
+def _pass_fail_label(bar_name: str) -> str:
+    """Map gating bar keys onto stable human-readable report labels."""
+    if bar_name == "sanity_floor":
+        return "Sanity floor"
+    if bar_name == "bootstrap_ci":
+        return "Bootstrap CI"
+    if bar_name == "deflated_sharpe":
+        return "Deflated Sharpe"
+    if bar_name == "td_excess_return":
+        return "TD excess return"
+    if bar_name.startswith("dominance_"):
+        benchmark_name = bar_name.removeprefix("dominance_")
+        return f"Benchmark ({benchmark_name}) via Romano-Wolf"
+    return bar_name
+
+
 def build_methodology_report(
     strategy_name: str,
     strategy_two_fold: WalkForwardResult,
@@ -50,47 +66,13 @@ def build_methodology_report(
     Returns:
         MethodologyReport frozen dataclass.
     """
-    # Compute pass/fail bars
-    pass_fail_bars = []
+    if gating.dominance is not None and dominance != gating.dominance:
+        raise ValueError("dominance must match gating.dominance")
 
-    # 1. Sanity floor (TD floor)
-    td_floor_bench = next((b for b in benchmarks if b.name == "NZ TD floor"), None)
-    if td_floor_bench:
-        strategy_sharpe = strategy_rolling.oos_sharpe_delisting_adjusted
-        td_sharpe = td_floor_bench.wf_rolling.oos_sharpe_delisting_adjusted
-        passed = strategy_sharpe > td_sharpe
-        reason = (
-            f"Strategy Sharpe {strategy_sharpe:.3f} > TD floor Sharpe {td_sharpe:.3f}"
-            if passed
-            else f"Strategy Sharpe {strategy_sharpe:.3f} ≤ TD floor Sharpe {td_sharpe:.3f}"
-        )
-        pass_fail_bars.append(("Sanity floor (TD floor)", passed, reason))
-
-    # 2. Primary benchmark (NZX equal-weighted) via Romano-Wolf
-    nzx_bench_name = "NZX equal-weighted"
-    if nzx_bench_name in dominance.dominates:
-        dominates_nzx = dominance.dominates[nzx_bench_name]
-        p_adj = dominance.adjusted_p_values[nzx_bench_name]
-        passed = dominates_nzx and p_adj <= 0.05
-        reason = (
-            f"Dominates={dominates_nzx}, p_adj={p_adj:.4f} ≤ 0.05"
-            if passed
-            else f"Dominates={dominates_nzx}, p_adj={p_adj:.4f} > 0.05"
-        )
-        pass_fail_bars.append((
-            "Primary benchmark (NZX equal-weighted) via Romano-Wolf",
-            passed,
-            reason,
-        ))
-
-    # 3. Deflated Sharpe
-    deflated_passed = gating.deflated.passes
-    reason = (
-        f"Deflated Sharpe p={gating.deflated.p_value:.4f} ≤ {gating.deflated.alpha}"
-        if deflated_passed
-        else f"Deflated Sharpe p={gating.deflated.p_value:.4f} > {gating.deflated.alpha}"
-    )
-    pass_fail_bars.append(("Deflated Sharpe", deflated_passed, reason))
+    pass_fail_bars = [
+        (_pass_fail_label(bar_name), passed, reason)
+        for bar_name, (passed, reason) in gating.bars.items()
+    ]
 
     return MethodologyReport(
         config_hash=config_hash,
@@ -106,6 +88,6 @@ def build_methodology_report(
         strategy_rolling=strategy_rolling,
         benchmarks=benchmarks,
         gating=gating,
-        dominance=dominance,
+        dominance=gating.dominance or dominance,
         pass_fail=tuple(pass_fail_bars),
     )

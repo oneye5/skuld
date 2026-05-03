@@ -1,6 +1,7 @@
 package lazic.utils.ingest;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 public class DataPoint implements Serializable {
 
@@ -36,6 +37,22 @@ public class DataPoint implements Serializable {
 
 	public String getSource() { return source; }
 	public void setSource(String source) { this.source = source; }
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof DataPoint)) return false;
+		DataPoint that = (DataPoint) o;
+		return Objects.equals(timestamp, that.timestamp)
+				&& Objects.equals(ticker, that.ticker)
+				&& Objects.equals(featureName, that.featureName)
+				&& Objects.equals(value, that.value);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(timestamp, ticker, featureName, value);
+	}
 
 	@Override
 	public String toString() {

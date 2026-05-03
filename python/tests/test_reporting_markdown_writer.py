@@ -40,7 +40,7 @@ def _make_test_report() -> MethodologyReport:
         rejection_reasons=(),
         oos_sharpe_by_regime={"bull": 0.6, "bear": 0.3},
     )
-    
+
     bench = BenchmarkResult(
         name="NZ TD floor",
         wf_two_fold=wf,
@@ -49,7 +49,7 @@ def _make_test_report() -> MethodologyReport:
         coverage_end=pd.Timestamp("2025-01-01"),
         notes=("yield-only bond proxy",),
     )
-    
+
     gating = GatingDecision(
         passes=True,
         bars={"sanity_floor": (True, "Sharpe > 0")},
@@ -77,7 +77,7 @@ def _make_test_report() -> MethodologyReport:
         rejection_reasons=(),
         notes="Test",
     )
-    
+
     dominance = DominanceResult(
         benchmark_names=("NZ TD floor",),
         adjusted_p_values={"NZ TD floor": 0.01},
@@ -85,7 +85,7 @@ def _make_test_report() -> MethodologyReport:
         alpha=0.05,
         n_resamples=2000,
     )
-    
+
     return MethodologyReport(
         config_hash="pre-M7",
         git_sha="abc123",
@@ -108,34 +108,34 @@ def _make_test_report() -> MethodologyReport:
 def test_markdown_writer_determinism():
     """Write report twice, assert SHA-256 equal."""
     from skuld_research.reporting.markdown_writer import write_methodology_report
-    
+
     report = _make_test_report()
-    
+
     with tempfile.TemporaryDirectory() as tmpdir:
         path1 = Path(tmpdir) / "report1.md"
         path2 = Path(tmpdir) / "report2.md"
-        
+
         write_methodology_report(report, path1)
         write_methodology_report(report, path2)
-        
+
         hash1 = hashlib.sha256(path1.read_bytes()).hexdigest()
         hash2 = hashlib.sha256(path2.read_bytes()).hexdigest()
-        
+
         assert hash1 == hash2
 
 
 def test_markdown_writer_contains_expected_sections():
     """Written markdown contains expected section headers."""
     from skuld_research.reporting.markdown_writer import write_methodology_report
-    
+
     report = _make_test_report()
-    
+
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "report.md"
         write_methodology_report(report, path)
-        
+
         content = path.read_text(encoding="utf-8")
-        
+
         # Check for expected sections
         assert "## Strategy" in content
         assert "## Benchmarks" in content

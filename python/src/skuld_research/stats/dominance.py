@@ -38,14 +38,14 @@ def romano_wolf_stepwise(
             alpha=alpha,
             n_resamples=n_resamples,
         )
-    
+
     benchmark_names = tuple(benchmark_returns_dict.keys())
-    
+
     # Align all series on inner join
     all_series = {"strategy": strategy_returns}
     all_series.update(benchmark_returns_dict)
     df = pd.DataFrame(all_series).dropna()
-    
+
     if len(df) < 10:
         # Too few observations → return inconclusive
         return DominanceResult(
@@ -55,21 +55,21 @@ def romano_wolf_stepwise(
             alpha=alpha,
             n_resamples=n_resamples,
         )
-    
+
     strategy_aligned = df["strategy"].values
-    
+
     # Compute observed studentised t-stats per benchmark
     observed_t = {}
     benchmark_data = {}
-    
+
     for name in benchmark_names:
         bench_aligned = df[name].values
         diff = strategy_aligned - bench_aligned
-        
+
         # Annualised Sharpe of difference
         mu_diff = diff.mean()
         std_diff = diff.std(ddof=1)
-        
+
         if std_diff < 1e-12:
             # Degenerate: difference series has zero variance.
             # If mean > 0, strategy strictly dominates (infinite t-stat).
@@ -83,9 +83,9 @@ def romano_wolf_stepwise(
         else:
             t_stat = mu_diff / (std_diff / (len(diff) ** 0.5))
             observed_t[name] = t_stat
-        
+
         benchmark_data[name] = bench_aligned
-    
+
     # Bootstrap distribution of max t-stat under the null (centered).
     # Romano–Wolf step-down requires a null distribution; we recenter each
     # bootstrap difference by subtracting the observed mean of that benchmark's
@@ -137,7 +137,7 @@ def romano_wolf_stepwise(
             bootstrap_max_t.append(max(resample_t))
         else:
             bootstrap_max_t.append(0.0)
-    
+
     bootstrap_max_t_arr = np.array(bootstrap_max_t)
 
     # Compute adjusted p-values
@@ -153,10 +153,10 @@ def romano_wolf_stepwise(
             # Fraction of bootstrap maxes >= observed t
             p_adj = float((bootstrap_max_t_arr >= t_obs).mean())
             adjusted_p[name] = p_adj
-    
+
     # Dominance: adjusted p-value <= alpha
     dominates = {name: (adjusted_p[name] <= alpha) for name in benchmark_names}
-    
+
     return DominanceResult(
         benchmark_names=benchmark_names,
         adjusted_p_values=adjusted_p,

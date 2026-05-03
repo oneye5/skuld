@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from skuld_common.contracts import PITSnapshot, PreparedPanel
 
@@ -81,8 +80,8 @@ def _make_prepared_panel(
 
 def test_size_conforms_to_signal_generator_protocol():
     """SizeFactor satisfies the SignalGenerator protocol."""
-    from skuld_research.factors.size import SizeFactor
     from skuld_research.factors.protocols import SignalGenerator
+    from skuld_research.factors.size import SizeFactor
 
     factor = SizeFactor()
     assert isinstance(factor, SignalGenerator)
@@ -234,7 +233,7 @@ def test_size_pit_safety():
 
     # The low mcap period should score higher (less negative log)
     assert score_low > score_high, "Low mcap should score higher than high mcap"
-    
+
     # Verify the scores are in the expected range
     # -log(100M) ≈ -18.42, -log(1B) ≈ -20.72
     assert -19 < score_low < -18, f"Expected score_low near -18.42, got {score_low}"

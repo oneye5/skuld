@@ -145,44 +145,42 @@ def test_nzx_ma200_rule_aggregate_momentum_negative_uses_raw_scores():
     assert rule._aggregate_momentum_negative(panel, pd.Timestamp("2019-03-29"))
 
 
-def test_nzx_ma200_rule_triggers_when_both_conditions_met(minimal_panel):
-    """Rule triggers when market below MA and momentum negative."""
-    # We need to engineer a scenario where:
-    # 1. Market proxy is below 200-day MA
-    # 2. Aggregate momentum z-score < 0
+def _overlay_panel_with_market_downtrend(monthly_return: float) -> PreparedPanel:
+    tickers = ["A.NZ", "B.NZ", "C.NZ"]
+    asof = pd.Timestamp("2019-04-30")
+    daily_dates = pd.bdate_range("2018-05-01", "2019-04-29")
+    returns_daily = pd.DataFrame(0.0, index=daily_dates, columns=tickers)
+    returns_daily.iloc[-50:, :] = -0.01
 
-    # Modify returns to create a downtrend for the market proxy
-    # Set returns to be negative for the last 50 days
-    minimal_panel.returns_daily.iloc[-50:, :] = -0.02
+    monthly_dates = pd.date_range("2018-01-31", periods=15, freq="BME")
+    returns_monthly = pd.DataFrame(monthly_return, index=monthly_dates, columns=tickers)
+    universe_mask = pd.DataFrame(True, index=[asof], columns=tickers)
 
-    # Recompute monthly returns
-    minimal_panel = PreparedPanel(
-        returns_daily=minimal_panel.returns_daily,
-        returns_monthly=(1.0 + minimal_panel.returns_daily).resample("BME").prod() - 1.0,
-        market_cap=minimal_panel.market_cap,
-        sector=minimal_panel.sector,
-        universe_mask=minimal_panel.universe_mask,
-        macro=minimal_panel.macro,
-        asof=minimal_panel.asof,
+    return PreparedPanel(
+        returns_daily=returns_daily,
+        returns_monthly=returns_monthly,
+        market_cap=pd.DataFrame(1e7, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=universe_mask,
+        macro=pd.DataFrame(index=daily_dates),
+        asof=asof,
     )
 
+
+def test_nzx_ma200_rule_triggers_when_market_below_ma_and_momentum_negative():
+    """Rule raises cash when both defensive conditions are met."""
+    panel = _overlay_panel_with_market_downtrend(monthly_return=-0.02)
     rule = NzxMA200AndAggMomentumRule(defensive_cash_fraction=0.30)
-    asof = minimal_panel.returns_daily.index[-1]
 
-    result = rule.evaluate(minimal_panel, pd.Timestamp(asof))
-
-    # Should trigger (or return 0.0 depending on constructed data)
-    # This is a smoke test; exact behavior depends on synthetic data
-    assert 0.0 <= result <= 0.30
+    assert rule.evaluate(panel, panel.asof) == 0.30
 
 
-def test_nzx_ma200_rule_does_not_trigger_when_only_one_condition():
-    """Rule does not trigger when only one condition is met."""
-    # This would require careful construction of test data where:
-    # - Market is above MA but momentum negative, OR
-    # - Market below MA but momentum positive
-    # Skip for now — covered by integration test
-    pass
+def test_nzx_ma200_rule_does_not_trigger_when_market_below_ma_but_momentum_positive():
+    """Rule stays inactive unless both defensive conditions are met."""
+    panel = _overlay_panel_with_market_downtrend(monthly_return=0.02)
+    rule = NzxMA200AndAggMomentumRule(defensive_cash_fraction=0.30)
+
+    assert rule.evaluate(panel, panel.asof) == 0.0
 
 
 def test_apply_cash_overlay_raises_cash_and_renormalizes(minimal_panel, minimal_target):
@@ -230,14 +228,6 @@ def test_apply_cash_overlay_does_nothing_when_rule_returns_less_than_floor(
 
     # Should return the same object unchanged
     assert result is minimal_target
-
-
-def test_apply_cash_overlay_validates_invariants():
-    """apply_cash_overlay enforces portfolio invariants."""
-    # This is implicitly tested by the previous tests, but we can add
-    # an explicit check for negative weights / sum > 1 edge cases
-    # (those are already covered in the implementation via assertions)
-    pass
 
 
 def test_overlay_with_real_momentum_factor(minimal_panel):

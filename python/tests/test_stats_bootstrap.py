@@ -22,13 +22,13 @@ def test_ci_width_shrinks_with_more_resamples():
     """CI width decreases monotonically as n_resamples grows (same seed)."""
     rng = np.random.default_rng(100)
     returns = pd.Series(0.01 + 0.05 * rng.standard_normal(120))
-    
+
     r200 = stationary_bootstrap_sharpe(returns, n_resamples=200, rng_seed=42)
     r2000 = stationary_bootstrap_sharpe(returns, n_resamples=2000, rng_seed=42)
-    
+
     width_200 = r200.ci_high_95 - r200.ci_low_95
     width_2000 = r2000.ci_high_95 - r2000.ci_low_95
-    
+
     # More resamples doesn't change width significantly in bootstrap
     # but consistency should be better. Let's check they're both finite.
     assert width_200 > 0
@@ -39,10 +39,10 @@ def test_determinism_same_seed():
     """Two consecutive calls with same seed produce identical results."""
     rng = np.random.default_rng(200)
     returns = pd.Series(0.01 + 0.03 * rng.standard_normal(60))
-    
+
     r1 = stationary_bootstrap_sharpe(returns, n_resamples=500, rng_seed=999)
     r2 = stationary_bootstrap_sharpe(returns, n_resamples=500, rng_seed=999)
-    
+
     assert r1.mean == r2.mean
     assert r1.ci_low_95 == r2.ci_low_95
     assert r1.ci_median == r2.ci_median
@@ -61,6 +61,6 @@ def test_point_estimate_matches_sample_sharpe():
     rng = np.random.default_rng(300)
     returns = pd.Series(0.005 + 0.02 * rng.standard_normal(100))
     result = stationary_bootstrap_sharpe(returns, n_resamples=200, rng_seed=42)
-    
+
     expected_sharpe = (returns.mean() / returns.std(ddof=1)) * (12 ** 0.5)
     assert abs(result.point_estimate - expected_sharpe) < 1e-9

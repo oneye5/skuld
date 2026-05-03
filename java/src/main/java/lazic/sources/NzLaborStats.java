@@ -16,6 +16,7 @@ import lazic.utils.ingest.Cadence;
 import lazic.utils.ingest.DataPoint;
 import lazic.utils.ingest.DataSourceBase;
 import lazic.utils.ingest.ReleaseDate;
+import lazic.utils.ingest.ReleaseFilter;
 import lazic.utils.ingest.ReleaseLag;
 import lazic.utils.ingest.WebHtmlGetter;
 
@@ -32,9 +33,18 @@ public class NzLaborStats extends DataSourceBase {
 	 */
 	@Override
 	public Set<DataPoint> getDataPoints() {
+		String rawData = WebHtmlGetter.get(URL);
+		try (FileWriter writer = new FileWriter("sample_data.txt")) {
+			writer.write(rawData);
+		} catch (IOException e) {
+			System.err.println("Warning: Could not write debug file: " + e.getMessage());
+		}
+		return parseObservations(rawData);
+	}
+
+	Set<DataPoint> parseObservations(String rawData) {
 		Set<DataPoint> dataPoints = new HashSet<>();
 		Gson gson = new Gson();
-		String rawData = WebHtmlGetter.get(URL);
 
 		try {
 			JsonObject root = gson.fromJson(rawData, JsonObject.class);
@@ -88,17 +98,12 @@ public class NzLaborStats extends DataSourceBase {
 						timestamp = LocalDateTime.now();
 					}
 
+					if (!ReleaseFilter.isKnowableNow(timestamp)) continue;
+
 					// Ticker is null for macroeconomic data
 					DataPoint dp = new DataPoint(timestamp, null, featureName, value);
 					dataPoints.add(dp);
 				}
-			}
-
-			// Optional: save for debugging
-			try (FileWriter writer = new FileWriter("sample_data.txt")) {
-				writer.write(rawData);
-			} catch (IOException e) {
-				System.err.println("Warning: Could not write debug file: " + e.getMessage());
 			}
 
 		} catch (Exception e) {
@@ -114,10 +119,10 @@ public class NzLaborStats extends DataSourceBase {
 
 	private String buildFeatureName(String[] dimensions) {
 		// Map dimension codes to readable names
-		// Common SDMX dimensions for labor statistics
+		// SDMX dimension structure: FREQ.REF_AREA.GEO_SCOPE.TERRITORIAL_LEVEL.MEASURE.AGE.SEX
 		StringBuilder name = new StringBuilder("NZ_Labor_");
 
-		// Add indicator type (dimension 4 typically contains measure type)
+		// Add indicator type (dimension 4 contains measure type)
 		if (dimensions.length > 4) {
 			name.append(getMeasureLabel(dimensions[4])).append("_");
 		}
@@ -130,6 +135,17 @@ public class NzLaborStats extends DataSourceBase {
 		// Add sex (dimension 6)
 		if (dimensions.length > 6) {
 			name.append(getSexLabel(dimensions[6]));
+		}
+
+		// Add territorial/regional breakdown dimensions (dim[1] and dim[3]) to
+		// disambiguate national vs regional series — the SDMX query returns all
+		// sub-regions of NZL and without this suffix the same measure/age/sex
+		// produces duplicate (timestamp, feature) rows with different values.
+		if (dimensions.length > 3 && !dimensions[3].isEmpty()) {
+			name.append("_r").append(dimensions[3]);
+		}
+		if (dimensions.length > 1 && !dimensions[1].isEmpty()) {
+			name.append("_").append(dimensions[1]);
 		}
 
 		return name.toString().replaceAll("_+$", ""); // Remove trailing underscores

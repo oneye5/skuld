@@ -38,9 +38,11 @@ def build_target_portfolio(
     cash_floor: float = 0.05,
     max_position: float = 0.05,
     max_sector: float = 0.25,
+    min_names: int | None = None,
     score_lambda: float = 0.0,
     adv: pd.Series | None = None,
     portfolio_nav: float | None = None,
+    adv_participation_cap: float | None = 0.01,
     return_window_days: int = 252,
     min_return_obs: int = 63,
 ) -> TargetPortfolio:
@@ -57,6 +59,9 @@ def build_target_portfolio(
         max_sector: Per-sector weight cap (as a fraction of the full portfolio,
             not just the equity sleeve). Skipped for single-sector universes.
             Default 25 %.
+        min_names: Optional breadth target. When set, admits at least this many
+            positive-score candidates when available and tightens the effective
+            per-name cap to ``(1 - cash_floor) / min_names``.
         score_lambda: Score-tilt intensity. Final weights are proportional to
             ``w_rp * max(0, 1 + λ * score)``, re-normalised.  ``λ = 0``
             (default) gives pure risk parity.
@@ -64,6 +69,8 @@ def build_target_portfolio(
             liquidity cap (1 % × ADV per name). Not enforced if ``None``.
         portfolio_nav: Portfolio NAV in NZD for the liquidity cap. Required
             together with ``adv``; ignored if ``adv`` is ``None``.
+        adv_participation_cap: Optional cap as a fraction of ADV tradable at
+            rebalance. ``None`` disables the liquidity cap.
         return_window_days: Lookback (trading days) for covariance estimation.
         min_return_obs: Minimum non-NaN return observations required for a
             ticker to enter the optimizer. Default 63 (≈ 3 months).
@@ -72,6 +79,7 @@ def build_target_portfolio(
         ``TargetPortfolio`` with all contract invariants satisfied.
     """
     t_naive = t.tz_localize(None) if t.tzinfo else t
+    effective_max_position = _effective_max_position(max_position, cash_floor, min_names)
 
     # -----------------------------------------------------------------------
     # 1. Filter candidates: positive combined score, top quintile
@@ -81,14 +89,32 @@ def build_target_portfolio(
 
     if positive.empty:
         if _is_flat_positive_component_signal(scores):
-            return _equal_weight_fallback(list(all_scores.index), cash_floor, t, max_position)
+            return _equal_weight_fallback(
+                list(all_scores.index),
+                cash_floor,
+                t,
+                effective_max_position,
+                adv=adv,
+                portfolio_nav=portfolio_nav,
+                adv_participation_cap=adv_participation_cap,
+            )
         return _cash_portfolio(t)
 
     n_top = top_quintile_n if top_quintile_n is not None else max(1, len(all_scores) // 5)
+    if min_names is not None:
+        n_top = max(n_top, min_names)
     candidates = positive.head(n_top)
 
     if len(candidates) < 2:
-        return _equal_weight_fallback(list(candidates.index), cash_floor, t, max_position)
+        return _equal_weight_fallback(
+            list(candidates.index),
+            cash_floor,
+            t,
+            effective_max_position,
+            adv=adv,
+            portfolio_nav=portfolio_nav,
+            adv_participation_cap=adv_participation_cap,
+        )
 
     # -----------------------------------------------------------------------
     # 2. Build return window for covariance estimation
@@ -96,7 +122,15 @@ def build_target_portfolio(
     daily = panel.returns_daily
     avail_dates = daily.index[daily.index < t_naive]
     if len(avail_dates) < min_return_obs:
-        return _equal_weight_fallback(list(candidates.index), cash_floor, t, max_position)
+        return _equal_weight_fallback(
+            list(candidates.index),
+            cash_floor,
+            t,
+            effective_max_position,
+            adv=adv,
+            portfolio_nav=portfolio_nav,
+            adv_participation_cap=adv_participation_cap,
+        )
 
     window_dates = avail_dates[-return_window_days:]
     candidate_tickers = [tk for tk in candidates.index if tk in daily.columns]
@@ -118,9 +152,16 @@ def build_target_portfolio(
         proportions = _renorm(rp_weights)
         method = "RiskParity"
     else:
-        n_eq = len(candidates)
-        proportions = pd.Series(1.0 / n_eq, index=candidates.index)
-        method = "EqualWeight"
+        valid_candidates = returns_window.columns.tolist()
+        return _equal_weight_fallback(
+            valid_candidates,
+            cash_floor,
+            t,
+            effective_max_position,
+            adv=adv.reindex(valid_candidates) if adv is not None else None,
+            portfolio_nav=portfolio_nav,
+            adv_participation_cap=adv_participation_cap,
+        )
 
     # -----------------------------------------------------------------------
     # 4–7. Apply constraints in final-weight space (% of NAV).
@@ -132,20 +173,19 @@ def build_target_portfolio(
     equity_weights = proportions * (1.0 - cash_floor)
 
     # Per-name cap: redistribute excess to non-capped names; if none, cash absorbs
-    equity_weights = _apply_per_name_cap(equity_weights, max_position)
+    equity_weights = _apply_per_name_cap(equity_weights, effective_max_position)
 
     # Per-sector cap (skip degenerate single-sector case)
     unique_sectors = panel.sector.reindex(equity_weights.index).unique()
     if len(unique_sectors) > 1:
         equity_weights = _apply_sector_cap(equity_weights, panel.sector, max_sector)
 
-    # Optional liquidity cap
-    if adv is not None and portfolio_nav is not None and portfolio_nav > 0:
-        for ticker in list(equity_weights.index):
-            if ticker in adv and adv[ticker] > 0:
-                liq_cap = 0.01 * adv[ticker] / portfolio_nav
-                if equity_weights[ticker] > liq_cap:
-                    equity_weights[ticker] = liq_cap
+    equity_weights = _apply_adv_participation_cap(
+        equity_weights,
+        adv=adv,
+        portfolio_nav=portfolio_nav,
+        adv_participation_cap=adv_participation_cap,
+    )
 
     # Non-negativity guard (floating-point artefacts)
     final_weights = equity_weights.clip(lower=0.0)
@@ -197,6 +237,17 @@ def _risk_parity_weights(returns: pd.DataFrame) -> pd.Series:
     # Fallback: equal weight
     n = len(returns.columns)
     return pd.Series(1.0 / n, index=returns.columns)
+
+
+def _effective_max_position(
+    max_position: float,
+    cash_floor: float,
+    min_names: int | None,
+) -> float:
+    """Return the stricter per-name cap implied by a breadth target."""
+    if min_names is None:
+        return max_position
+    return min(max_position, (1.0 - cash_floor) / min_names)
 
 
 def _renorm(weights: pd.Series) -> pd.Series:
@@ -256,7 +307,14 @@ def _apply_sector_cap(
 
 
 def _equal_weight_fallback(
-    tickers: list[str], cash_floor: float, asof: pd.Timestamp, max_position: float = 1.0
+    tickers: list[str],
+    cash_floor: float,
+    asof: pd.Timestamp,
+    max_position: float = 1.0,
+    *,
+    adv: pd.Series | None = None,
+    portfolio_nav: float | None = None,
+    adv_participation_cap: float | None = 0.01,
 ) -> TargetPortfolio:
     """Return an equal-weight portfolio over ``tickers``, respecting max_position."""
     n = len(tickers)
@@ -272,10 +330,41 @@ def _equal_weight_fallback(
     # Apply per-name cap
     if max_position < 1.0:
         weights = _apply_per_name_cap(weights, max_position)
+    weights = _apply_adv_participation_cap(
+        weights,
+        adv=adv,
+        portfolio_nav=portfolio_nav,
+        adv_participation_cap=adv_participation_cap,
+    )
     cash_weight = max(cash_floor, 1.0 - weights.sum())
     return TargetPortfolio(
         weights=weights, cash_weight=cash_weight, method="EqualWeight", asof=asof
     )
+
+
+def _apply_adv_participation_cap(
+    weights: pd.Series,
+    *,
+    adv: pd.Series | None,
+    portfolio_nav: float | None,
+    adv_participation_cap: float | None,
+) -> pd.Series:
+    """Cap weights by the allowed fraction of rebalance-date ADV."""
+    if (
+        adv is None
+        or portfolio_nav is None
+        or portfolio_nav <= 0
+        or adv_participation_cap is None
+    ):
+        return weights
+
+    weights = weights.copy()
+    for ticker in list(weights.index):
+        if ticker in adv and adv[ticker] > 0:
+            liq_cap = adv_participation_cap * adv[ticker] / portfolio_nav
+            if weights[ticker] > liq_cap:
+                weights[ticker] = liq_cap
+    return weights
 
 
 def _cash_portfolio(asof: pd.Timestamp) -> TargetPortfolio:

@@ -7,9 +7,11 @@ and per-rebalance-date universe masks driven by liquidity + history filters.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from skuld_common.contracts import PITSnapshot, PreparedPanel
+from skuld_research.config.spec import AnomalyFilterSpec
 
 # Preferred order for share-count fundamentals (most recent / most accurate first).
 _SHARE_FIELDS_PREFERENCE = (
@@ -32,6 +34,7 @@ def build_prepared_panel(
     mc_ffill_days: int = 5,
     nzx_only: bool = True,
     rebalance_freq: str = "BME",
+    anomaly_filter: AnomalyFilterSpec | None = None,
 ) -> PreparedPanel:
     """Build a PreparedPanel from a PITSnapshot.
 
@@ -82,18 +85,39 @@ def build_prepared_panel(
     # consecutive rows from different intraday timestamps produce spurious
     # returns and almost all daily returns become NaN.
     prices_daily = prices.resample("D").last()
-    volumes_daily = volumes.resample("D").last()
+    volumes_daily = volumes.resample("D").sum(min_count=1)
 
-    returns_daily = prices_daily.pct_change(fill_method=None)
+    filtered_prices, masked_month_ends = _apply_anomaly_mask(
+        prices_daily,
+        volumes_daily,
+        snap.corporate_actions,
+        anomaly_filter,
+    )
+
+    returns_daily = filtered_prices.pct_change(fill_method=None)
     # min_count=1: months where a ticker had no price data at all produce NaN
     # (not 0.0, which would wrongly inflate the valid-observation count in
     # history-length checks such as the momentum factor's min_months guard).
     returns_monthly = (1.0 + returns_daily).resample("BME").prod(min_count=1) - 1.0
+    for ticker, dates in masked_month_ends.items():
+        returns_monthly.loc[returns_monthly.index.intersection(dates), ticker] = np.nan
 
-    shares = _build_share_count_series(snap.fundamentals, prices_daily.index, prices_daily.columns)
-    market_cap = prices_daily * shares
+    shares = _build_share_count_series(
+        snap.fundamentals,
+        filtered_prices.index,
+        filtered_prices.columns,
+    )
+    market_cap = filtered_prices * shares
 
-    sector = pd.Series("Unknown", index=prices_daily.columns, name="sector")
+    # Build market-cap proxy from shares × adj_close for pre-publication coverage.
+    # _build_share_count_series already forward-fills from the first publication date.
+    # Additionally backward-fill so dates before the earliest publication also get
+    # a share count (using the earliest known value as a best-effort estimate).
+    # This extends coverage into the pre-2022 period where market_cap is NaN.
+    proxy_shares_filled = shares.ffill().bfill()
+    market_cap_proxy = (filtered_prices * proxy_shares_filled).reindex_like(market_cap)
+
+    sector = pd.Series("Unknown", index=filtered_prices.columns, name="sector")
 
     asof_naive = snap.asof.tz_localize(None) if snap.asof.tzinfo else snap.asof
 
@@ -105,12 +129,12 @@ def build_prepared_panel(
         # Default: first date when ≥10 tickers have data, avoiding sparse
         # pre-equity rows from macro/international series.
         n_req = min(10, max(1, len(prices_daily.columns)))
-        _has = prices_daily.notna().sum(axis=1).ge(n_req)
-        _first = _has.idxmax() if _has.any() else prices_daily.index.min()
+        _has = filtered_prices.notna().sum(axis=1).ge(n_req)
+        _first = _has.idxmax() if _has.any() else filtered_prices.index.min()
         _rs = _first.tz_localize(None) if _first.tzinfo else _first
 
     if rebalance_dates is None:
-        if len(prices_daily.index) == 0:
+        if len(filtered_prices.index) == 0:
             rebalance_dates = pd.DatetimeIndex([])
         else:
             rebalance_dates = pd.date_range(
@@ -121,7 +145,7 @@ def build_prepared_panel(
     rebalance_dates = pd.DatetimeIndex(rebalance_dates)
 
     universe_mask = _build_universe_mask(
-        prices=prices_daily,
+        prices=filtered_prices,
         volumes=volumes_daily,
         market_cap=market_cap,
         rebalance_dates=rebalance_dates,
@@ -140,51 +164,178 @@ def build_prepared_panel(
         universe_mask=universe_mask,
         macro=snap.macro,
         asof=snap.asof,
-        prices=prices_daily,
+        prices=filtered_prices,
         corporate_actions=snap.corporate_actions,
+        market_cap_proxy=market_cap_proxy,
     )
 
 
-def _build_share_count_series(
-    fundamentals: pd.DataFrame,
-    date_index: pd.DatetimeIndex,
-    tickers: pd.Index,
-) -> pd.DataFrame:
-    """Build a date×ticker DataFrame of share counts, forward-filled.
+def _apply_anomaly_mask(
+    prices: pd.DataFrame,
+    volumes: pd.DataFrame,
+    corporate_actions: pd.DataFrame,
+    anomaly_filter: AnomalyFilterSpec | None,
+) -> tuple[pd.DataFrame, dict[str, pd.DatetimeIndex]]:
+    """Mask suspicious prints to NaN before return construction."""
+    if anomaly_filter is None or anomaly_filter.kind == "none" or prices.empty:
+        return prices, {}
 
-    Picks the first non-null value per ticker/date across the preference list.
-    Tickers with no available shares data get NaN (which propagates to market_cap
-    and excludes them from the size filter).
-    """
-    empty = pd.DataFrame(float("nan"), index=date_index, columns=tickers)
-    if fundamentals.empty:
-        return empty
+    masked = prices.copy()
+    masked_month_ends: dict[str, pd.DatetimeIndex] = {}
+    corporate_action_dates = _build_corporate_action_dates(corporate_actions)
 
-    available = [f for f in _SHARE_FIELDS_PREFERENCE if f in fundamentals.columns]
-    if not available:
-        return empty
+    for ticker in masked.columns:
+        price_series = masked[ticker]
+        volume_series = volumes[ticker].reindex(masked.index)
 
-    coalesced = fundamentals[available[0]].copy()
-    for col in available[1:]:
-        coalesced = coalesced.combine_first(fundamentals[col])
-
-    coalesced = coalesced.dropna()
-    if coalesced.empty:
-        return empty
-
-    frames: dict = {}
-    for ticker, ts in coalesced.groupby(level="ticker"):
-        if ticker not in tickers:
+        trading_prices = price_series.dropna()
+        if trading_prices.empty:
             continue
-        s = ts.droplevel("ticker").sort_index()
-        s.index = pd.to_datetime(s.index)
-        frames[ticker] = s.reindex(date_index, method="ffill")
 
-    if not frames:
-        return empty
+        trading_volumes = volume_series.reindex(trading_prices.index)
+        trading_returns = trading_prices.pct_change(fill_method=None)
 
-    out = pd.DataFrame(frames).reindex(columns=tickers)
-    return out
+        if anomaly_filter.require_volume_confirmation:
+            next_volumes = trading_volumes.shift(-1)
+            bad_volume = (
+                trading_returns.abs() > anomaly_filter.volume_gate_threshold
+            ) & next_volumes.notna() & ~((trading_volumes > 0) & (next_volumes > 0))
+            bad_dates = [
+                date
+                for date in bad_volume[bad_volume].index
+                if not _has_corporate_action_near(
+                    corporate_action_dates,
+                    ticker,
+                    date,
+                    anomaly_filter.corporate_action_buffer_days,
+                )
+            ]
+            if len(bad_dates) > 0:
+                masked.loc[bad_dates, ticker] = np.nan
+
+        trading_prices = masked[ticker].dropna()
+        trading_returns = trading_prices.pct_change(fill_method=None)
+        extreme_daily = (
+            trading_returns.abs() > anomaly_filter.daily_abs_return_threshold
+        ) & _is_one_sided_daily_move(trading_returns)
+        for date in extreme_daily[extreme_daily].index:
+            if not _has_corporate_action_near(
+                corporate_action_dates,
+                ticker,
+                date,
+                anomaly_filter.corporate_action_buffer_days,
+            ):
+                masked.loc[date, ticker] = np.nan
+
+        trading_prices = masked[ticker].dropna()
+        trading_returns = trading_prices.pct_change(fill_method=None)
+        monthly_returns = (1.0 + trading_returns).resample("BME").prod(min_count=1) - 1.0
+        extreme_monthly = monthly_returns.abs() > anomaly_filter.monthly_abs_return_threshold
+        month_end_dates: list[pd.Timestamp] = []
+        for date in extreme_monthly[extreme_monthly].index:
+            offending_date = _monthly_offending_trading_date(trading_returns, date)
+            check_date = offending_date or date
+            if not _has_corporate_action_near(
+                corporate_action_dates,
+                ticker,
+                check_date,
+                anomaly_filter.corporate_action_buffer_days,
+            ):
+                month_end_dates.append(date)
+
+        if month_end_dates:
+            masked_month_ends[ticker] = pd.DatetimeIndex(month_end_dates)
+
+    # Chronic-ticker pass: tickers that still have more extreme daily returns
+    # than the threshold after per-date masking have chronically bad price
+    # adjustment (e.g. split factors applied inconsistently).  Drop their
+    # entire price series rather than leaving contaminated data in the panel.
+    max_days = anomaly_filter.chronic_ticker_max_extreme_days
+    if max_days > 0:
+        for ticker in masked.columns:
+            trading_prices = masked[ticker].dropna()
+            if trading_prices.empty:
+                continue
+            trading_returns = trading_prices.pct_change(fill_method=None)
+            n_extreme = int((trading_returns.abs() > anomaly_filter.daily_abs_return_threshold).sum())
+            if n_extreme > max_days:
+                masked[ticker] = np.nan
+
+    return masked, masked_month_ends
+
+
+def _is_one_sided_daily_move(returns: pd.Series) -> pd.Series:
+    direction = np.sign(returns)
+    prev_direction = np.sign(returns.shift(1))
+    next_direction = np.sign(returns.shift(-1))
+    return (
+        (prev_direction.ne(-direction) | prev_direction.eq(0) | prev_direction.isna())
+        & (next_direction.ne(-direction) | next_direction.eq(0) | next_direction.isna())
+    ).fillna(False)
+
+
+def _is_one_sided_monthly_move(
+    daily_returns: pd.Series,
+    monthly_returns: pd.Series,
+) -> pd.Series:
+    one_sided = pd.Series(False, index=monthly_returns.index)
+    for month_end, monthly_return in monthly_returns.dropna().items():
+        direction = np.sign(monthly_return)
+        if direction == 0:
+            continue
+
+        month_mask = daily_returns.index.to_period("M") == month_end.to_period("M")
+        month_slice = daily_returns.loc[month_mask].dropna()
+        if month_slice.empty:
+            continue
+
+        month_directions = np.sign(month_slice)
+        if ((month_directions == direction) | (month_directions == 0)).all():
+            one_sided.loc[month_end] = True
+    return one_sided
+
+
+def _monthly_offending_trading_date(
+    daily_returns: pd.Series,
+    month_end: pd.Timestamp,
+) -> pd.Timestamp | None:
+    month_mask = daily_returns.index.to_period("M") == month_end.to_period("M")
+    month_slice = daily_returns.loc[month_mask].dropna()
+    if month_slice.empty:
+        return None
+    return pd.Timestamp(month_slice.abs().idxmax())
+
+
+def _build_corporate_action_dates(corporate_actions: pd.DataFrame) -> dict[str, pd.DatetimeIndex]:
+    if corporate_actions.empty or "ticker" not in corporate_actions.columns or "ex_date" not in corporate_actions.columns:
+        return {}
+
+    actions = corporate_actions[["ticker", "ex_date"]].dropna()
+    if actions.empty:
+        return {}
+
+    ex_dates = pd.to_datetime(actions["ex_date"])
+    if getattr(ex_dates.dt, "tz", None) is not None:
+        ex_dates = ex_dates.dt.tz_localize(None)
+    actions = actions.assign(ex_date=ex_dates)
+    return {
+        str(ticker): pd.DatetimeIndex(group["ex_date"].sort_values().unique())
+        for ticker, group in actions.groupby("ticker", sort=False)
+    }
+
+
+def _has_corporate_action_near(
+    corporate_action_dates: dict[str, pd.DatetimeIndex],
+    ticker: str,
+    date: pd.Timestamp,
+    buffer_days: int,
+) -> bool:
+    dates = corporate_action_dates.get(str(ticker))
+    if dates is None or len(dates) == 0:
+        return False
+
+    delta = (dates - pd.Timestamp(date)).days
+    return bool((abs(delta) <= buffer_days).any())
 
 
 def _build_universe_mask(
@@ -238,3 +389,45 @@ def _build_universe_mask(
     mask = mask.fillna(False)
     mask.index.name = "rebalance_date"
     return mask
+
+
+def _build_share_count_series(
+    fundamentals: pd.DataFrame,
+    date_index: pd.DatetimeIndex,
+    tickers: pd.Index,
+) -> pd.DataFrame:
+    """Build a date×ticker DataFrame of share counts, forward-filled.
+
+    Picks the first non-null value per ticker/date across the preference list.
+    Tickers with no available shares data get NaN (which propagates to market_cap
+    and excludes them from the size filter).
+    """
+    empty = pd.DataFrame(float("nan"), index=date_index, columns=tickers)
+    if fundamentals.empty:
+        return empty
+
+    available = [f for f in _SHARE_FIELDS_PREFERENCE if f in fundamentals.columns]
+    if not available:
+        return empty
+
+    coalesced = fundamentals[available[0]].copy()
+    for col in available[1:]:
+        coalesced = coalesced.combine_first(fundamentals[col])
+
+    coalesced = coalesced.dropna()
+    if coalesced.empty:
+        return empty
+
+    frames: dict = {}
+    for ticker, ts in coalesced.groupby(level="ticker"):
+        if ticker not in tickers:
+            continue
+        s = ts.droplevel("ticker").sort_index()
+        s.index = pd.to_datetime(s.index)
+        frames[ticker] = s.reindex(date_index, method="ffill")
+
+    if not frames:
+        return empty
+
+    out = pd.DataFrame(frames).reindex(columns=tickers)
+    return out

@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from skuld_research.backtest.metrics import compute_drawdown_series, compute_max_drawdown
+from skuld_research.backtest.metrics import compute_max_drawdown
 
 FLAT_HAIRCUT_BPS_DEFAULT: float = 400.0
 UNIVERSE_SIZE_NZX: int = 146   # full NZX universe; used as denominator for per-name loss rate.

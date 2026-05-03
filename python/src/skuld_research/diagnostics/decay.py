@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from skuld_common.contracts import DecayReport, ICReport
+from skuld_common.contracts import DecayReport
 from skuld_research.diagnostics.ic import ranking_ic
 
 

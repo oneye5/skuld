@@ -240,6 +240,10 @@ class WalkForwardEngine:
             self.panel, oos_returns, self.bc.risk_free_annual
         )
 
+        # Stationary bootstrap CI
+        n_boot = getattr(self.bc, "bootstrap_n_resamples", 2000)
+        oos_sharpe_stationary_bootstrap_ci = _compute_stationary_bootstrap_ci(oos_returns, n_boot, self.bc.risk_free_annual)
+
         return WalkForwardResult(
             folds=tuple(fold_results),
             oos_returns=oos_returns,
@@ -259,6 +263,7 @@ class WalkForwardEngine:
             n_rejected_folds=n_rejected,
             rejection_reasons=tuple(rejection_reasons),
             oos_sharpe_by_regime=oos_sharpe_by_regime,
+            oos_sharpe_stationary_bootstrap_ci=oos_sharpe_stationary_bootstrap_ci,
         )
 
     def _run_precomputed(self) -> WalkForwardResult:
@@ -422,6 +427,22 @@ def _restrict_panel_to_fold(panel, spec: FoldSpec):
         prices=panel.prices,
         corporate_actions=panel.corporate_actions,
     )
+
+
+def _compute_stationary_bootstrap_ci(
+    oos_returns: pd.Series,
+    n_resamples: int,
+    rf_annual: float,
+) -> tuple[float, float]:
+    """Return (ci_low_95, ci_high_95) from stationary block bootstrap, or (nan, nan)."""
+    if len(oos_returns) < 4:
+        return (float("nan"), float("nan"))
+    try:
+        from skuld_research.stats.bootstrap import stationary_bootstrap_sharpe
+        result = stationary_bootstrap_sharpe(oos_returns.dropna(), n_resamples=n_resamples)
+        return (result.ci_low_95, result.ci_high_95)
+    except Exception:
+        return (float("nan"), float("nan"))
 
 
 def _compute_per_regime_sharpe(

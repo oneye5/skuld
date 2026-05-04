@@ -26,6 +26,7 @@ from skuld_research.backtest.engine import BacktestConfig, BacktestEngine
 from skuld_research.costs.model import CostConfig
 from skuld_research.costs.spread_estimator import compute_abdi_ranaldo_spread_panel
 from skuld_research.stats.rolling_walk_forward import RollingWalkForwardEngine
+from skuld_research.stats.bootstrap import stationary_bootstrap_sharpe
 
 DATA_PATH = _REPO_ROOT / "data" / "data_long.csv"
 _DEFAULT_SPEC = _REPO_ROOT / "python" / "configs" / "strategy-specs" / "candidates" / "mom-s7.yaml"
@@ -81,8 +82,8 @@ def _build_backtest_config(spec, cost_config: CostConfig) -> BacktestConfig:
     )
 
 
-def _bootstrap_sharpe_ci(returns: pd.Series, n_boot: int = 2000, ci: float = 0.95, rf: float = 0.0) -> tuple[float, float]:
-    """Percentile bootstrap CI for annualised Sharpe."""
+def _iid_bootstrap_sharpe_ci(returns: pd.Series, n_boot: int = 2000, ci: float = 0.95, rf: float = 0.0) -> tuple[float, float]:
+    """Percentile IID bootstrap CI for annualised Sharpe (ignores autocorrelation)."""
     rng = np.random.default_rng(42)
     n = len(returns)
     arr = returns.values
@@ -140,8 +141,14 @@ def print_aggregate_metrics(wf_result, rf: float = 0.0) -> None:
 
     # Bootstrap CI
     if not r.oos_returns.empty and len(r.oos_returns) >= 4:
-        lo, hi = _bootstrap_sharpe_ci(r.oos_returns, rf=rf)
-        print(f"\n  Bootstrap 95% CI for OOS Sharpe: [{lo:.3f}, {hi:.3f}]")
+        iid_lo, iid_hi = _iid_bootstrap_sharpe_ci(r.oos_returns, rf=rf)
+        stat_result = stationary_bootstrap_sharpe(r.oos_returns.dropna(), n_resamples=2000)
+        stat_lo, stat_hi = stat_result.ci_low_95, stat_result.ci_high_95
+        print(f"\n  Bootstrap 95% CI for OOS Sharpe:")
+        print(f"    IID (naive):       [{iid_lo:.3f}, {iid_hi:.3f}]  width={iid_hi - iid_lo:.3f}")
+        print(f"    Stationary block:  [{stat_lo:.3f}, {stat_hi:.3f}]  width={stat_hi - stat_lo:.3f}")
+        wider_pct = (stat_hi - stat_lo) / (iid_hi - iid_lo) * 100 - 100 if (iid_hi - iid_lo) > 1e-12 else float("nan")
+        print(f"    Stationary CI is {wider_pct:+.1f}% wider than IID")
 
     # Per-regime Sharpes
     if r.oos_sharpe_by_regime:

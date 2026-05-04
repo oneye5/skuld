@@ -755,6 +755,138 @@ def test_market_cap_proxy_present_and_covers_gaps():
         assert (ratio - 1.0).abs().max() < 1e-6, "proxy and market_cap should agree post-publication"
 
 
+def _make_chronic_pit_snap(asof: pd.Timestamp) -> PITSnapshot:
+    """Synthetic snap: CHR.NZ has reversing extreme moves (round-trips) across 2 years.
+
+    Reversing moves are NOT masked by the one-sided daily masking pass, so they
+    accumulate in the chronic-ticker expanding window.
+
+    Year 1 (2023): 3 extreme reversals (cumulative count 3 <= threshold=4)
+    Year 2 (2024): 2+ more extreme reversals (cumulative count reaches 5 > threshold=4)
+    """
+    dates = pd.bdate_range("2023-01-02", periods=500)
+    rng = np.random.default_rng(42)
+    anz = 50.0 * (1 + 0.001 * rng.standard_normal(500)).cumprod()
+
+    # CHR: mostly flat but with reversing spikes (up then immediately down)
+    # These are NOT one-sided so they survive per-date masking and accumulate
+    chr_prices = np.full(500, 10.0, dtype=float)
+    # Year 1 spikes (3 total at indices ~60, 130, 200)
+    year1_spike_idx = [60, 130, 200]
+    # Year 2 spikes (2 more at indices ~300, 370 → total 5 > threshold=4)
+    year2_spike_idx = [300, 370]
+    for idx in year1_spike_idx + year2_spike_idx:
+        chr_prices[idx] = chr_prices[idx - 1] * 6.0   # +500% spike
+        chr_prices[idx + 1] = chr_prices[idx - 1]      # immediate reversal
+
+    prices = pd.DataFrame({"ANZ.NZ": anz, "CHR.NZ": chr_prices}, index=dates)
+    prices.index.name = "date"
+
+    volumes = pd.DataFrame(
+        {"ANZ.NZ": np.full(500, 500_000.0), "CHR.NZ": np.full(500, 500_000.0)},
+        index=dates,
+    )
+    volumes.index.name = "date"
+
+    fund_idx = pd.MultiIndex.from_tuples(
+        [
+            ("ANZ.NZ", pd.Timestamp("2023-03-01")),
+            ("CHR.NZ", pd.Timestamp("2023-03-01")),
+        ],
+        names=["ticker", "publication_date"],
+    )
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [3_000_000_000.0, 1_000_000_000.0]},
+        index=fund_idx,
+    )
+    return PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=asof,
+    )
+    volumes.index.name = "date"
+
+    fund_idx = pd.MultiIndex.from_tuples(
+        [
+            ("ANZ.NZ", pd.Timestamp("2023-03-01")),
+            ("CHR.NZ", pd.Timestamp("2023-03-01")),
+        ],
+        names=["ticker", "publication_date"],
+    )
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [3_000_000_000.0, 1_000_000_000.0]},
+        index=fund_idx,
+    )
+    return PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=asof,
+    )
+
+
+def test_chronic_ticker_pit_included_before_threshold():
+    """PIT correctness: prices are NOT nulled before threshold is crossed."""
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    snap = _make_chronic_pit_snap(pd.Timestamp("2025-06-01", tz="UTC"))
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=2.0,
+            monthly_abs_return_threshold=10.0,
+            volume_gate_threshold=10.0,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=0,
+            chronic_ticker_max_extreme_days=4,
+        ),
+        min_history_days=50,
+    )
+
+    # CHR.NZ prices in early April 2023 (only 1 extreme day so far, count <= 4)
+    # should NOT be NaN. Use 2023-04-03 (Monday after Easter, confirmed trading day in fixture).
+    # After resample("D"), non-trading days are NaN — check the first non-NaN price after April.
+    chr_april = panel.prices["CHR.NZ"].loc["2023-04-03":"2023-04-07"].dropna()
+    assert len(chr_april) > 0, "No non-NaN CHR.NZ prices found in 2023-04-03 to 2023-04-07"
+    assert not chr_april.isna().any(), (
+        "CHR.NZ prices should be valid in early April 2023 (only 1 extreme day, below threshold of 4)"
+    )
+
+
+def test_chronic_ticker_pit_excluded_after_threshold():
+    """PIT correctness: prices become NaN once threshold is crossed."""
+    from skuld_research.config.spec import AnomalyFilterSpec
+
+    snap = _make_chronic_pit_snap(pd.Timestamp("2025-06-01", tz="UTC"))
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            daily_abs_return_threshold=2.0,
+            monthly_abs_return_threshold=10.0,
+            volume_gate_threshold=10.0,
+            require_volume_confirmation=False,
+            corporate_action_buffer_days=0,
+            chronic_ticker_max_extreme_days=4,
+        ),
+        min_history_days=50,
+    )
+
+    # CHR.NZ prices after 2024-06-03 (5th extreme day, count 5 > threshold 4)
+    # should be NaN (ticker excluded by PIT chronic pass)
+    after_5th = pd.Timestamp("2024-06-04")
+    chr_prices_after = panel.prices.loc[panel.prices.index >= after_5th, "CHR.NZ"]
+    assert chr_prices_after.isna().all(), (
+        "CHR.NZ prices should be NaN after 2024-06-03 (5th extreme day exceeded threshold of 4)"
+    )
+
+
 def test_market_cap_proxy_no_fundamentals():
     """market_cap_proxy should be all-NaN (not error) when fundamentals are absent."""
     dates = pd.bdate_range("2024-01-02", periods=50)

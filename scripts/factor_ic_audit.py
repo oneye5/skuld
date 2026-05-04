@@ -24,14 +24,40 @@ sys.path.insert(0, str(_REPO_ROOT / "python" / "src"))
 
 from skuld_research.config.loader import load_spec
 from skuld_research.config.factors import build_factors_from_specs
-from skuld_research.data.csv_loader import load_raw_csv
+from skuld_research.data.csv_loader import load_raw_csv, load_raw_ohlc
 from skuld_research.data.pit_loader import PITLoader
 from skuld_research.data.prepared_panel import build_prepared_panel
 from skuld_research.backtest.engine import BacktestConfig, BacktestEngine
 from skuld_research.costs.model import CostConfig
+from skuld_research.costs.spread_estimator import compute_abdi_ranaldo_spread_panel
 
 DATA_PATH = _REPO_ROOT / "data" / "data_long.csv"
 _DEFAULT_SPEC = _REPO_ROOT / "python" / "configs" / "strategy-specs" / "candidates" / "mom-s6.yaml"
+
+
+def _label_spread_by_next_observation(spread_panel: pd.DataFrame) -> pd.DataFrame:
+    if spread_panel.empty:
+        return spread_panel
+    relabelled = spread_panel.iloc[:-1].copy()
+    relabelled.index = spread_panel.index[1:]
+    return relabelled
+
+
+def _build_spread_panel(spec, raw_csv_path: Path) -> pd.DataFrame | None:
+    if spec.cost.spread_model != "abdi_ranaldo":
+        return None
+    print("  Building Abdi-Ranaldo spread panel from OHLC...")
+    high, low, close = load_raw_ohlc(raw_csv_path, scrub=spec.scrubbing, adjustments=spec.adjustments)
+    sp = compute_abdi_ranaldo_spread_panel(
+        high, low, close,
+        window=spec.cost.spread_estimator_window,
+        min_obs=spec.cost.spread_estimator_min_obs,
+        scale=spec.cost.spread_estimator_scale,
+        min_bps_per_side=spec.cost.spread_estimator_min_bps_per_side,
+    )
+    if isinstance(sp.index, pd.DatetimeIndex):
+        sp = _label_spread_by_next_observation(sp)
+    return sp
 
 
 def rank_ic(scores: pd.Series, fwd_returns: pd.Series) -> float | None:
@@ -140,7 +166,8 @@ def main() -> None:
         turnover_budget_frac=spec.backtest.turnover_budget_frac,
     )
     factor_instances = [f for _, f in factors_named]
-    engine = BacktestEngine(factors=factor_instances, panel=panel, config=config)
+    spread_panel = _build_spread_panel(spec, DATA_PATH)
+    engine = BacktestEngine(factors=factor_instances, panel=panel, config=config, spread_panel=spread_panel)
     result = engine.run()
     print(f"  Period:              {result.start:%Y-%m} to {result.end:%Y-%m}  ({result.n_periods} months)")
     print(f"  Sharpe (raw):        {result.sharpe_raw:.3f}")

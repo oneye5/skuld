@@ -246,20 +246,45 @@ def _apply_anomaly_mask(
         if month_end_dates:
             masked_month_ends[ticker] = pd.DatetimeIndex(month_end_dates)
 
-    # Chronic-ticker pass: tickers that still have more extreme daily returns
-    # than the threshold after per-date masking have chronically bad price
-    # adjustment (e.g. split factors applied inconsistently).  Drop their
-    # entire price series rather than leaving contaminated data in the panel.
+    # Chronic-ticker pass (PIT-correct, expanding window): at each date t, a
+    # ticker is excluded if its cumulative count of extreme daily returns up to
+    # t exceeds the threshold.  This avoids the look-ahead bias of the old
+    # full-history count, which would retroactively exclude tickers from early
+    # rebalances based on future extreme prints.
+    #
+    # Note: `masked` is on a calendar-daily index (after resample("D").last()
+    # upstream). Non-trading days are NaN, so pct_change() on the full index
+    # would produce NaN for every post-weekend/holiday day.  We compute
+    # trading-day returns per ticker (dropna), align back to the full index,
+    # then cumsum on the aligned mask.
     max_days = anomaly_filter.chronic_ticker_max_extreme_days
     if max_days > 0:
+        threshold = anomaly_filter.daily_abs_return_threshold
+        # Build a boolean extreme-return mask aligned to the full calendar index
+        extreme_aligned = pd.DataFrame(False, index=masked.index, columns=masked.columns)
         for ticker in masked.columns:
             trading_prices = masked[ticker].dropna()
-            if trading_prices.empty:
+            if len(trading_prices) < 2:
                 continue
             trading_returns = trading_prices.pct_change(fill_method=None)
-            n_extreme = int((trading_returns.abs() > anomaly_filter.daily_abs_return_threshold).sum())
-            if n_extreme > max_days:
-                masked[ticker] = np.nan
+            extreme_trading = trading_returns.abs() > threshold
+            extreme_aligned.loc[extreme_trading.index, ticker] = extreme_trading.values
+
+        # cumsum gives running count of extreme days per ticker (calendar index)
+        cumulative_extreme = extreme_aligned.cumsum(axis=0)
+        # pit_ok is True while cumulative count has not yet exceeded threshold
+        pit_ok = cumulative_extreme <= max_days
+        # Set prices to NaN from the first date the threshold is exceeded
+        n_excluded = int((~pit_ok & masked.notna()).sum().sum())
+        masked = masked.where(pit_ok, other=np.nan)
+
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "chronic-ticker PIT pass: %d ticker-date pairs excluded "
+            "(cumulative extreme days > %d)",
+            n_excluded,
+            max_days,
+        )
 
     return masked, masked_month_ends
 

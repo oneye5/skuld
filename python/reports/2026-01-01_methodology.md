@@ -1,7 +1,7 @@
 # Methodology Report
 
 **Config hash:** 4dd5177fe965a6a703fe04c9ad0ec24e30b2eab6f00876657004a930b74ef489
-**Git SHA:** acdc0a7-dirty
+**Git SHA:** 6e4f301-dirty
 **As-of date:** 2026-01-01
 **Panel coverage:** 1970-01-02 to 2025-12-31
 **Master seed:** 42

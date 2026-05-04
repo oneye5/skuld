@@ -103,6 +103,60 @@ def test_bootstrap_ci_gate_fails_when_interval_straddles_zero(tmp_path: Path):
     assert "≤ 0" in reason
 
 
+def test_bootstrap_ci_uses_excess_return_sharpe_basis(tmp_path: Path):
+    """A positive raw-return series can still fail if risk-free exceeds expected return."""
+    index = pd.date_range("2020-01-31", periods=120, freq="ME")
+    rng = np.random.default_rng(999)
+    oos_returns = pd.Series(0.002 + 0.01 * rng.standard_normal(len(index)), index=index)
+    fold = FoldResult(
+        fold_id=0,
+        test_start=index[0],
+        test_end=index[-1],
+        result=BacktestResult(
+            returns=oos_returns,
+            costs_nzd=pd.Series(0.0, index=index),
+            turnover=pd.Series(0.0, index=index),
+            drawdown=pd.Series(0.0, index=index),
+            sharpe_raw=0.0,
+            sharpe_flat_haircut=0.0,
+            start=index[0],
+            end=index[-1],
+            n_periods=len(index),
+            avg_positions=1.0,
+        ),
+    )
+    wf = WalkForwardResult(
+        folds=(fold,),
+        oos_returns=oos_returns,
+        oos_sharpe_raw=0.0,
+        oos_sharpe_flat_haircut=0.0,
+        oos_sharpe_delisting_adjusted=0.0,
+        oos_drawdown_observed=pd.Series(0.0, index=index),
+        oos_max_drawdown_observed=0.0,
+        oos_max_drawdown_augmented_median=0.0,
+        oos_max_drawdown_augmented_p90=0.0,
+        oos_avg_turnover=0.0,
+        oos_total_cost_nzd=0.0,
+        n_kept_folds=1,
+        n_rejected_folds=0,
+    )
+    ledger = ProductionTrialLedger(root=tmp_path / "prod")
+
+    decision = evaluate(
+        wf,
+        ledger,
+        sanity_floor=-10.0,
+        alpha=0.05,
+        n_resamples=300,
+        rng_seed=42,
+        rf_annual=0.06,
+    )
+
+    passed, _ = decision.bars["bootstrap_ci"]
+    assert passed is False
+    assert decision.bootstrap.point_estimate < 0.0
+
+
 def test_empty_oos_returns_fail_cleanly_without_bootstrap_error(tmp_path: Path):
     """Empty OOS input should return a failed decision rather than raising."""
     empty_index = pd.DatetimeIndex([], freq="ME")

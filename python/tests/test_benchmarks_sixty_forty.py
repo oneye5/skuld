@@ -179,6 +179,32 @@ def test_sixty_forty_bond_rates_mixed_units_auto_convert_elementwise():
     assert any("auto-converted from percentage" in note.lower() for note in notes)
 
 
+def test_sixty_forty_sub_one_percent_values_are_still_percentage_points():
+    """Values like 0.94 in the source data mean 0.94%, not 94%."""
+    from skuld_research.benchmarks.sixty_forty import sixty_forty
+
+    panel = _make_explicit_panel(
+        equity_returns=[0.0, 0.0, 0.0],
+        bond_yields=[1.11, 0.94, 0.63],
+    )
+
+    returns, _, _, notes = sixty_forty(
+        panel,
+        equity_proxy="FNZ.NZ",
+        duration_years=6.0,
+        flat_haircut_bps=0.0,
+    )
+
+    yields = pd.Series([0.0111, 0.0094, 0.0063], index=panel.macro.index)
+    carry = (1.0 + yields) ** (1.0 / 12.0) - 1.0
+    expected_bond_returns = carry - 6.0 * yields.diff()
+    expected = 0.40 * expected_bond_returns.dropna()
+
+    pd.testing.assert_series_equal(returns, expected, check_names=False)
+    assert (returns > -1.0).all()
+    assert any("auto-converted from percentage" in note.lower() for note in notes)
+
+
 def test_sixty_forty_duration_mode_adds_price_return_from_yield_changes():
     """Falling yields should add positive bond price return in duration-aware mode."""
     from skuld_research.benchmarks.sixty_forty import sixty_forty

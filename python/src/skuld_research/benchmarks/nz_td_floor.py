@@ -39,7 +39,8 @@ def nz_td_floor(
     rates_monthly = rates_daily.resample("ME").last()
 
     # Ingested OECD/rates series may mix decimal and percentage rates.
-    rates_monthly = rates_monthly.mask(rates_monthly > 1.0, rates_monthly / 100.0)
+    # The NZ feed uses percentage points even below 1.0 (e.g. 0.33 means 0.33%).
+    rates_monthly = rates_monthly.mask(rates_monthly > 0.20, rates_monthly / 100.0)
 
     # Forward-fill gaps up to 3 months
     rates_monthly = rates_monthly.ffill(limit=3)

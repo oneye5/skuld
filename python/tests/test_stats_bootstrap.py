@@ -64,3 +64,20 @@ def test_point_estimate_matches_sample_sharpe():
 
     expected_sharpe = (returns.mean() / returns.std(ddof=1)) * (12 ** 0.5)
     assert abs(result.point_estimate - expected_sharpe) < 1e-9
+
+
+def test_point_estimate_uses_risk_free_rate_when_provided():
+    """rf_annual shifts the point estimate to excess-return Sharpe."""
+    rng = np.random.default_rng(301)
+    returns = pd.Series(0.01 + 0.02 * rng.standard_normal(120))
+    rf_annual = 0.036
+
+    result = stationary_bootstrap_sharpe(
+        returns,
+        n_resamples=200,
+        rng_seed=42,
+        rf_annual=rf_annual,
+    )
+
+    expected_sharpe = ((returns.mean() - rf_annual / 12.0) / returns.std(ddof=1)) * (12 ** 0.5)
+    assert abs(result.point_estimate - expected_sharpe) < 1e-9

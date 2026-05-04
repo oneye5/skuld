@@ -13,6 +13,7 @@ def stationary_bootstrap_sharpe(
     n_resamples: int = 2000,
     rng_seed: int = 42,
     periods_per_year: int = 12,
+    rf_annual: float = 0.0,
 ) -> BootstrapResult:
     """Stationary bootstrap CI for annualised Sharpe ratio.
     
@@ -25,6 +26,7 @@ def stationary_bootstrap_sharpe(
         n_resamples: number of bootstrap resamples.
         rng_seed: RNG seed for reproducibility.
         periods_per_year: annualisation factor (default 12 for monthly).
+        rf_annual: annual risk-free rate used to compute excess-return Sharpe.
     
     Returns:
         BootstrapResult with point estimate and 95% CI percentiles.
@@ -42,8 +44,11 @@ def stationary_bootstrap_sharpe(
     if mean_block_len is None:
         mean_block_len = max(2.0, float(n ** (1.0 / 3.0)))
 
+    rf_period = rf_annual / periods_per_year
+    excess_returns = returns - rf_period
+
     # Point estimate from original series
-    mu = float(returns.mean())
+    mu = float(excess_returns.mean())
     std = float(returns.std(ddof=1))
     if std < 1e-12:
         # Constant series → Sharpe undefined, return NaN
@@ -61,7 +66,7 @@ def stationary_bootstrap_sharpe(
 
     # Bootstrap resamples
     rng = np.random.default_rng(rng_seed)
-    ret_values = returns.values
+    ret_values = excess_returns.values
     sharpes = []
 
     p_continue = 1.0 - 1.0 / mean_block_len  # probability of continuing block

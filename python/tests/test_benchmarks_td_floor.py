@@ -84,6 +84,20 @@ def test_td_floor_mixed_decimal_and_percentage_rates():
     assert result.returns.max() == pytest.approx(expected_monthly)
 
 
+def test_td_floor_sub_one_percent_values_are_treated_as_percentage_points():
+    """Values like 0.33 in the feed mean 0.33%, not 33%."""
+    from skuld_research.benchmarks.nz_td_floor import nz_td_floor
+
+    panel = _make_panel_with_macro(n_days=400, rate_annual_decimal=0.04)
+    rate_col = "short_term_interest_rates"
+    panel.macro.loc[:, rate_col] = 0.33
+
+    result = nz_td_floor(panel, panel.asof, default_floor=0.04)
+
+    expected_monthly = (1.0033 ** (1.0 / 12.0)) - 1.0
+    assert abs(result.returns.iloc[1:].mean() - expected_monthly) < 1e-6
+
+
 def test_td_floor_missing_rate_uses_default():
     """When macro field is missing, default_floor is used."""
     from skuld_research.benchmarks.nz_td_floor import nz_td_floor

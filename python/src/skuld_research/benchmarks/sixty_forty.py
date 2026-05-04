@@ -72,8 +72,10 @@ def sixty_forty(
     bond_rates_monthly = bond_rates_daily.resample("ME").last()
 
     # Ingested macro series can mix decimal and percentage observations.
+    # In practice the NZ rates feed uses percentage points even below 1.0
+    # (e.g. 0.94 means 0.94%, not 94%), so convert anything above 20 bps.
     converted_rates = bond_rates_monthly.mask(
-        bond_rates_monthly > 1.0, bond_rates_monthly / 100.0
+        bond_rates_monthly > 0.20, bond_rates_monthly / 100.0
     )
     if not converted_rates.equals(bond_rates_monthly):
         bond_rates_monthly = converted_rates

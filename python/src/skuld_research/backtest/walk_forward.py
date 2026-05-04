@@ -439,7 +439,11 @@ def _compute_stationary_bootstrap_ci(
         return (float("nan"), float("nan"))
     try:
         from skuld_research.stats.bootstrap import stationary_bootstrap_sharpe
-        result = stationary_bootstrap_sharpe(oos_returns.dropna(), n_resamples=n_resamples)
+        result = stationary_bootstrap_sharpe(
+            oos_returns.dropna(),
+            n_resamples=n_resamples,
+            rf_annual=rf_annual,
+        )
         return (result.ci_low_95, result.ci_high_95)
     except Exception:
         return (float("nan"), float("nan"))

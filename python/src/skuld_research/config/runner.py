@@ -396,6 +396,7 @@ def run_from_spec(
         dominance_n_resamples=spec.gating.dominance_n_resamples,
         rng_seed=child_seeds["bootstrap"],
         n_trials_prior_override=spec.n_trials_prior,
+        rf_annual=spec.backtest.risk_free_annual,
     )
 
     if gating.dominance is None:

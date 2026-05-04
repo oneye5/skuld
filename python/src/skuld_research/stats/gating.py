@@ -31,6 +31,7 @@ def evaluate(
     dominance_n_resamples: int | None = None,
     rng_seed: int = 44,
     n_trials_prior_override: int | None = None,
+    rf_annual: float = 0.0,
 ) -> GatingDecision:
     """Evaluate walk-forward result against statistical gates.
 
@@ -46,6 +47,7 @@ def evaluate(
         dominance_n_resamples: optional dominance-test resamples. Defaults to
             n_resamples for backward compatibility.
         rng_seed: RNG seed for reproducibility.
+        rf_annual: annual risk-free rate used for bootstrap Sharpe significance.
 
     Returns:
         GatingDecision with pass/fail and detailed bars.
@@ -91,6 +93,7 @@ def evaluate(
         oos_returns,
         n_resamples=n_resamples,
         rng_seed=rng_seed,
+        rf_annual=rf_annual,
     )
 
     # Deflated Sharpe

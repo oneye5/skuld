@@ -49,6 +49,14 @@ def build_factors_from_specs(factor_specs: list[FactorSpec]) -> list[SignalGener
                     min_months=factor_spec.min_months,
                 )
             )
+        elif factor_spec.kind == "book_to_market":
+            from skuld_research.factors.book_to_market import BookToMarketFactor
+
+            factors.append(BookToMarketFactor())
+        elif factor_spec.kind == "ocf_to_assets":
+            from skuld_research.factors.ocf_to_assets import OcfToAssetsFactor
+
+            factors.append(OcfToAssetsFactor())
         else:
             raise ValueError(f"Unknown factor kind: {factor_spec.kind}")
     return factors

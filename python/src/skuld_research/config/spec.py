@@ -66,9 +66,23 @@ class ReturnOnRiskFactorSpec(BaseModel):
     min_months: int = 6
 
 
+class BookToMarketFactorSpec(BaseModel):
+    """Book-to-market factor configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["book_to_market"] = "book_to_market"
+
+
+class OcfToAssetsFactorSpec(BaseModel):
+    """Operating-cash-flow-to-assets factor configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["ocf_to_assets"] = "ocf_to_assets"
+
+
 # Discriminated union for factors (extensible for M8: value, quality, low_vol, size)
 FactorSpec = Annotated[
-    MomentumFactorSpec | LowVolatilityFactorSpec | SizeFactorSpec | DividendYieldFactorSpec | ReturnOnRiskFactorSpec,
+    MomentumFactorSpec | LowVolatilityFactorSpec | SizeFactorSpec | DividendYieldFactorSpec | ReturnOnRiskFactorSpec | BookToMarketFactorSpec | OcfToAssetsFactorSpec,
     Field(discriminator="kind")
 ]
 

@@ -397,7 +397,7 @@ class WalkForwardEngine:
         )
 
 
-def _restrict_panel_to_fold(panel, spec: FoldSpec):
+def _restrict_panel_to_fold(panel: PreparedPanel, spec: FoldSpec) -> PreparedPanel:
     """Return a PreparedPanel with universe_mask restricted to the fold's date range.
 
     The full returns_daily, returns_monthly, market_cap, sector are kept intact
@@ -423,6 +423,7 @@ def _restrict_panel_to_fold(panel, spec: FoldSpec):
         sector=panel.sector,
         universe_mask=fold_mask,
         macro=panel.macro,
+        fundamentals=panel.fundamentals,
         asof=panel.asof,
         prices=panel.prices,
         corporate_actions=panel.corporate_actions,

@@ -26,9 +26,11 @@ from skuld_common.features import (
     ADJ_CLOSE,
     CLOSE,
     CORPORATE_ACTIONS,
+    GICS_SECTOR,
     HIGH,
     LOW,
     PRICE_FEATURES,
+    STRING_FEATURES,
     VOLUME,
 )
 from skuld_research.data.adjustments import (
@@ -72,6 +74,13 @@ class RawData:
     corporate_actions: pd.DataFrame  # columns: ticker, ex_date, type, factor
     scrub_report: ScrubReport = field(default_factory=_empty_scrub_report)
     adjustment_report: AdjustmentAuditReport | None = field(default=None)
+    sector_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
+    """columns: ticker (str), date (Timestamp), sector (str).
+
+    Extracted from ``gics_sector`` rows in the CSV before numeric coercion.
+    Yahoo-sourced labels are current/backfilled classifications, not PIT-safe
+    historical membership.  An empty DataFrame means no sector data is present.
+    """
 
 
 def load_raw_csv(
@@ -108,12 +117,22 @@ def load_raw_csv(
         usecols=["timestamp", "ticker", "feature", "value"],
     )
     df["ticker"] = df["ticker"].fillna("")
+
+    # Preserve the raw string values for features that cannot be represented
+    # as floats (e.g. gics_sector = "Technology") BEFORE numeric coercion.
+    _value_str = df["value"].copy()
+
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
     df["date"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_localize(None)
 
     has_ticker = df["ticker"] != ""
     is_price_feature = df["feature"].isin(PRICE_FEATURES)
     is_corp_action = df["feature"].isin(CORPORATE_ACTIONS)
+    is_string_feature = df["feature"].isin(STRING_FEATURES)
+
+    # Sector labels: extracted from string values before numeric coercion,
+    # excluded from the fundamentals pivot so NaN placeholders don't pollute it.
+    sector_labels = _build_sector_labels(df, has_ticker & (df["feature"] == GICS_SECTOR), _value_str)
 
     prices = _pivot_ticker_feature(df, has_ticker & (df["feature"] == ADJ_CLOSE))
     scrub_report = _empty_scrub_report()
@@ -159,11 +178,12 @@ def load_raw_csv(
     return RawData(
         prices=prices,
         volumes=_pivot_ticker_feature(df, has_ticker & (df["feature"] == VOLUME)),
-        fundamentals=_build_fundamentals(df, has_ticker & ~is_price_feature & ~is_corp_action),
+        fundamentals=_build_fundamentals(df, has_ticker & ~is_price_feature & ~is_corp_action & ~is_string_feature),
         macro=_build_macro(df, ~has_ticker),
         corporate_actions=corporate_actions,
         scrub_report=scrub_report,
         adjustment_report=adjustment_report,
+        sector_labels=sector_labels,
     )
 
 
@@ -240,8 +260,30 @@ def _build_macro(df: pd.DataFrame, mask: pd.Series) -> pd.DataFrame:
     return pivoted.sort_index()
 
 
+def _build_sector_labels(df: pd.DataFrame, mask: pd.Series, value_str: pd.Series) -> pd.DataFrame:
+    """Extract sector label rows as string values.
+
+    Must be called with ``value_str`` captured BEFORE the numeric coercion of
+    ``df["value"]``, since string sector names (e.g. "Technology") become NaN
+    after ``pd.to_numeric(..., errors="coerce")``.
+
+    Returns:
+        DataFrame with columns ``["ticker", "date", "sector"]``, or an empty
+        DataFrame with those columns if no sector rows are present.
+    """
+    _COLS = ["ticker", "date", "sector"]
+    if not mask.any():
+        return pd.DataFrame(columns=_COLS)
+    subset = df.loc[mask, ["ticker", "date"]].copy()
+    subset["sector"] = value_str.loc[mask].values
+    # Drop rows where the sector value is null or empty (malformed rows).
+    subset = subset[subset["sector"].notna() & (subset["sector"].str.strip() != "")]
+    if subset.empty:
+        return pd.DataFrame(columns=_COLS)
+    return subset.reset_index(drop=True)
+
+
 def _build_corporate_actions(df: pd.DataFrame, mask: pd.Series) -> pd.DataFrame:
-    """Extract dividend and split rows into a flat event-shaped DataFrame."""
     subset = df.loc[mask, ["ticker", "date", "feature", "value"]].copy()
     subset = subset.rename(columns={"date": "ex_date", "feature": "type", "value": "factor"})
     return subset.reset_index(drop=True)

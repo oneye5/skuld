@@ -76,10 +76,13 @@ def test_market_cap_uses_share_fallback():
     )
 
 
-def test_sector_is_unknown_for_all():
+def test_sector_is_none_when_no_sector_data():
     snap = _make_snap(pd.Timestamp("2025-01-01", tz="UTC"))
     panel = build_prepared_panel(snap)
-    assert (panel.sector == "Unknown").all()
+    # When the snapshot carries no sector_labels, every ticker should be None
+    # (missing sector), not silently bucketed into "Unknown".  The combiner
+    # handles None via fillna("Unknown") for backward compatibility.
+    assert panel.sector.isna().all()
     assert set(panel.sector.index) == set(snap.prices.columns)
 
 

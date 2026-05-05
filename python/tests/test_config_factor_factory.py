@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from skuld_research.config.spec import (
+    BookToMarketFactorSpec,
     DividendYieldFactorSpec,
     LowVolatilityFactorSpec,
     MomentumFactorSpec,
+    OcfToAssetsFactorSpec,
     SizeFactorSpec,
 )
 
@@ -13,9 +15,11 @@ from skuld_research.config.spec import (
 def test_build_factors_from_specs_preserves_configured_order_and_parameters():
     """Diagnostics and backtests should use the same configured factor set."""
     from skuld_research.config.factors import build_factors_from_specs
+    from skuld_research.factors.book_to_market import BookToMarketFactor
     from skuld_research.factors.dividend_yield import DividendYieldFactor
     from skuld_research.factors.low_volatility import LowVolatilityFactor
     from skuld_research.factors.momentum import MomentumFactor
+    from skuld_research.factors.ocf_to_assets import OcfToAssetsFactor
     from skuld_research.factors.size import SizeFactor
 
     factors = build_factors_from_specs(
@@ -24,6 +28,8 @@ def test_build_factors_from_specs_preserves_configured_order_and_parameters():
             DividendYieldFactorSpec(lookback_months=18, min_dividends=2),
             LowVolatilityFactorSpec(lookback_months=6, min_months=4),
             SizeFactorSpec(),
+            BookToMarketFactorSpec(),
+            OcfToAssetsFactorSpec(),
         ]
     )
 
@@ -32,6 +38,8 @@ def test_build_factors_from_specs_preserves_configured_order_and_parameters():
         "dividend_yield",
         "low_volatility",
         "size",
+        "book_to_market",
+        "ocf_to_assets",
     ]
     assert isinstance(factors[0], MomentumFactor)
     assert factors[0].min_months == 9
@@ -43,6 +51,8 @@ def test_build_factors_from_specs_preserves_configured_order_and_parameters():
     assert factors[2].lookback_months == 6
     assert factors[2].min_months == 4
     assert isinstance(factors[3], SizeFactor)
+    assert isinstance(factors[4], BookToMarketFactor)
+    assert isinstance(factors[5], OcfToAssetsFactor)
 
 
 def test_production_recommend_pipeline_imports_shared_factor_factory():

@@ -42,6 +42,18 @@ SPLIT = "split"
 
 CORPORATE_ACTIONS = frozenset({DIVIDEND, SPLIT})
 
+# --- Per-ticker sector classification -----------------------------------
+# GICS sector label rows have ticker present and a string value (e.g.
+# "Technology").  They are routed separately from fundamentals because the
+# pipeline must preserve the string before the numeric coercion step.
+# Yahoo-sourced labels are current/backfilled classifications, not dated
+# PIT-safe historical membership; downstream code must check PIT safety.
+GICS_SECTOR = "gics_sector"
+
+# Features that carry string (non-numeric) values and must be extracted
+# before the value column is coerced to float.
+STRING_FEATURES = frozenset({GICS_SECTOR})
+
 # --- Per-ticker fundamentals (publication-date-indexed) -----------------
 # The loader does not enumerate fundamental features — any ticker-bearing
 # feature that is not a price feature or corporate action is treated as a

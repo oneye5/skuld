@@ -8,8 +8,10 @@ from pydantic import ValidationError
 
 from skuld_research.config import (
     BacktestSpec,
+    BookToMarketFactorSpec,
     LowVolatilityFactorSpec,
     MomentumFactorSpec,
+    OcfToAssetsFactorSpec,
     SizeFactorSpec,
     spec_hash,
 )
@@ -408,6 +410,40 @@ def test_size_factor_spec_round_trip():
 
     assert len(reloaded.factors) == 1
     assert reloaded.factors[0].kind == "size"
+
+
+def test_book_to_market_factor_spec_round_trip():
+    """BookToMarketFactorSpec round-trips correctly."""
+    spec = BacktestSpec(
+        name="test_book_to_market",
+        asof=datetime.date(2026, 1, 1),
+        factors=[
+            BookToMarketFactorSpec(),
+        ],
+    )
+
+    dumped = spec.model_dump()
+    reloaded = BacktestSpec.model_validate(dumped)
+
+    assert len(reloaded.factors) == 1
+    assert reloaded.factors[0].kind == "book_to_market"
+
+
+def test_ocf_to_assets_factor_spec_round_trip():
+    """OcfToAssetsFactorSpec round-trips correctly."""
+    spec = BacktestSpec(
+        name="test_ocf_to_assets",
+        asof=datetime.date(2026, 1, 1),
+        factors=[
+            OcfToAssetsFactorSpec(),
+        ],
+    )
+
+    dumped = spec.model_dump()
+    reloaded = BacktestSpec.model_validate(dumped)
+
+    assert len(reloaded.factors) == 1
+    assert reloaded.factors[0].kind == "ocf_to_assets"
 
 
 def test_multi_factor_spec_round_trip():

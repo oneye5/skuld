@@ -47,6 +47,9 @@ def _panel_with_dividends() -> PreparedPanel:
         sector=pd.Series("Unknown", index=tickers),
         universe_mask=universe_mask,
         macro=pd.DataFrame(index=dates),
+        fundamentals=pd.DataFrame(
+            index=pd.MultiIndex.from_tuples([], names=["ticker", "publication_date"])
+        ),
         asof=pd.Timestamp("2024-07-01"),
         prices=prices,
         corporate_actions=corporate_actions,

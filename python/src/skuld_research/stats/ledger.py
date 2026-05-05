@@ -31,7 +31,7 @@ class TrialLedger:
         scope: subdirectory name (e.g., "production", "exploration").
     """
 
-    def __init__(self, root: Path, scope: str):
+    def __init__(self, root: Path, scope: str) -> None:
         self.root = self._resolve_root(root, scope)
         self.root.mkdir(parents=True, exist_ok=True)
 

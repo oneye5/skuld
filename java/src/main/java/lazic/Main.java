@@ -25,6 +25,7 @@ public class Main {
 		new NzRatesFx();
 		new NzVehicleRegistrations();
 		new YfFinances();
+		new YfSector();
 		new YfPrices();
 		new NzLaborStats();
  		new NzRoadFatalities();

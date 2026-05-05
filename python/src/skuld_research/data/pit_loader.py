@@ -45,6 +45,15 @@ class PITLoader:
             self._raw.corporate_actions, t_naive
         )
 
+        # Sector labels are passed through without date filtering.  Yahoo-
+        # sourced labels are current/backfilled classifications and carry no
+        # meaningful PIT date.  The PITSnapshot docstring documents the
+        # non-PIT-safe status; downstream SectorNeutraliser and sector-
+        # relative factor code must treat sector-derived outputs as
+        # diagnostic-only (exploration scope) when labels are not independently
+        # dated or verified as PIT-safe.
+        sector_labels = self._raw.sector_labels.copy() if not self._raw.sector_labels.empty else self._raw.sector_labels
+
         return PITSnapshot(
             prices=prices,
             volumes=volumes,
@@ -52,6 +61,7 @@ class PITLoader:
             macro=macro,
             corporate_actions=corporate_actions,
             asof=t,
+            sector_labels=sector_labels,
         )
 
     @staticmethod

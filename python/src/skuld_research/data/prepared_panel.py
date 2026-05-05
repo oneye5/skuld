@@ -117,7 +117,7 @@ def build_prepared_panel(
     proxy_shares_filled = shares.ffill().bfill()
     market_cap_proxy = (filtered_prices * proxy_shares_filled).reindex_like(market_cap)
 
-    sector = pd.Series("Unknown", index=filtered_prices.columns, name="sector")
+    sector = _build_sector_series(snap.sector_labels, filtered_prices.columns)
 
     asof_naive = snap.asof.tz_localize(None) if snap.asof.tzinfo else snap.asof
 
@@ -163,6 +163,7 @@ def build_prepared_panel(
         sector=sector,
         universe_mask=universe_mask,
         macro=snap.macro,
+        fundamentals=snap.fundamentals,
         asof=snap.asof,
         prices=filtered_prices,
         corporate_actions=snap.corporate_actions,
@@ -414,6 +415,44 @@ def _build_universe_mask(
     mask = mask.fillna(False)
     mask.index.name = "rebalance_date"
     return mask
+
+
+def _build_sector_series(sector_labels: pd.DataFrame, tickers: pd.Index) -> pd.Series:
+    """Build a ticker→sector Series from a sector_labels DataFrame.
+
+    Uses the most-recently-dated label per ticker.  Tickers with no entry
+    remain as ``None`` (not silently bucketed into ``"Unknown"``); callers
+    that need the combiner's single-group behaviour must handle ``None``
+    explicitly — the combiner already does this via ``fillna("Unknown")``.
+
+    Args:
+        sector_labels: DataFrame with columns ``["ticker", "date", "sector"]``,
+            as produced by ``csv_loader._build_sector_labels``.
+        tickers: The ticker universe (from ``filtered_prices.columns``).
+
+    Returns:
+        pd.Series indexed by ticker, values = GICS sector string or ``None``.
+    """
+    if (
+        sector_labels.empty
+        or "ticker" not in sector_labels.columns
+        or "sector" not in sector_labels.columns
+    ):
+        return pd.Series(None, index=tickers, name="sector", dtype=object)
+
+    # Take the most recent label per ticker (sort ascending so last = newest).
+    if "date" in sector_labels.columns:
+        latest = (
+            sector_labels.sort_values("date", ascending=True, na_position="first")
+            .groupby("ticker")["sector"]
+            .last()
+        )
+    else:
+        latest = sector_labels.groupby("ticker")["sector"].last()
+
+    result = latest.reindex(tickers)
+    result.name = "sector"
+    return result
 
 
 def _build_share_count_series(

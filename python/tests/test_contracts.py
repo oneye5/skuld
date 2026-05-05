@@ -206,6 +206,9 @@ def _make_panel(**overrides):
         sector=pd.Series("Unknown", index=tickers),
         universe_mask=pd.DataFrame(True, index=rb_dates, columns=tickers),
         macro=pd.DataFrame(),
+        fundamentals=pd.DataFrame(
+            index=pd.MultiIndex.from_tuples([], names=["ticker", "publication_date"])
+        ),
         asof=pd.Timestamp("2025-01-01", tz="UTC"),
     )
     base.update(overrides)

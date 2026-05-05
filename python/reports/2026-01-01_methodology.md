@@ -1,7 +1,7 @@
 # Methodology Report
 
 **Config hash:** 4dd5177fe965a6a703fe04c9ad0ec24e30b2eab6f00876657004a930b74ef489
-**Git SHA:** 6e4f301-dirty
+**Git SHA:** 0147a55-dirty
 **As-of date:** 2026-01-01
 **Panel coverage:** 1970-01-02 to 2025-12-31
 **Master seed:** 42
@@ -51,13 +51,13 @@ Changing this order is a breaking change to reproducibility.
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| NZ TD floor | 1.166 | 1.166 | 1.166 | 0.00% | 0.00% | 0.00% | 0.00% | 0 | 100.00% | 4.114 | 0.000 | 2 | 0 |
+| NZ TD floor | 0.801 | 0.801 | 0.801 | 0.00% | 0.00% | 0.00% | 0.00% | 0 | 100.00% | 0.288 | 0.000 | 2 | 0 |
 
 #### Rolling Driver
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| NZ TD floor | 1.207 | 1.207 | 1.207 | 0.00% | 0.00% | 0.00% | 0.00% | 0 | 100.00% | 2.710 | 0.000 | 12 | 0 |
+| NZ TD floor | -1.938 | -1.938 | -1.938 | 0.00% | 0.00% | 0.00% | 0.00% | 0 | 100.00% | 0.371 | 0.000 | 12 | 0 |
 
 ### NZX equal-weighted
 
@@ -92,20 +92,20 @@ Changing this order is a breaking change to reproducibility.
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 60/40 | 0.389 | 0.389 | 0.389 | -13.00% | -13.00% | -13.00% | 0.00% | 0 | 67.53% | -0.399 | 0.206 | 2 | 0 |
+| 60/40 | 0.245 | 0.245 | 0.245 | -13.00% | -13.00% | -13.00% | 0.00% | 0 | 66.88% | -0.671 | 0.123 | 2 | 0 |
 
 #### Rolling Driver
 
 | Metric | Sharpe Raw | Sharpe Flat HC | Sharpe Delisting Adj | Max DD Obs | Max DD MC Med | Max DD MC P90 | Avg Turnover | Total Cost NZD | Hit Rate | Skewness | Calmar | Kept Folds | Rejected Folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 60/40 | 0.986 | 0.986 | 0.986 | -4.34% | -4.34% | -4.34% | 0.00% | 0 | 73.79% | 0.410 | 1.292 | 12 | 0 |
+| 60/40 | 0.790 | 0.790 | 0.790 | -4.34% | -4.34% | -4.34% | 0.00% | 0 | 72.82% | -0.099 | 0.919 | 12 | 0 |
 
 ## Dominance (Romano-Wolf Stepwise)
 
 | Benchmark | Adjusted p-value | Dominates |
 |---|---|---|
-| NZX equal-weighted | 0.8175 | False |
-| 60/40 | 0.8185 | False |
+| NZX equal-weighted | 0.8230 | False |
+| 60/40 | 0.7640 | False |
 
 ## Gating Decision
 
@@ -114,22 +114,22 @@ Changing this order is a breaking change to reproducibility.
 ### Bars
 
 - **sanity_floor:** ✗ — Sharpe -0.30 ≤ 0.00
-- **bootstrap_ci:** ✗ — 95% CI low -0.41 ≤ 0
+- **bootstrap_ci:** ✗ — 95% CI low -1.20 ≤ 0
 - **deflated_sharpe:** ✗ — p=0.9848 > 0.05
-- **td_excess_return:** ✗ — Mean excess -5.62% ≤ 0 or p=0.8910 > 0.05
-- **dominance_NZX equal-weighted:** ✗ — p_adj=0.8175 > 0.05
-- **dominance_60/40:** ✗ — p_adj=0.8185 > 0.05
+- **td_excess_return:** ✗ — Mean excess 1.70% ≤ 0 or p=0.3242 > 0.05
+- **dominance_NZX equal-weighted:** ✗ — p_adj=0.8230 > 0.05
+- **dominance_60/40:** ✗ — p_adj=0.7640 > 0.05
 
 **Notes:** Kept folds: 9; Rejected folds: 3; n_trials: 41 (prior: 30, ledger: 11); Per-regime Sharpe: bull=0.30, chop=-0.63
 
 ## Pass / Fail
 
 - **Sanity floor:** ✗ FAIL — Sharpe -0.30 ≤ 0.00
-- **Bootstrap CI:** ✗ FAIL — 95% CI low -0.41 ≤ 0
+- **Bootstrap CI:** ✗ FAIL — 95% CI low -1.20 ≤ 0
 - **Deflated Sharpe:** ✗ FAIL — p=0.9848 > 0.05
-- **TD excess return:** ✗ FAIL — Mean excess -5.62% ≤ 0 or p=0.8910 > 0.05
-- **Benchmark (NZX equal-weighted) via Romano-Wolf:** ✗ FAIL — p_adj=0.8175 > 0.05
-- **Benchmark (60/40) via Romano-Wolf:** ✗ FAIL — p_adj=0.8185 > 0.05
+- **TD excess return:** ✗ FAIL — Mean excess 1.70% ≤ 0 or p=0.3242 > 0.05
+- **Benchmark (NZX equal-weighted) via Romano-Wolf:** ✗ FAIL — p_adj=0.8230 > 0.05
+- **Benchmark (60/40) via Romano-Wolf:** ✗ FAIL — p_adj=0.7640 > 0.05
 
 ### Rejected Folds
 

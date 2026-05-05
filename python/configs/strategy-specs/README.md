@@ -49,17 +49,19 @@ Archive:
 - `archive/mom-baseline.yaml` — momentum baseline selected after M8 factor evaluation.
 - `archive/mom-overlay.yaml` — momentum baseline with NZX MA200 and aggregate momentum cash overlay.
 - `archive/mom-ar-spread-scrubbed-overlay.yaml` — scrubbed AR-spread variant with the defensive cash overlay; archived after methodology review, with deterministic overlay trigger/non-trigger tests retained.
+- `archive/mom-smooth3.yaml` — early 3-month-smoothed momentum candidate; archived after stronger repaired-data descendants superseded it.
+- `archive/mom-smooth3-quarterly.yaml` — quarterly smoothed-momentum candidate; archived after failing current gating despite an interesting point estimate.
+- `archive/mom-no-mcap.yaml` — no-market-cap momentum variant; archived after weak net performance and high costs.
+- `archive/mom-ar-spread.yaml` — first AR-spread candidate; archived after newer repaired-data descendants superseded it.
+- `archive/mom-ar-spread-scrubbed.yaml` — scrubbed AR-spread candidate; archived after stronger repaired-data descendants superseded it.
+- `archive/mom-ar-spread-scrubbed-v2.yaml` — AR-spread refinement with turnover controls; archived after stronger repaired-data descendants superseded it.
+- `archive/mom-dividend-yield-ar-spread-scrubbed.yaml` — comparison-only dividend-yield variant; archived as a standalone candidate while retaining it as overlay/comparison evidence.
 
 Candidates:
 
-- `candidates/mom-smooth3.yaml` — momentum baseline with 3-month score smoothing.
-- `candidates/mom-smooth3-quarterly.yaml` — smoothed momentum with quarterly rebalancing.
-- `candidates/mom-no-mcap.yaml` — smoothed momentum with the market-cap filter disabled.
-- `candidates/mom-ar-spread.yaml` — no-market-cap smoothed momentum with Abdi-Ranaldo per-ticker spread estimates.
-- `candidates/mom-ar-spread-scrubbed.yaml` — AR-spread variant with round-trip raw-data scrubbing.
 - `candidates/mom-s6.yaml` — scrubbed AR-spread candidate with 6-month momentum score smoothing.
-- `candidates/mom-dividend-yield-ar-spread-scrubbed.yaml` — comparison-only dividend-yield variant; treat dividend yield as regime-conditional overlay guidance until engine support exists for regime-conditioned factor activation.
+- `candidates/mom-s7.yaml` — repaired-data momentum candidate with 6-month smoothing and `score_lambda=0.5`.
 
 Production:
 
-- No production spec is currently designated.
+- `production/mom-s8.yaml` — approved momentum plus return-on-risk production baseline. Promoted after canonical `run_from_spec(...)` evaluation passed all current gating bars.

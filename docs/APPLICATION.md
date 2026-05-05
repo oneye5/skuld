@@ -79,14 +79,11 @@ The trial ledger is split into `production` (increments the deflation count) and
 
 ## Phase Status
 
-**Phase 1 (factor model):** complete. All milestones (0.5–10) are implemented. The production baseline is **momentum-only** — value and quality were PARKED due to missing fundamental data in the pipeline; low-volatility and size FAIL the gating bar. All evaluated specs including the cash overlay produced negative OOS Sharpe net of the survivorship haircut. The project is in the Phase 2 decision window.
+**Phase 1 (factor model):** complete. All milestones (0.5–10) are implemented. The production baseline is **`mom-s8` momentum plus return-on-risk**. Yahoo fundamentals now reach the research pipeline, but the first two simple fundamental factors tested so far underperformed the older plain momentum comparison: `book_to_market` is kept as a research-only comparison factor, while `ocf_to_assets` is parked. Low-volatility and size FAIL the gating bar. The project is in the Phase 2 alpha-bakeoff window.
 
-**Phase 2 options (in priority order):**
-1. Extend Java ingestion with fundamental data (book equity, gross profit, total assets, OCF) to unblock value and quality factors, then re-run Phase 1 gating.
-2. Evaluate ML residual layer (Gu, Kelly & Xiu 2020 approach) on the momentum baseline.
-3. Additional overlays (trend-following, macro regime tilt) — each under the same gating discipline.
+**Phase 2 active direction:** run the exploration-first alpha candidate funnel described in `docs/plans/2026-05-05-phase2-alpha-bakeoff-design.md`. Phase 2 now starts with a broad `exploration` sweep of PIT-safe `mom-s8` extensions, then promotes only a small set of distinct finalists into a frozen `production` bake-off against `mom-s8`. Sector-dependent candidates are excluded from promotable evaluation unless PIT-safe historical sector membership becomes available. Multi-strategy combination remains deferred to a separate Phase 2B design.
 
-The equal-weighted NZX basket is the documented fallback if no Phase 1 spec clears the primary benchmark.
+The equal-weighted NZX basket remains the documented fallback if no approved production spec remains deployable.
 
 ---
 
@@ -106,4 +103,4 @@ Data sources self-register into an `IngestManager` singleton at construction tim
 
 **Override isolation:** the user's manual review may override any recommendation. Overrides are logged but never fed back into model training, factor selection, or hyperparameter choice. Doing so would constitute OOS data leakage.
 
-**Reproducibility:** every stochastic component (bootstrap, Monte Carlo delisting injection, optimiser tie-breakers) draws from child seeds derived deterministically from a single `rng_master_seed` in the spec. Two consecutive runs on the same spec and data produce byte-identical numeric output.
+**Reproducibility:** every stochastic component (bootstrap, Monte Carlo delisting injection, optimiser tie-breakers) draws from child seeds derived deterministically from a single `master_seed` in the spec. Two consecutive runs on the same spec and data produce byte-identical numeric output.

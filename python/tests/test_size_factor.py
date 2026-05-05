@@ -67,6 +67,7 @@ def _make_prepared_panel(
         sector=panel.sector,
         universe_mask=panel.universe_mask,
         macro=panel.macro,
+        fundamentals=panel.fundamentals,
         asof=panel.asof,
     )
 
@@ -147,6 +148,7 @@ def test_size_missing_mcap():
         sector=panel.sector,
         universe_mask=panel.universe_mask,
         macro=panel.macro,
+        fundamentals=panel.fundamentals,
         asof=panel.asof,
     )
 

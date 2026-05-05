@@ -18,6 +18,14 @@ class PITSnapshot:
         macro: index=date, columns=macro_feature
         corporate_actions: columns: ticker, ex_date, type, factor
         asof: the timestamp this snapshot was built for
+        sector_labels: columns: ticker (str), date (Timestamp), sector (str).
+            Extracted from ``gics_sector`` rows in the CSV.  Yahoo-sourced
+            labels are current/backfilled classifications — NOT PIT-safe
+            historical membership.  An empty DataFrame means no sector data
+            is present.  The PIT invariant is deliberately NOT enforced for
+            this field; downstream code is responsible for treating
+            sector-derived outputs as diagnostic-only when labels are not
+            dated or are backfilled.
     """
 
     prices: pd.DataFrame
@@ -26,6 +34,7 @@ class PITSnapshot:
     macro: pd.DataFrame
     corporate_actions: pd.DataFrame
     asof: pd.Timestamp
+    sector_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def __post_init__(self) -> None:
         asof_naive = self.asof.tz_localize(None) if self.asof.tzinfo else self.asof
@@ -81,6 +90,7 @@ class PreparedPanel:
         sector: index=ticker, values=GICS sector or 'Unknown'
         universe_mask: index=rebalance_date, columns=ticker, bool
         macro: index=date, columns=macro_feature (e.g., interest rates)
+        fundamentals: MultiIndex (ticker, publication_date), columns=feature
         prices: optional index=date, columns=ticker, adjusted close prices after
             any prepared-panel masking
         corporate_actions: optional dividend/split event table filtered PIT
@@ -94,6 +104,7 @@ class PreparedPanel:
     universe_mask: pd.DataFrame
     macro: pd.DataFrame
     asof: pd.Timestamp
+    fundamentals: pd.DataFrame = field(default_factory=pd.DataFrame)
     prices: pd.DataFrame = field(default_factory=pd.DataFrame)
     corporate_actions: pd.DataFrame = field(default_factory=pd.DataFrame)
     market_cap_proxy: pd.DataFrame = field(default_factory=pd.DataFrame)

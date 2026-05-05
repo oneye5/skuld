@@ -3,8 +3,10 @@ package lazic.sources;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Function;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -18,195 +20,264 @@ import lazic.utils.ingest.WebHtmlGetter;
 
 public class YfFinances extends DataSourceBase {
 
-	private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-	/**
-	 * Returns a set of DataPoint's. Ticker is null if the datapoint does not pertain to a particular ticker.
-	 */
-	@Override
-	public String getSourceName() { return "yf_finances"; }
+    private final Function<String, String> fetcher;
 
-	@Override
-	public Set<DataPoint> getDataPoints() {
-		Set<DataPoint> points = new HashSet<>();
-		String[] tickers = Tickers.TICKERS;
-		Gson gson = new Gson();
+    /** Production constructor — uses real HTTP. */
+    public YfFinances() {
+        this(WebHtmlGetter::get);
+    }
 
-		for (String ticker : tickers) {
-			try {
-				// Construct URL and fetch data
-				String targetUrl = URL.replace("{TICKER}", ticker);
-				String rawData = WebHtmlGetter.get(targetUrl);
+    /** Package-private constructor for tests — inject a mock fetcher. */
+    YfFinances(Function<String, String> fetcher) {
+        super();
+        this.fetcher = fetcher;
+    }
 
-				if (rawData == null || rawData.isEmpty()) {
-					continue;
-				}
+    @Override
+    public String getSourceName() { return "yf_finances"; }
 
-				// Parse Root Object
-				JsonObject rootNode = gson.fromJson(rawData, JsonObject.class);
+    @Override
+    public Set<DataPoint> getDataPoints() {
+        Set<DataPoint> points = new HashSet<>();
+        for (String ticker : Tickers.TICKERS) {
+            try {
+                String json = fetcher.apply(buildUrl(ticker));
+                points.addAll(parseTimeSeries(json));
+            } catch (Exception e) {
+                System.err.println("YfFinances: error for " + ticker + " — " + e.getMessage());
+            }
+        }
+        return points;
+    }
 
-				// Navigate to timeseries -> result
-				if (!rootNode.has("timeseries")) continue;
-				JsonObject timeseries = rootNode.getAsJsonObject("timeseries");
+    // ── Package-private for tests ────────────────────────────────────────
 
-				if (!timeseries.has("result") || timeseries.get("result").isJsonNull()) continue;
-				JsonArray results = timeseries.getAsJsonArray("result");
+    static String buildUrl(String ticker) {
+        return BASE_URL.replace("{TICKER}", ticker);
+    }
 
-				// Iterate through the various financial features (NetIncome, EBITDA, etc.)
-				for (JsonElement resultElement : results) {
-					JsonObject resultObj = resultElement.getAsJsonObject();
+    /**
+     * Parses a Yahoo Finance fundamentals-timeseries JSON response.
+     * Returns an empty set (never throws) on any malformed or null input.
+     */
+    static Set<DataPoint> parseTimeSeries(String json) {
+        Set<DataPoint> points = new HashSet<>();
+        if (json == null || json.isBlank()) return points;
 
-					// 1. Extract Metadata to find out what feature this is
-					if (!resultObj.has("meta")) continue;
-					JsonObject meta = resultObj.getAsJsonObject("meta");
+        JsonObject root;
+        try {
+            root = new Gson().fromJson(json, JsonObject.class);
+        } catch (Exception e) {
+            System.err.println("YfFinances: failed to parse JSON — " + e.getMessage());
+            return points;
+        }
 
-					if (!meta.has("type") || !meta.has("symbol")) continue;
+        if (!root.has("timeseries")) return points;
+        JsonObject timeseries = root.getAsJsonObject("timeseries");
+        if (!timeseries.has("result") || timeseries.get("result").isJsonNull()) return points;
+        JsonArray results = timeseries.getAsJsonArray("result");
 
-					String featureType = meta.getAsJsonArray("type").get(0).getAsString();
-					String symbol = meta.getAsJsonArray("symbol").get(0).getAsString();
+        for (JsonElement resultElement : results) {
+            if (resultElement == null || resultElement.isJsonNull()) continue;
+            JsonObject resultObj = resultElement.getAsJsonObject();
 
-					// 2. Use the 'type' string to find the actual data array in the same object
-					// Example: if type is "annualNetIncome", we look for resultObj.get("annualNetIncome")
-					if (resultObj.has(featureType) && !resultObj.get(featureType).isJsonNull()) {
-						JsonArray dataArray = resultObj.getAsJsonArray(featureType);
+            if (!resultObj.has("meta")) continue;
+            JsonObject meta = resultObj.getAsJsonObject("meta");
 
-						// 3. Iterate the time-series data for this feature
-						for (JsonElement dataPointElement : dataArray) {
-							// Handle cases where data might be [null, null, {data}]
-							if (dataPointElement == null || dataPointElement.isJsonNull()) {
-								continue;
-							}
+            JsonArray typeArr   = meta.has("type")   ? meta.getAsJsonArray("type")   : null;
+            JsonArray symbolArr = meta.has("symbol") ? meta.getAsJsonArray("symbol") : null;
 
-							JsonObject dataObj = dataPointElement.getAsJsonObject();
+            if (typeArr == null || typeArr.size() == 0) continue;
+            if (symbolArr == null || symbolArr.size() == 0) continue;
 
-							// Extract Date
-							if (!dataObj.has("asOfDate")) continue;
-							String dateStr = dataObj.get("asOfDate").getAsString();
-							LocalDateTime date = LocalDate.parse(dateStr, DATE_FORMATTER).atStartOfDay();
+            String featureType = typeArr.get(0).getAsString();
+            String symbol      = symbolArr.get(0).getAsString();
 
-							// Extract Value
-							if (dataObj.has("reportedValue") && !dataObj.get("reportedValue").isJsonNull()) {
-								JsonObject reportedValue = dataObj.getAsJsonObject("reportedValue");
-								if (reportedValue.has("raw")) {
-									Double value = reportedValue.get("raw").getAsDouble();
+            if (!resultObj.has(featureType) || resultObj.get(featureType).isJsonNull()) continue;
+            JsonArray dataArray = resultObj.getAsJsonArray(featureType);
 
-									// Create and add DataPoint
-									points.add(new DataPoint(date, symbol, featureType, value));
-								}
-							}
-						}
-					}
-				}
-			} catch (Exception e) {
-				System.err.println("Error parsing data for ticker: " + ticker);
-				e.printStackTrace();
-			}
-		}
+            for (JsonElement elem : dataArray) {
+                if (elem == null || elem.isJsonNull()) continue;
+                JsonObject dataObj = elem.getAsJsonObject();
 
-		return points;
-	}
+                if (!dataObj.has("asOfDate")) continue;
 
-	private final String URL = "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/{TICKER}"
-					+ "?merge=false"
-					+ "&padTimeSeries=true"
-					+ "&period1=493590046"
-					+ "&period2=2750557599"
-					+ "&type=annualTaxEffectOfUnusualItems,trailingTaxEffectOfUnusualItems,annualTaxRateForCalcs,trailingTaxRateForCalcs,"
-					+ "annualNormalizedEBITDA,trailingNormalizedEBITDA,annualNormalizedDilutedEPS,trailingNormalizedDilutedEPS,"
-					+ "annualNormalizedBasicEPS,trailingNormalizedBasicEPS,annualTotalUnusualItems,trailingTotalUnusualItems,"
-					+ "annualTotalUnusualItemsExcludingGoodwill,trailingTotalUnusualItemsExcludingGoodwill,"
-					+ "annualNetIncomeFromContinuingOperationNetMinorityInterest,trailingNetIncomeFromContinuingOperationNetMinorityInterest,"
-					+ "annualReconciledDepreciation,trailingReconciledDepreciation,annualEBITDA,trailingEBITDA,annualEBIT,trailingEBIT,"
-					+ "annualTotalMoneyMarketInvestments,trailingTotalMoneyMarketInvestments,"
-					+ "annualContinuingAndDiscontinuedDilutedEPS,trailingContinuingAndDiscontinuedDilutedEPS,"
-					+ "annualContinuingAndDiscontinuedBasicEPS,trailingContinuingAndDiscontinuedBasicEPS,"
-					+ "annualNormalizedIncome,trailingNormalizedIncome,"
-					+ "annualNetIncomeFromContinuingAndDiscontinuedOperation,trailingNetIncomeFromContinuingAndDiscontinuedOperation,"
-					+ "annualInterestIncomeAfterProvisionForLoanLoss,trailingInterestIncomeAfterProvisionForLoanLoss,"
-					+ "annualRentExpenseSupplemental,trailingRentExpenseSupplemental,"
-					+ "annualReportedNormalizedDilutedEPS,trailingReportedNormalizedDilutedEPS,"
-					+ "annualReportedNormalizedBasicEPS,trailingReportedNormalizedBasicEPS,"
-					+ "annualDividendPerShare,trailingDividendPerShare,annualDilutedAverageShares,trailingDilutedAverageShares,"
-					+ "annualBasicAverageShares,trailingBasicAverageShares,annualDilutedEPS,trailingDilutedEPS,"
-					+ "annualDilutedEPSOtherGainsLosses,trailingDilutedEPSOtherGainsLosses,"
-					+ "annualTaxLossCarryforwardDilutedEPS,trailingTaxLossCarryforwardDilutedEPS,"
-					+ "annualDilutedAccountingChange,trailingDilutedAccountingChange,annualDilutedExtraordinary,"
-					+ "trailingDilutedExtraordinary,annualDilutedDiscontinuousOperations,trailingDilutedDiscontinuousOperations,"
-					+ "annualDilutedContinuousOperations,trailingDilutedContinuousOperations,annualBasicEPS,trailingBasicEPS,"
-					+ "annualBasicEPSOtherGainsLosses,trailingBasicEPSOtherGainsLosses,"
-					+ "annualTaxLossCarryforwardBasicEPS,trailingTaxLossCarryforwardBasicEPS,"
-					+ "annualBasicAccountingChange,trailingBasicAccountingChange,annualBasicExtraordinary,"
-					+ "trailingBasicExtraordinary,annualBasicDiscontinuousOperations,trailingBasicDiscontinuousOperations,"
-					+ "annualBasicContinuousOperations,trailingBasicContinuousOperations,"
-					+ "annualDilutedNIAvailtoComStockholders,trailingDilutedNIAvailtoComStockholders,"
-					+ "annualAverageDilutionEarnings,trailingAverageDilutionEarnings,"
-					+ "annualNetIncomeCommonStockholders,trailingNetIncomeCommonStockholders,"
-					+ "annualOtherThanPreferredStockDividend,trailingOtherThanPreferredStockDividend,"
-					+ "annualPreferredStockDividends,trailingPreferredStockDividends,"
-					+ "annualNetIncome,trailingNetIncome,annualMinorityInterests,trailingMinorityInterests,"
-					+ "annualNetIncomeIncludingNoncontrollingInterests,trailingNetIncomeIncludingNoncontrollingInterests,"
-					+ "annualNetIncomeFromTaxLossCarryforward,trailingNetIncomeFromTaxLossCarryforward,"
-					+ "annualNetIncomeExtraordinary,trailingNetIncomeExtraordinary,"
-					+ "annualNetIncomeDiscontinuousOperations,trailingNetIncomeDiscontinuousOperations,"
-					+ "annualNetIncomeContinuousOperations,trailingNetIncomeContinuousOperations,"
-					+ "annualEarningsFromEquityInterestNetOfTax,trailingEarningsFromEquityInterestNetOfTax,"
-					+ "annualTaxProvision,trailingTaxProvision,annualPretaxIncome,trailingPretatIncome,"
-					+ "annualOtherNonOperatingIncomeExpenses,trailingOtherNonOperatingIncomeExpenses,"
-					+ "annualSpecialIncomeCharges,trailingSpecialIncomeCharges,annualOtherSpecialCharges,trailingOtherSpecialCharges,"
-					+ "annualLossonExtinguishmentofDebt,trailingLossonExtinguishmentofDebt,"
-					+ "annualWriteOff,trailingWriteOff,annualImpairmentOfCapitalAssets,trailingImpairmentOfCapitalAssets,"
-					+ "annualRestructuringAndMergernAcquisition,trailingRestructuringAndMergernAcquisition,"
-					+ "annualGainOnSaleOfBusiness,trailingGainOnSaleOfBusiness,"
-					+ "annualIncomefromAssociatesandOtherParticipatingInterests,"
-					+ "trailingIncomefromAssociatesandOtherParticipatingInterests,"
-					+ "annualNonInterestExpense,trailingNonInterestExpense,annualOtherNonInterestExpense,"
-					+ "trailingOtherNonInterestExpense,annualSecuritiesAmortization,trailingSecuritiesAmortization,"
-					+ "annualDepreciationAmortizationDepletionIncomeStatement,trailingDepreciationAmortizationDepletionIncomeStatement,"
-					+ "annualDepletionIncomeStatement,trailingDepletionIncomeStatement,"
-					+ "annualDepreciationAndAmortizationInIncomeStatement,trailingDepreciationAndAmortizationInIncomeStatement,"
-					+ "annualAmortization,trailingAmortization,"
-					+ "annualAmortizationOfIntangiblesIncomeStatement,trailingAmortizationOfIntangiblesIncomeStatement,"
-					+ "annualDepreciationIncomeStatement,trailingDepreciationIncomeStatement,"
-					+ "annualSellingGeneralAndAdministration,trailingSellingGeneralAndAdministration,"
-					+ "annualSellingAndMarketingExpense,trailingSellingAndMarketingExpense,"
-					+ "annualGeneralAndAdministrativeExpense,trailingGeneralAndAdministrativeExpense,"
-					+ "annualOtherGandA,trailingOtherGandA,annualInsuranceAndClaims,trailingInsuranceAndClaims,"
-					+ "annualRentAndLandingFees,trailingRentAndLandingFees,annualSalariesAndWages,trailingSalariesAndWages,"
-					+ "annualProfessionalExpenseAndContractServicesExpense,trailingProfessionalExpenseAndContractServicesExpense,"
-					+ "annualOccupancyAndEquipment,trailingOccupancyAndEquipment,annualEquipment,trailingEquipment,"
-					+ "annualNetOccupancyExpense,trailingNetOccupancyExpense,annualCreditLossesProvision,trailingCreditLossesProvision,"
-					+ "annualTotalRevenue,trailingTotalRevenue,annualNonInterestIncome,trailingNonInterestIncome,"
-					+ "annualOtherNonInterestIncome,trailingOtherNonInterestIncome,"
-					+ "annualGainLossonSaleofAssets,trailingGainLossonSaleofAssets,"
-					+ "annualGainonSaleofInvestmentProperty,trailingGainonSaleofInvestmentProperty,"
-					+ "annualGainonSaleofLoans,trailingGainonSaleofLoans,annualGainOnSaleOfSecurity,trailingGainOnSaleOfSecurity,"
-					+ "annualForeignExchangeTradingGains,trailingForeignExchangeTradingGains,"
-					+ "annualTradingGainLoss,trailingTradingGainLoss,"
-					+ "annualInvestmentBankingProfit,trailingInvestmentBankingProfit,annualDividendIncome,trailingDividendIncome,"
-					+ "annualFeesAndCommissions,trailingFeesAndCommissions,"
-					+ "annualFeesandCommissionExpense,trailingFeesandCommissionExpense,"
-					+ "annualFeesandCommissionIncome,trailingFeesandCommissionIncome,"
-					+ "annualOtherCustomerServices,trailingOtherCustomerServices,"
-					+ "annualCreditCard,trailingCreditCard,annualSecuritiesActivities,trailingSecuritiesActivities,"
-					+ "annualTrustFeesbyCommissions,trailingTrustFeesbyCommissions,"
-					+ "annualServiceChargeOnDepositorAccounts,trailingServiceChargeOnDepositorAccounts,"
-					+ "annualTotalPremiumsEarned,trailingTotalPremiumsEarned,"
-					+ "annualNetInterestIncome,trailingNetInterestIncome,"
-					+ "annualInterestExpense,trailingInterestExpense,annualOtherInterestExpense,trailingOtherInterestExpense,"
-					+ "annualInterestExpenseForFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
-					+ "trailingInterestExpenseForFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
-					+ "annualInterestExpenseForLongTermDebtAndCapitalSecurities,"
-					+ "trailingInterestExpenseForLongTermDebtAndCapitalSecurities,"
-					+ "annualInterestExpenseForShortTermDebt,trailingInterestExpenseForShortTermDebt,"
-					+ "annualInterestExpenseForDeposit,trailingInterestExpenseForDeposit,"
-					+ "annualInterestIncome,trailingInterestIncome,annualOtherInterestIncome,trailingOtherInterestIncome,"
-					+ "annualInterestIncomeFromFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
-					+ "trailingInterestIncomeFromFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
-					+ "annualInterestIncomeFromDeposits,trailingInterestIncomeFromDeposits,"
-					+ "annualInterestIncomeFromSecurities,trailingInterestIncomeFromSecurities,"
-					+ "annualInterestIncomeFromLoansAndLease,trailingInterestIncomeFromLoansAndLease,"
-					+ "annualInterestIncomeFromLeases,trailingInterestIncomeFromLeases,"
-					+ "annualInterestIncomeFromLoans,trailingInterestIncomeFromLoans"
-					+ "&lang=en-NZ"
-					+ "&region=NZ";
+                LocalDateTime date;
+                try {
+                    date = LocalDate.parse(dataObj.get("asOfDate").getAsString(), DATE_FMT).atStartOfDay();
+                } catch (DateTimeParseException e) {
+                    System.err.println("YfFinances: bad date in entry — " + dataObj);
+                    continue;
+                }
+
+                if (!dataObj.has("reportedValue") || dataObj.get("reportedValue").isJsonNull()) continue;
+                JsonObject reportedValue = dataObj.getAsJsonObject("reportedValue");
+                if (!reportedValue.has("raw")) continue;
+
+                points.add(new DataPoint(date, symbol, featureType, reportedValue.get("raw").getAsDouble()));
+            }
+        }
+
+        return points;
+    }
+
+    // ── URL ─────────────────────────────────────────────────────────────
+
+    private static final String BASE_URL =
+        "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/{TICKER}"
+        + "?merge=false"
+        + "&padTimeSeries=true"
+        + "&period1=493590046"
+        + "&period2=2750557599"
+        + "&type="
+        // ── Balance Sheet ──────────────────────────────────────────────
+        + "annualTotalAssets,"
+        + "annualTotalLiabilitiesNetMinorityInterest,"
+        + "annualStockholdersEquity,"
+        + "annualCashAndCashEquivalents,"
+        + "annualTotalDebt,"
+        + "annualNetPPE,"
+        + "annualCurrentAssets,"
+        + "annualCurrentLiabilities,"
+        + "annualInventory,"
+        + "annualAccountsReceivable,"
+        + "annualRetainedEarnings,"
+        + "annualCommonStock,"
+        + "annualTotalEquityGrossMinorityInterest,"
+        + "annualGoodwill,"
+        // ── Cash Flow ─────────────────────────────────────────────────
+        + "annualCashFlowsfromusedinOperatingActivitiesDirect,"
+        + "annualCapitalExpenditure,"
+        + "annualFreeCashFlow,"
+        + "annualCashFlowFromContinuingInvestingActivities,"
+        + "annualCashFlowFromContinuingFinancingActivities,"
+        + "annualCashDividendsPaid,"
+        + "annualIssuanceOfDebt,"
+        + "annualRepaymentOfDebt,"
+        // ── Income Statement (existing) ────────────────────────────────
+        + "annualTaxEffectOfUnusualItems,trailingTaxEffectOfUnusualItems,"
+        + "annualTaxRateForCalcs,trailingTaxRateForCalcs,"
+        + "annualNormalizedEBITDA,trailingNormalizedEBITDA,"
+        + "annualNormalizedDilutedEPS,trailingNormalizedDilutedEPS,"
+        + "annualNormalizedBasicEPS,trailingNormalizedBasicEPS,"
+        + "annualTotalUnusualItems,trailingTotalUnusualItems,"
+        + "annualTotalUnusualItemsExcludingGoodwill,trailingTotalUnusualItemsExcludingGoodwill,"
+        + "annualNetIncomeFromContinuingOperationNetMinorityInterest,trailingNetIncomeFromContinuingOperationNetMinorityInterest,"
+        + "annualReconciledDepreciation,trailingReconciledDepreciation,"
+        + "annualEBITDA,trailingEBITDA,"
+        + "annualEBIT,trailingEBIT,"
+        + "annualTotalMoneyMarketInvestments,trailingTotalMoneyMarketInvestments,"
+        + "annualContinuingAndDiscontinuedDilutedEPS,trailingContinuingAndDiscontinuedDilutedEPS,"
+        + "annualContinuingAndDiscontinuedBasicEPS,trailingContinuingAndDiscontinuedBasicEPS,"
+        + "annualNormalizedIncome,trailingNormalizedIncome,"
+        + "annualNetIncomeFromContinuingAndDiscontinuedOperation,trailingNetIncomeFromContinuingAndDiscontinuedOperation,"
+        + "annualInterestIncomeAfterProvisionForLoanLoss,trailingInterestIncomeAfterProvisionForLoanLoss,"
+        + "annualRentExpenseSupplemental,trailingRentExpenseSupplemental,"
+        + "annualReportedNormalizedDilutedEPS,trailingReportedNormalizedDilutedEPS,"
+        + "annualReportedNormalizedBasicEPS,trailingReportedNormalizedBasicEPS,"
+        + "annualDividendPerShare,trailingDividendPerShare,"
+        + "annualDilutedAverageShares,trailingDilutedAverageShares,"
+        + "annualBasicAverageShares,trailingBasicAverageShares,"
+        + "annualDilutedEPS,trailingDilutedEPS,"
+        + "annualDilutedEPSOtherGainsLosses,trailingDilutedEPSOtherGainsLosses,"
+        + "annualTaxLossCarryforwardDilutedEPS,trailingTaxLossCarryforwardDilutedEPS,"
+        + "annualDilutedAccountingChange,trailingDilutedAccountingChange,"
+        + "annualDilutedExtraordinary,trailingDilutedExtraordinary,"
+        + "annualDilutedDiscontinuousOperations,trailingDilutedDiscontinuousOperations,"
+        + "annualDilutedContinuousOperations,trailingDilutedContinuousOperations,"
+        + "annualBasicEPS,trailingBasicEPS,"
+        + "annualBasicEPSOtherGainsLosses,trailingBasicEPSOtherGainsLosses,"
+        + "annualTaxLossCarryforwardBasicEPS,trailingTaxLossCarryforwardBasicEPS,"
+        + "annualBasicAccountingChange,trailingBasicAccountingChange,"
+        + "annualBasicExtraordinary,trailingBasicExtraordinary,"
+        + "annualBasicDiscontinuousOperations,trailingBasicDiscontinuousOperations,"
+        + "annualBasicContinuousOperations,trailingBasicContinuousOperations,"
+        + "annualDilutedNIAvailtoComStockholders,trailingDilutedNIAvailtoComStockholders,"
+        + "annualAverageDilutionEarnings,trailingAverageDilutionEarnings,"
+        + "annualNetIncomeCommonStockholders,trailingNetIncomeCommonStockholders,"
+        + "annualOtherThanPreferredStockDividend,trailingOtherThanPreferredStockDividend,"
+        + "annualPreferredStockDividends,trailingPreferredStockDividends,"
+        + "annualNetIncome,trailingNetIncome,"
+        + "annualMinorityInterests,trailingMinorityInterests,"
+        + "annualNetIncomeIncludingNoncontrollingInterests,trailingNetIncomeIncludingNoncontrollingInterests,"
+        + "annualNetIncomeFromTaxLossCarryforward,trailingNetIncomeFromTaxLossCarryforward,"
+        + "annualNetIncomeExtraordinary,trailingNetIncomeExtraordinary,"
+        + "annualNetIncomeDiscontinuousOperations,trailingNetIncomeDiscontinuousOperations,"
+        + "annualNetIncomeContinuousOperations,trailingNetIncomeContinuousOperations,"
+        + "annualEarningsFromEquityInterestNetOfTax,trailingEarningsFromEquityInterestNetOfTax,"
+        + "annualTaxProvision,trailingTaxProvision,"
+        + "annualPretaxIncome,trailingPretatIncome,"
+        + "annualOtherNonOperatingIncomeExpenses,trailingOtherNonOperatingIncomeExpenses,"
+        + "annualSpecialIncomeCharges,trailingSpecialIncomeCharges,"
+        + "annualOtherSpecialCharges,trailingOtherSpecialCharges,"
+        + "annualLossonExtinguishmentofDebt,trailingLossonExtinguishmentofDebt,"
+        + "annualWriteOff,trailingWriteOff,"
+        + "annualImpairmentOfCapitalAssets,trailingImpairmentOfCapitalAssets,"
+        + "annualRestructuringAndMergernAcquisition,trailingRestructuringAndMergernAcquisition,"
+        + "annualGainOnSaleOfBusiness,trailingGainOnSaleOfBusiness,"
+        + "annualIncomefromAssociatesandOtherParticipatingInterests,"
+        + "trailingIncomefromAssociatesandOtherParticipatingInterests,"
+        + "annualNonInterestExpense,trailingNonInterestExpense,"
+        + "annualOtherNonInterestExpense,trailingOtherNonInterestExpense,"
+        + "annualSecuritiesAmortization,trailingSecuritiesAmortization,"
+        + "annualDepreciationAmortizationDepletionIncomeStatement,trailingDepreciationAmortizationDepletionIncomeStatement,"
+        + "annualDepletionIncomeStatement,trailingDepletionIncomeStatement,"
+        + "annualDepreciationAndAmortizationInIncomeStatement,trailingDepreciationAndAmortizationInIncomeStatement,"
+        + "annualAmortization,trailingAmortization,"
+        + "annualAmortizationOfIntangiblesIncomeStatement,trailingAmortizationOfIntangiblesIncomeStatement,"
+        + "annualDepreciationIncomeStatement,trailingDepreciationIncomeStatement,"
+        + "annualSellingGeneralAndAdministration,trailingSellingGeneralAndAdministration,"
+        + "annualSellingAndMarketingExpense,trailingSellingAndMarketingExpense,"
+        + "annualGeneralAndAdministrativeExpense,trailingGeneralAndAdministrativeExpense,"
+        + "annualOtherGandA,trailingOtherGandA,"
+        + "annualInsuranceAndClaims,trailingInsuranceAndClaims,"
+        + "annualRentAndLandingFees,trailingRentAndLandingFees,"
+        + "annualSalariesAndWages,trailingSalariesAndWages,"
+        + "annualProfessionalExpenseAndContractServicesExpense,trailingProfessionalExpenseAndContractServicesExpense,"
+        + "annualOccupancyAndEquipment,trailingOccupancyAndEquipment,"
+        + "annualEquipment,trailingEquipment,"
+        + "annualNetOccupancyExpense,trailingNetOccupancyExpense,"
+        + "annualCreditLossesProvision,trailingCreditLossesProvision,"
+        + "annualTotalRevenue,trailingTotalRevenue,"
+        + "annualNonInterestIncome,trailingNonInterestIncome,"
+        + "annualOtherNonInterestIncome,trailingOtherNonInterestIncome,"
+        + "annualGainLossonSaleofAssets,trailingGainLossonSaleofAssets,"
+        + "annualGainonSaleofInvestmentProperty,trailingGainonSaleofInvestmentProperty,"
+        + "annualGainonSaleofLoans,trailingGainonSaleofLoans,"
+        + "annualGainOnSaleOfSecurity,trailingGainOnSaleOfSecurity,"
+        + "annualForeignExchangeTradingGains,trailingForeignExchangeTradingGains,"
+        + "annualTradingGainLoss,trailingTradingGainLoss,"
+        + "annualInvestmentBankingProfit,trailingInvestmentBankingProfit,"
+        + "annualDividendIncome,trailingDividendIncome,"
+        + "annualFeesAndCommissions,trailingFeesAndCommissions,"
+        + "annualFeesandCommissionExpense,trailingFeesandCommissionExpense,"
+        + "annualFeesandCommissionIncome,trailingFeesandCommissionIncome,"
+        + "annualOtherCustomerServices,trailingOtherCustomerServices,"
+        + "annualCreditCard,trailingCreditCard,"
+        + "annualSecuritiesActivities,trailingSecuritiesActivities,"
+        + "annualTrustFeesbyCommissions,trailingTrustFeesbyCommissions,"
+        + "annualServiceChargeOnDepositorAccounts,trailingServiceChargeOnDepositorAccounts,"
+        + "annualTotalPremiumsEarned,trailingTotalPremiumsEarned,"
+        + "annualNetInterestIncome,trailingNetInterestIncome,"
+        + "annualInterestExpense,trailingInterestExpense,"
+        + "annualOtherInterestExpense,trailingOtherInterestExpense,"
+        + "annualInterestExpenseForFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
+        + "trailingInterestExpenseForFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
+        + "annualInterestExpenseForLongTermDebtAndCapitalSecurities,"
+        + "trailingInterestExpenseForLongTermDebtAndCapitalSecurities,"
+        + "annualInterestExpenseForShortTermDebt,trailingInterestExpenseForShortTermDebt,"
+        + "annualInterestExpenseForDeposit,trailingInterestExpenseForDeposit,"
+        + "annualInterestIncome,trailingInterestIncome,"
+        + "annualOtherInterestIncome,trailingOtherInterestIncome,"
+        + "annualInterestIncomeFromFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
+        + "trailingInterestIncomeFromFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell,"
+        + "annualInterestIncomeFromDeposits,trailingInterestIncomeFromDeposits,"
+        + "annualInterestIncomeFromSecurities,trailingInterestIncomeFromSecurities,"
+        + "annualInterestIncomeFromLoansAndLease,trailingInterestIncomeFromLoansAndLease,"
+        + "annualInterestIncomeFromLeases,trailingInterestIncomeFromLeases,"
+        + "annualInterestIncomeFromLoans,trailingInterestIncomeFromLoans"
+        + "&lang=en-NZ"
+        + "&region=NZ";
 }

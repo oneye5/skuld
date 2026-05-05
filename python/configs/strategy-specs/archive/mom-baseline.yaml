@@ -3,8 +3,8 @@
 # Included factors: momentum (11-month)
 #
 # Decision files:
-# - 2026-04-26_value.md (PARKED)
-# - 2026-04-26_quality.md (PARKED)
+# - docs/decisions/2026-05-05_book_to_market.md (KEEP, research-only)
+# - docs/decisions/2026-05-05_ocf_to_assets.md (PARKED)
 # - 2026-04-26_low_volatility.md (FAIL)
 # - 2026-04-26_size.md (FAIL)
 #

@@ -1,0 +1,90 @@
+# Momentum-smoothed-3 + Quarterly-Rebalance Spec — Phase 1 turnover compounding
+#
+# Hypothesis: stacking 3-month score smoothing (predecessor:
+# mom-smooth3.yaml) with a quarterly rebalance schedule
+# should compound the cost reduction. IC diagnostics show the 12-1 momentum
+# signal peaks at horizon ~6 months, so a quarterly cadence on a smoothed
+# score is signal-consistent: we hold positions longer and pay turnover
+# only on the slowest component of the score's drift.
+#
+# Difference vs mom-smooth3.yaml:
+#   universe.rebalance_freq: "BQE" (was implicit "BME").
+# All other knobs (factors, cost, backtest, walk_forward, survivorship,
+# gating, benchmarks, output) are identical.
+#
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: mom-smooth3-quarterly
+description: "Momentum baseline + 3m smoothing + quarterly rebalance"
+asof: 2026-01-01
+master_seed: 42
+n_trials_prior: 30
+
+universe:
+  min_adv_dollars: 10000.0
+  min_market_cap_nzd: 20000000.0
+  min_history_days: 126
+  adv_window: 20
+  mc_ffill_days: 5
+  nzx_only: true
+  rebalance_freq: "BQE"
+
+factors:
+  - kind: momentum
+    min_months: 11
+    smoothing_months: 3
+
+cost:
+  spread_bps: 200.0
+  sharesies_monthly_fee_nzd: 15.0
+  sharesies_coverage_nzd: 5000.0
+  sharesies_excess_bps: 190.0
+
+backtest:
+  initial_nav_nzd: 10000.0
+  cash_floor: 0.05
+  max_position: 0.25
+  max_sector: 0.25
+  score_lambda: 0.0
+  no_trade_threshold_frac: 0.005
+  size_floor_nzd: 50.0
+  size_floor_cost_multiple: 5.0
+  return_window_days: 252
+  min_return_obs: 63
+  flat_haircut_bps: 400.0
+  risk_free_annual: 0.035
+  min_positions_per_month: 1
+  degenerate_fold_max_empty_frac: 0.5
+
+# See mom-ar-spread.yaml for rationale. Audit-only; no price mutation.
+adjustments:
+  kind: audit
+
+walk_forward:
+  two_fold_enabled: true
+  rolling:
+    train_years: 5
+    oos_years: 1
+    step_years: 1
+
+survivorship:
+  monte_carlo_seeds: 500
+  delisting_csv_relpath: "src/survivorship/nzx_delistings.csv"
+
+gating:
+  alpha: 0.05
+  bootstrap_n_resamples: 2000
+  dominance_n_resamples: 2000
+  sanity_floor: 0.0
+
+benchmarks:
+  td_floor_default: 0.04
+  nzx_eq_mcap_floor_nzd: 20000000.0
+  nzx_eq_adv_floor_shares: 10000.0
+  sixty_forty_equity_proxy: "FNZ.NZ"
+  sixty_forty_bond_macro_field: "long_term_interest_rates"
+  sixty_forty_bond_duration_years: 6.0
+  sixty_forty_flat_haircut_bps: 50.0
+
+output:
+  report_dir_relpath: "reports"
+  ledger_scope: exploration

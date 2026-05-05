@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from skuld_research.config.hashing import short_hash, spec_hash
@@ -19,12 +19,14 @@ if TYPE_CHECKING:
         BacktestEngineSpec,
         BacktestSpec,
         BenchmarksSpec,
+        BookToMarketFactorSpec,
         CostSpec,
         DividendYieldFactorSpec,
         FactorSpec,
         GatingSpec,
         LowVolatilityFactorSpec,
         MomentumFactorSpec,
+        OcfToAssetsFactorSpec,
         OutputSpec,
         ReturnOnRiskFactorSpec,
         RollingDriverSpec,
@@ -39,6 +41,8 @@ _EXPORTS = {
     "BacktestSpec": ("skuld_research.config.spec", "BacktestSpec"),
     "UniverseSpec": ("skuld_research.config.spec", "UniverseSpec"),
     "FactorSpec": ("skuld_research.config.spec", "FactorSpec"),
+    "BookToMarketFactorSpec": ("skuld_research.config.spec", "BookToMarketFactorSpec"),
+    "OcfToAssetsFactorSpec": ("skuld_research.config.spec", "OcfToAssetsFactorSpec"),
     "MomentumFactorSpec": ("skuld_research.config.spec", "MomentumFactorSpec"),
     "LowVolatilityFactorSpec": (
         "skuld_research.config.spec",
@@ -86,6 +90,8 @@ __all__ = [
     "BacktestSpec",
     "UniverseSpec",
     "FactorSpec",
+    "BookToMarketFactorSpec",
+    "OcfToAssetsFactorSpec",
     "MomentumFactorSpec",
     "LowVolatilityFactorSpec",
     "SizeFactorSpec",
@@ -111,7 +117,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name not in _EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

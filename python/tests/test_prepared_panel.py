@@ -909,3 +909,141 @@ def test_market_cap_proxy_no_fundamentals():
     panel = build_prepared_panel(snap)
     # proxy should exist but be all NaN
     assert panel.market_cap_proxy.notna().sum().sum() == 0
+
+
+# ---------------------------------------------------------------------------
+# Stale-price streak filter tests
+# ---------------------------------------------------------------------------
+
+from skuld_research.data.prepared_panel import _apply_stale_price_mask
+from skuld_research.config.spec import AnomalyFilterSpec
+
+
+def _make_stale_prices(flat_run: int, n_before: int = 5, n_after: int = 3) -> pd.DataFrame:
+    """Build a calendar-daily price DataFrame with one ticker having a flat-price run.
+
+    Structure: ``n_before`` normal trading days, ``flat_run`` days at the same price,
+    then ``n_after`` normal trading days.
+    """
+    n_total = n_before + flat_run + n_after
+    dates = pd.bdate_range("2024-01-01", periods=n_total)
+    rng = np.random.default_rng(7)
+    # Pre-run: random walk
+    prices = list(50.0 * (1 + 0.002 * rng.standard_normal(n_before)).cumprod())
+    # Flat run: repeat the last pre-run price
+    flat_price = prices[-1]
+    prices.extend([flat_price] * flat_run)
+    # Post-run: random walk from flat_price
+    prices.extend(list(flat_price * (1 + 0.002 * rng.standard_normal(n_after)).cumprod()))
+    return pd.DataFrame({"T.NZ": prices}, index=dates)
+
+
+def test_stale_mask_no_op_for_streak_days_less_than_2():
+    """streak_days < 2 is a no-op: function returns an identical frame."""
+    df = _make_stale_prices(flat_run=10)
+    result = _apply_stale_price_mask(df, streak_days=1)
+    pd.testing.assert_frame_equal(result, df)
+
+
+def test_stale_mask_short_run_not_masked():
+    """A flat run shorter than streak_days threshold is not masked."""
+    flat_run = 3
+    df = _make_stale_prices(flat_run=flat_run, n_before=5, n_after=5)
+    streak_threshold = 5  # run of 3 < threshold of 5 → no masking
+    result = _apply_stale_price_mask(df, streak_days=streak_threshold)
+    # All values should be unchanged (no NaN introduced)
+    assert result["T.NZ"].notna().sum() == df["T.NZ"].notna().sum()
+
+
+def test_stale_mask_first_day_of_streak_kept():
+    """The first day of a qualifying streak is preserved; only days 2+ are NaN."""
+    n_before = 5
+    flat_run = 6
+    df = _make_stale_prices(flat_run=flat_run, n_before=n_before, n_after=3)
+    streak_threshold = 5
+    result = _apply_stale_price_mask(df, streak_days=streak_threshold)
+
+    # Day at index n_before is the first flat day → should NOT be NaN
+    flat_start_idx = n_before
+    assert not pd.isna(result["T.NZ"].iloc[flat_start_idx])
+
+
+def test_stale_mask_days_2_onwards_are_nan():
+    """Days 2+ of a qualifying flat run should be NaN."""
+    n_before = 5
+    flat_run = 6
+    n_after = 3
+    df = _make_stale_prices(flat_run=flat_run, n_before=n_before, n_after=n_after)
+    streak_threshold = 5
+    result = _apply_stale_price_mask(df, streak_days=streak_threshold)
+
+    # Days 2..flat_run of the flat block should be NaN
+    flat_start_idx = n_before
+    for i in range(1, flat_run):
+        assert pd.isna(result["T.NZ"].iloc[flat_start_idx + i]), (
+            f"Day {i + 1} of flat run should be NaN"
+        )
+
+
+def test_stale_mask_post_run_prices_intact():
+    """Prices after the stale streak are not affected."""
+    n_before = 5
+    flat_run = 6
+    n_after = 5
+    df = _make_stale_prices(flat_run=flat_run, n_before=n_before, n_after=n_after)
+    result = _apply_stale_price_mask(df, streak_days=5)
+
+    post_start = n_before + flat_run
+    original_post = df["T.NZ"].iloc[post_start:].values
+    result_post = result["T.NZ"].iloc[post_start:].values
+    np.testing.assert_array_equal(original_post, result_post)
+
+
+def test_stale_mask_integration_via_build_prepared_panel():
+    """build_prepared_panel with stale_price_streak_days masks flat-price runs end-to-end."""
+    # Build a snapshot with a known flat-price block (10 identical trading days)
+    n_normal = 130
+    flat_run = 10
+    n_total = n_normal + flat_run + 20
+    dates = pd.bdate_range("2024-01-02", periods=n_total)
+    rng = np.random.default_rng(17)
+    anz = list(50.0 * (1 + 0.002 * rng.standard_normal(n_normal)).cumprod())
+    flat_price = anz[-1]
+    anz.extend([flat_price] * flat_run)
+    anz.extend(list(flat_price * (1 + 0.002 * rng.standard_normal(20)).cumprod()))
+    prices = pd.DataFrame({"ANZ.NZ": anz}, index=dates)
+    prices.index.name = "date"
+    volumes = pd.DataFrame({"ANZ.NZ": np.full(n_total, 500_000.0)}, index=dates)
+    volumes.index.name = "date"
+    fund_idx = pd.MultiIndex.from_tuples(
+        [("ANZ.NZ", pd.Timestamp("2024-03-01"))],
+        names=["ticker", "publication_date"],
+    )
+    fundamentals = pd.DataFrame(
+        {"trailing_basic_average_shares": [3_000_000_000.0]},
+        index=fund_idx,
+    )
+    snap = PITSnapshot(
+        prices=prices,
+        volumes=volumes,
+        fundamentals=fundamentals,
+        macro=pd.DataFrame(),
+        corporate_actions=pd.DataFrame(columns=["ticker", "ex_date", "type", "factor"]),
+        asof=pd.Timestamp("2025-06-01"),
+    )
+    panel = build_prepared_panel(
+        snap,
+        anomaly_filter=AnomalyFilterSpec(
+            kind="mask_extremes",
+            stale_price_streak_days=5,
+        ),
+        min_history_days=50,
+    )
+    # Daily returns for ANZ.NZ should have NaN in the middle of the flat block
+    flat_start_date = dates[n_normal]
+    flat_dates_excl_first = dates[n_normal + 1 : n_normal + flat_run]
+    anz_daily = panel.returns_daily["ANZ.NZ"]
+    for d in flat_dates_excl_first:
+        if d in anz_daily.index:
+            # Return on a masked day should be NaN (price was set to NaN → pct_change → NaN)
+            assert pd.isna(anz_daily.loc[d]), f"Expected NaN return on stale day {d}"

@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 from skuld_research.config.spec import (
+    BetaAdjustedMomentumFactorSpec,
     BookToMarketFactorSpec,
     DividendYieldFactorSpec,
+    DualHorizonMomentumFactorSpec,
+    High52WeekFactorSpec,
     LowVolatilityFactorSpec,
+    MaxDailyReturnAvoidanceFactorSpec,
+    MomentumAccelerationFactorSpec,
+    MomentumConsistencyFactorSpec,
+    MomentumDrawdownAwareFactorSpec,
+    MomentumExShortSpikeFactorSpec,
     MomentumFactorSpec,
+    MomentumVolPenalizedFactorSpec,
     OcfToAssetsFactorSpec,
+    ResidualMomentumFactorSpec,
+    ReversalAdjustedMomentumFactorSpec,
     SizeFactorSpec,
+    TimeSeriesFilteredMomentumFactorSpec,
 )
 
 
@@ -30,6 +42,18 @@ def test_build_factors_from_specs_preserves_configured_order_and_parameters():
             SizeFactorSpec(),
             BookToMarketFactorSpec(),
             OcfToAssetsFactorSpec(),
+            ResidualMomentumFactorSpec(min_months=10, market_ticker="FNZ.NZ"),
+            BetaAdjustedMomentumFactorSpec(min_months=10, market_ticker="FNZ.NZ"),
+            MomentumVolPenalizedFactorSpec(min_months=10, vol_penalty=0.5),
+            High52WeekFactorSpec(lookback_days=200, min_days=100),
+            MomentumConsistencyFactorSpec(min_months=10, variant="hitrate"),
+            MomentumDrawdownAwareFactorSpec(min_months=10, drawdown_penalty=0.5),
+            DualHorizonMomentumFactorSpec(short_months=4, long_months=10, min_months=4),
+            MomentumExShortSpikeFactorSpec(min_months=10, recent_months=2),
+            TimeSeriesFilteredMomentumFactorSpec(min_months=10, ma_days=200),
+            ReversalAdjustedMomentumFactorSpec(min_months=10, reversal_penalty=0.25),
+            MaxDailyReturnAvoidanceFactorSpec(lookback_days=42, min_days=21),
+            MomentumAccelerationFactorSpec(min_months=10),
         ]
     )
 
@@ -40,6 +64,18 @@ def test_build_factors_from_specs_preserves_configured_order_and_parameters():
         "size",
         "book_to_market",
         "ocf_to_assets",
+        "residual_momentum",
+        "beta_adjusted_momentum",
+        "momentum_vol_penalized",
+        "high_52_week",
+        "momentum_consistency",
+        "momentum_drawdown_aware",
+        "dual_horizon_momentum",
+        "momentum_ex_short_spike",
+        "time_series_filtered_momentum",
+        "reversal_adjusted_momentum",
+        "max_daily_return_avoidance",
+        "momentum_acceleration",
     ]
     assert isinstance(factors[0], MomentumFactor)
     assert factors[0].min_months == 9
@@ -53,6 +89,18 @@ def test_build_factors_from_specs_preserves_configured_order_and_parameters():
     assert isinstance(factors[3], SizeFactor)
     assert isinstance(factors[4], BookToMarketFactor)
     assert isinstance(factors[5], OcfToAssetsFactor)
+    assert factors[6].min_months == 10
+    assert factors[7].min_months == 10
+    assert factors[8].vol_penalty == 0.5
+    assert factors[9].lookback_days == 200
+    assert factors[10].variant == "hitrate"
+    assert factors[11].drawdown_penalty == 0.5
+    assert factors[12].short_months == 4
+    assert factors[13].recent_months == 2
+    assert factors[14].ma_days == 200
+    assert factors[15].reversal_penalty == 0.25
+    assert factors[16].lookback_days == 42
+    assert factors[17].min_months == 10
 
 
 def test_production_recommend_pipeline_imports_shared_factor_factory():

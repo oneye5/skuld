@@ -93,6 +93,8 @@ class PreparedPanel:
         fundamentals: MultiIndex (ticker, publication_date), columns=feature
         prices: optional index=date, columns=ticker, adjusted close prices after
             any prepared-panel masking
+        volumes: optional index=date, columns=ticker, daily trading volume aligned
+            to the same calendar-daily index as prices
         corporate_actions: optional dividend/split event table filtered PIT
         asof: the timestamp this panel was built for
     """
@@ -106,6 +108,7 @@ class PreparedPanel:
     asof: pd.Timestamp
     fundamentals: pd.DataFrame = field(default_factory=pd.DataFrame)
     prices: pd.DataFrame = field(default_factory=pd.DataFrame)
+    volumes: pd.DataFrame = field(default_factory=pd.DataFrame)
     corporate_actions: pd.DataFrame = field(default_factory=pd.DataFrame)
     market_cap_proxy: pd.DataFrame = field(default_factory=pd.DataFrame)
 
@@ -236,6 +239,7 @@ class BacktestResult:
         executed_volume_nzd: absolute trade volume executed by period.
         deferred_volume_nzd: absolute trade volume deferred by execution policy.
         excess_volume_nzd: executed volume above the monthly execution budget.
+        cap_binding_count: number of tickers at or above max_position cap per period.
     """
 
     returns: pd.Series
@@ -261,6 +265,7 @@ class BacktestResult:
     executed_volume_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     deferred_volume_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     excess_volume_nzd: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    cap_binding_count: pd.Series = field(default_factory=lambda: pd.Series(dtype=int))
 
     def __post_init__(self) -> None:
         if self.n_periods < 0:

@@ -1,0 +1,99 @@
+# Phase 2 exploration candidate: residual momentum.
+name: phase2-mom-resid
+description: "Phase 2 exploration: market-model residual momentum plus mom-s8 return-on-risk"
+asof: 2026-05-03
+master_seed: 42
+n_trials_prior: 30
+
+universe:
+  min_adv_dollars: 10000.0
+  min_market_cap_nzd: 0.0
+  min_history_days: 126
+  adv_window: 20
+  mc_ffill_days: 5
+  nzx_only: true
+
+factors:
+  - kind: residual_momentum
+    min_months: 11
+    market_ticker: "FNZ.NZ"
+  - kind: return_on_risk
+    lookback_months: 12
+    min_months: 6
+
+cost:
+  spread_bps: 200.0
+  sharesies_monthly_fee_nzd: 15.0
+  sharesies_coverage_nzd: 5000.0
+  sharesies_excess_bps: 190.0
+  spread_model: abdi_ranaldo
+  spread_estimator_window: 60
+  spread_estimator_min_obs: 20
+  spread_estimator_scale: 1.0
+  spread_estimator_min_bps_per_side: 5.0
+
+backtest:
+  initial_nav_nzd: 10000.0
+  cash_floor: 0.05
+  max_position: 0.25
+  max_sector: 0.25
+  min_names: 10
+  score_lambda: 0.5
+  no_trade_threshold_frac: 0.005
+  size_floor_nzd: 50.0
+  size_floor_cost_multiple: 5.0
+  return_window_days: 252
+  min_return_obs: 63
+  flat_haircut_bps: 400.0
+  risk_free_annual: 0.035
+  min_positions_per_month: 1
+  degenerate_fold_max_empty_frac: 0.5
+  turnover_budget_frac: 0.30
+
+scrubbing:
+  kind: round_trip
+  threshold: 0.30
+  reversal_tolerance: 0.10
+
+anomaly_filter:
+  kind: mask_extremes
+  daily_abs_return_threshold: 0.5
+  monthly_abs_return_threshold: 1.0
+  volume_gate_threshold: 0.20
+  require_volume_confirmation: true
+  corporate_action_buffer_days: 5
+  chronic_ticker_max_extreme_days: 5
+
+adjustments:
+  kind: repair
+  policy: conservative
+
+walk_forward:
+  two_fold_enabled: true
+  rolling:
+    train_years: 5
+    oos_years: 1
+    step_years: 1
+
+survivorship:
+  monte_carlo_seeds: 500
+  delisting_csv_relpath: "src/survivorship/nzx_delistings.csv"
+
+gating:
+  alpha: 0.05
+  bootstrap_n_resamples: 2000
+  dominance_n_resamples: 2000
+  sanity_floor: 0.0
+
+benchmarks:
+  td_floor_default: 0.04
+  nzx_eq_mcap_floor_nzd: 20000000.0
+  nzx_eq_adv_floor_shares: 10000.0
+  sixty_forty_equity_proxy: "FNZ.NZ"
+  sixty_forty_bond_macro_field: "long_term_interest_rates"
+  sixty_forty_bond_duration_years: 6.0
+  sixty_forty_flat_haircut_bps: 50.0
+
+output:
+  report_dir_relpath: "reports"
+  ledger_scope: exploration

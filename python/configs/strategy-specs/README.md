@@ -61,6 +61,15 @@ Candidates:
 
 - `candidates/mom-s6.yaml` — scrubbed AR-spread candidate with 6-month momentum score smoothing.
 - `candidates/mom-s7.yaml` — repaired-data momentum candidate with 6-month smoothing and `score_lambda=0.5`.
+- `candidates/phase2-*.yaml` — Phase 2 exploration-scope alpha extensions from `docs/plans/2026-05-05-phase2-alpha-bakeoff-design.md`. These are not production claims and must remain `output.ledger_scope: exploration` until a finalist is deliberately promoted under a new frozen production spec.
+
+Phase 2 exploration runner:
+
+```bash
+uv run python scripts/phase2_exploration.py --bootstrap-resamples 500
+```
+
+The runner writes `reports/phase2_exploration.md` and compares each `phase2-*.yaml` candidate against `production/mom-s8.yaml`, including flat-haircut Sharpe delta, paired stationary-bootstrap return delta, turnover, and a shortlist-review/watch/exclude recommendation. The current broad sweep found no candidate that clears the Phase 2 incremental bar; `phase2-mom-resid` was the closest result but improved flat-haircut Sharpe by only `+0.009` with a paired monthly CI that crosses zero.
 
 Production:
 

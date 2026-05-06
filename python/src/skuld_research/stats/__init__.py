@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         ProductionTrialLedger,
         n_trials_prior,
     )
+    from skuld_research.stats.paired import PairedDeltaResult, stationary_bootstrap_paired_delta
     from skuld_research.stats.regimes import label_regimes
     from skuld_research.stats.rolling_walk_forward import RollingWalkForwardEngine
 
@@ -42,6 +43,11 @@ _EXPORTS = {
         "ExplorationTrialLedger",
     ),
     "n_trials_prior": ("skuld_research.stats.ledger", "n_trials_prior"),
+    "PairedDeltaResult": ("skuld_research.stats.paired", "PairedDeltaResult"),
+    "stationary_bootstrap_paired_delta": (
+        "skuld_research.stats.paired",
+        "stationary_bootstrap_paired_delta",
+    ),
     "evaluate": ("skuld_research.stats.gating", "evaluate"),
 }
 
@@ -54,6 +60,8 @@ __all__ = [
     "ProductionTrialLedger",
     "ExplorationTrialLedger",
     "n_trials_prior",
+    "PairedDeltaResult",
+    "stationary_bootstrap_paired_delta",
     "evaluate",
 ]
 

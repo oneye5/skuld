@@ -205,5 +205,108 @@ def test_fewer_than_2_valid_scores():
     prod = make_production_returns(panel)
     result = attribute_returns(scores, panel, prod)
     assert isinstance(result, AttributionReport)
-    # signal_ew_monthly should be empty or very sparse (all skipped due to <2 valid scores)
+    # signal_ew_monthly should be empty or all NaN
     assert len(result.signal_ew_monthly) == 0 or result.signal_ew_monthly.isna().all()
+
+
+# ---------------------------------------------------------------------------
+# Tests for new AttributionReport fields
+# ---------------------------------------------------------------------------
+
+
+def test_ticker_contributions_is_dataframe():
+    """ticker_contributions should be a DataFrame (date × ticker)."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    assert isinstance(result.ticker_contributions, pd.DataFrame)
+
+
+def test_ticker_contributions_columns_are_tickers():
+    """ticker_contributions columns should be a subset of panel tickers."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    if not result.ticker_contributions.empty:
+        assert set(result.ticker_contributions.columns).issubset(set(panel.universe_mask.columns))
+
+
+def test_ticker_contributions_rows_match_signal_ew():
+    """ticker_contributions index should align with signal_ew_monthly dates."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    if not result.ticker_contributions.empty:
+        assert result.ticker_contributions.index.isin(result.signal_ew_monthly.index).all()
+
+
+def test_ticker_contributions_row_sums_equal_signal_ew():
+    """Each row of ticker_contributions should sum to the corresponding signal_ew value."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    if result.ticker_contributions.empty:
+        return
+    row_sums = result.ticker_contributions.sum(axis=1)
+    common = result.signal_ew_monthly.index.intersection(row_sums.index)
+    assert len(common) > 0
+    diff = (row_sums.reindex(common) - result.signal_ew_monthly.reindex(common)).abs()
+    assert diff.max() < 1e-10
+
+
+def test_breadth_series_is_series():
+    """breadth_series should be a Series."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    assert isinstance(result.breadth_series, pd.Series)
+
+
+def test_breadth_series_length_matches_universe_mask():
+    """breadth_series should have the same length as panel.universe_mask rows."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    assert len(result.breadth_series) == len(panel.universe_mask)
+
+
+def test_breadth_series_values_are_nonnegative_integers():
+    """breadth_series values should be non-negative integers (counts)."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    assert (result.breadth_series >= 0).all()
+    # All entries should be integer-valued
+    assert (result.breadth_series == result.breadth_series.astype(int)).all()
+
+
+def test_factor_leg_alpha_empty_when_no_component_panels():
+    """factor_leg_alpha_ann should be an empty dict when component_score_panels=None."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    prod = make_production_returns(panel)
+    result = attribute_returns(scores, panel, prod)
+    assert result.factor_leg_alpha_ann == {}
+
+
+def test_factor_leg_alpha_populated_with_component_panels():
+    """factor_leg_alpha_ann should have one entry per component factor."""
+    panel = make_panel()
+    scores = make_scores_panel(panel)
+    comp_a = make_scores_panel(panel, seed=10)
+    comp_b = make_scores_panel(panel, seed=20)
+    prod = make_production_returns(panel)
+    result = attribute_returns(
+        scores, panel, prod,
+        component_score_panels={"momentum": comp_a, "ror": comp_b},
+    )
+    assert set(result.factor_leg_alpha_ann.keys()) == {"momentum", "ror"}
+    for val in result.factor_leg_alpha_ann.values():
+        assert isinstance(val, float)

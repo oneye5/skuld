@@ -166,6 +166,7 @@ def build_prepared_panel(
         fundamentals=snap.fundamentals,
         asof=snap.asof,
         prices=filtered_prices,
+        volumes=volumes_daily,
         corporate_actions=snap.corporate_actions,
         market_cap_proxy=market_cap_proxy,
     )
@@ -287,7 +288,100 @@ def _apply_anomaly_mask(
             max_days,
         )
 
+    # Stale-price streak pass: mask runs of N+ consecutive trading days with
+    # identical closing prices (data-feed silent copy-forward artefact).
+    streak_days = getattr(anomaly_filter, "stale_price_streak_days", 0)
+    if streak_days >= 2:
+        masked = _apply_stale_price_mask(masked, streak_days)
+
     return masked, masked_month_ends
+
+
+def _apply_stale_price_mask(masked: pd.DataFrame, streak_days: int) -> pd.DataFrame:
+    """Set stale-price streaks to NaN for each ticker.
+
+    A stale-price streak is ``streak_days`` or more consecutive *trading* days
+    (non-NaN price observations) where the closing price is identical to the
+    previous trading day's close.  This pattern indicates a data-feed failure
+    (the price is silently copied forward) rather than a genuinely flat market.
+
+    Args:
+        masked: Calendar-daily price DataFrame (date × ticker), already anomaly-masked.
+        streak_days: Minimum run length of unchanged prices to trigger masking.
+            Values < 2 are no-ops (a single unchanged day is not a streak).
+
+    Returns:
+        A copy of ``masked`` with stale-price trading-day observations set to NaN.
+        The *first* day of each streak is kept (it may be a genuine flat close);
+        masking starts from the *second* day of the streak.
+    """
+    if streak_days < 2:
+        return masked
+
+    import logging as _logging
+    result = masked.copy()
+    n_excluded_total = 0
+
+    for ticker in result.columns:
+        series = result[ticker].dropna()
+        if len(series) < streak_days:
+            continue
+
+        # Detect consecutive unchanged closes on trading days.
+        # `unchanged` is True where price[t] == price[t-1] (on trading-day index).
+        unchanged = series == series.shift(1)
+
+        # Build a group counter: each run of True is a streak.
+        # We accumulate within each consecutive unchanged block, then mask
+        # observations where the *within-streak position* exceeds 1
+        # (i.e., the second, third, … day of the streak).
+        run_id = (~unchanged).cumsum()
+        within_streak_pos = unchanged.groupby(run_id).cumsum()
+
+        # within_streak_pos == 0 for the start of each streak (first unchanged day
+        # counts as 1 from cumsum, but the first *unchanged* day contributed 1 and
+        # the first *True* entry in a run happens at position 1 from cumsum).
+        # Actually: cumsum of booleans gives 1 on the first True of each group,
+        # 2 on the second, etc.  We want to mask when a run of unchanged prices
+        # has length >= streak_days, starting from the second occurrence.
+        # Strategy: find run lengths, then mark entire runs >= streak_days except
+        # the first element.
+        streak_mask = (within_streak_pos >= streak_days) | (
+            (within_streak_pos >= 1) & _run_length_at_least(unchanged, streak_days)
+        )
+
+        # Only mask within-run days beyond position 1 (keep the first unchanged day).
+        stale_dates = series.index[streak_mask & (within_streak_pos > 1)]
+
+        n_excluded = len(stale_dates)
+        if n_excluded > 0:
+            n_excluded_total += n_excluded
+            result.loc[stale_dates, ticker] = float("nan")
+
+    if n_excluded_total > 0:
+        import logging as _logging  # noqa: F811
+        _logging.getLogger(__name__).warning(
+            "stale-price streak pass: %d ticker-date pairs excluded "
+            "(streak length >= %d trading days)",
+            n_excluded_total,
+            streak_days,
+        )
+
+    return result
+
+
+def _run_length_at_least(unchanged: pd.Series, min_len: int) -> pd.Series:
+    """Return a boolean Series that is True for every element inside a run of
+    consecutive True values in ``unchanged`` whose total run length >= ``min_len``.
+
+    This is used together with ``within_streak_pos`` to mask the *interior*
+    of long stale streaks while preserving the first day.
+    """
+    # Build run-length encoding: group by run-id, compute run length, broadcast back.
+    run_id = (~unchanged).cumsum()
+    run_lengths = unchanged.groupby(run_id).transform("sum")
+    # Only flag True runs (unchanged == True) that are long enough.
+    return unchanged & (run_lengths >= min_len)
 
 
 def _is_one_sided_daily_move(returns: pd.Series) -> pd.Series:

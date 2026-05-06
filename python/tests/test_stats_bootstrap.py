@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from skuld_research.stats.bootstrap import stationary_bootstrap_sharpe
+from skuld_research.stats.paired import stationary_bootstrap_paired_delta
 
 
 def test_constant_series_high_sharpe():
@@ -81,3 +82,27 @@ def test_point_estimate_uses_risk_free_rate_when_provided():
 
     expected_sharpe = ((returns.mean() - rf_annual / 12.0) / returns.std(ddof=1)) * (12 ** 0.5)
     assert abs(result.point_estimate - expected_sharpe) < 1e-9
+
+
+def test_stationary_bootstrap_paired_delta_deterministic_and_aligned():
+    idx = pd.date_range("2024-01-31", periods=12, freq="BME")
+    candidate = pd.Series([0.02] * 12, index=idx)
+    baseline = pd.Series([0.01] * 10, index=idx[:10])
+
+    r1 = stationary_bootstrap_paired_delta(candidate, baseline, n_resamples=100, rng_seed=7)
+    r2 = stationary_bootstrap_paired_delta(candidate, baseline, n_resamples=100, rng_seed=7)
+
+    assert r1 == r2
+    assert r1.n_obs == 10
+    assert abs(r1.mean_delta_monthly - 0.01) < 1e-12
+    assert abs(r1.mean_delta_annual - 0.12) < 1e-12
+
+
+def test_stationary_bootstrap_paired_delta_rejects_invalid_bootstrap_config():
+    returns = pd.Series([0.01, 0.02, 0.03])
+
+    with pytest.raises(ValueError, match="n_resamples"):
+        stationary_bootstrap_paired_delta(returns, returns, n_resamples=0)
+
+    with pytest.raises(ValueError, match="mean_block_len"):
+        stationary_bootstrap_paired_delta(returns, returns, mean_block_len=1.0)

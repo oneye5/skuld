@@ -220,6 +220,84 @@ def build_variants(base_spec: BacktestSpec, quick: bool = False) -> list[Experim
     return variants
 
 
+def build_construction_variants(
+    base_spec: BacktestSpec,
+    quick: bool = False,
+) -> list[ExperimentVariant]:
+    """Build a portfolio-construction sweep over ``mom-s8``-fixed factors.
+
+    Keeps the base-spec factor signal frozen and varies only construction,
+    sizing, and trading-rule parameters:
+
+    - ``max_position``: per-name weight cap
+    - ``score_lambda``: tilt weight toward higher scores
+    - ``smoothing_alpha``: blend toward prior portfolio weights (reduces turnover)
+    - ``no_trade_threshold_frac``: minimum position drift to trigger a rebalance
+    - ``turnover_budget_frac``: one-sided monthly turnover budget (None = unlimited)
+    - ``rebalance_freq``: BME (monthly) vs BQE (quarterly)
+
+    Decision rule: improvements must clear the Phase 2 incremental bar
+    (flat-haircut Sharpe +0.10 vs ``mom-s8``, paired CI lower bound >= 0)
+    while not worsening turnover, capacity, or paired net-return stability.
+
+    Args:
+        base_spec: Frozen production spec (typically ``mom-s8``).  The factor
+            list is carried over unchanged into every variant.
+        quick: If True, use a reduced grid for fast iteration.
+
+    Returns:
+        List of ``ExperimentVariant`` objects, all in the ``"construction"`` lane.
+    """
+    variants: list[ExperimentVariant] = []
+    base = _fast_spec(base_spec) if quick else base_spec
+
+    max_positions = [0.15, 0.20, 0.25, 0.30] if not quick else [0.20, 0.25]
+    score_lambdas = [0.0, 0.25, 0.5, 1.0] if not quick else [0.0, 0.5]
+    smoothing_alphas = [0.0, 0.1, 0.2] if not quick else [0.0, 0.1]
+    no_trade_thresholds = [0.0025, 0.005, 0.01] if not quick else [0.005]
+    turnover_budgets: list[float | None] = [None, 0.20, 0.30] if not quick else [None, 0.30]
+    rebalance_freqs = ["BME", "BQE"] if not quick else ["BME"]
+
+    for max_pos, score_lam, smooth, no_trade, to_budget, rebalance in itertools.product(
+        max_positions,
+        score_lambdas,
+        smoothing_alphas,
+        no_trade_thresholds,
+        turnover_budgets,
+        rebalance_freqs,
+    ):
+        to_label = f"tb{int(to_budget * 100)}" if to_budget is not None else "tbNone"
+        label = (
+            f"cons"
+            f"-maxpos{int(max_pos * 100)}"
+            f"-lam{score_lam:g}"
+            f"-smooth{smooth:g}"
+            f"-nt{no_trade:g}"
+            f"-{to_label}"
+            f"-{rebalance.lower()}"
+        )
+
+        updated_backtest = _copy_model(
+            base.backtest,
+            max_position=max_pos,
+            score_lambda=score_lam,
+            smoothing_alpha=smooth,
+            no_trade_threshold_frac=no_trade,
+            turnover_budget_frac=to_budget,
+        )
+        updated_universe = _copy_model(base.universe, rebalance_freq=rebalance)
+
+        spec = _copy_spec(
+            base,
+            label,
+            backtest=updated_backtest,
+            universe=updated_universe,
+        )
+        variants.append(ExperimentVariant(label, "construction", spec))
+
+    return variants
+
+
 def _ensure_results_file(path: Path) -> None:
     if path.exists():
         return

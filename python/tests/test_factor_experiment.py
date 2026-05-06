@@ -149,6 +149,64 @@ def test_build_variants_does_not_duplicate_discovery_labels_without_overlay():
     assert len(semantic_specs) == len(set(semantic_specs))
 
 
+def test_build_construction_variants_all_in_construction_lane():
+    """Every variant produced by build_construction_variants should be in the 'construction' lane."""
+    from skuld_research.experiments.factor_experiment import build_construction_variants
+
+    base = _spec("cons-base")
+    variants = build_construction_variants(base, quick=True)
+    assert len(variants) > 0
+    assert all(v.lane == "construction" for v in variants)
+
+
+def test_build_construction_variants_no_duplicates():
+    """build_construction_variants (quick) should produce no duplicate specs."""
+    from skuld_research.experiments.factor_experiment import build_construction_variants
+
+    base = _spec("cons-base")
+    variants = build_construction_variants(base, quick=True)
+    labels = [v.label for v in variants]
+    assert len(labels) == len(set(labels))
+
+
+def test_build_construction_variants_full_grid_count():
+    """Full grid: 4×4×3×3×3×2 = 864 variants."""
+    from skuld_research.experiments.factor_experiment import build_construction_variants
+
+    base = _spec("cons-base")
+    variants = build_construction_variants(base, quick=False)
+    assert len(variants) == 4 * 4 * 3 * 3 * 3 * 2
+
+
+def test_build_construction_variants_quick_grid_count():
+    """Quick grid: 2×2×2×1×2×1 = 16 variants."""
+    from skuld_research.experiments.factor_experiment import build_construction_variants
+
+    base = _spec("cons-base")
+    variants = build_construction_variants(base, quick=True)
+    assert len(variants) == 2 * 2 * 2 * 1 * 2 * 1
+
+
+def test_build_construction_variants_sweeps_max_position():
+    """Variants should cover multiple distinct max_position values."""
+    from skuld_research.experiments.factor_experiment import build_construction_variants
+
+    base = _spec("cons-base")
+    variants = build_construction_variants(base, quick=False)
+    seen_max_pos = {v.spec.backtest.max_position for v in variants}
+    assert len(seen_max_pos) == 4  # [0.15, 0.20, 0.25, 0.30]
+
+
+def test_build_construction_variants_sweeps_rebalance_freq():
+    """Variants should include both BME and BQE rebalance frequencies."""
+    from skuld_research.experiments.factor_experiment import build_construction_variants
+
+    base = _spec("cons-base")
+    variants = build_construction_variants(base, quick=False)
+    seen_freqs = {v.spec.universe.rebalance_freq for v in variants}
+    assert seen_freqs == {"BME", "BQE"}
+
+
 def test_build_variants_does_not_duplicate_refinement_specs_for_flat_spread_base():
     base = BacktestSpec(
         name="flat_base",

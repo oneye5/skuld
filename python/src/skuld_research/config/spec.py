@@ -80,9 +80,157 @@ class OcfToAssetsFactorSpec(BaseModel):
     kind: Literal["ocf_to_assets"] = "ocf_to_assets"
 
 
+class ResidualMomentumFactorSpec(BaseModel):
+    """Market-model residual momentum configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["residual_momentum"] = "residual_momentum"
+    min_months: int = Field(default=11, ge=1)
+    market_ticker: str = "FNZ.NZ"
+
+
+class BetaAdjustedMomentumFactorSpec(BaseModel):
+    """Beta-adjusted momentum configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["beta_adjusted_momentum"] = "beta_adjusted_momentum"
+    min_months: int = Field(default=11, ge=1)
+    market_ticker: str = "FNZ.NZ"
+
+
+class MomentumVolPenalizedFactorSpec(BaseModel):
+    """Volatility-penalised momentum configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["momentum_vol_penalized"] = "momentum_vol_penalized"
+    min_months: int = Field(default=11, ge=1)
+    vol_lookback_months: int = Field(default=12, ge=1)
+    vol_penalty: float = Field(default=1.0, ge=0.0)
+
+
+class High52WeekFactorSpec(BaseModel):
+    """52-week-high proximity configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["high_52_week"] = "high_52_week"
+    lookback_days: int = Field(default=252, ge=1)
+    min_days: int = Field(default=126, ge=1)
+
+
+class MomentumConsistencyFactorSpec(BaseModel):
+    """Momentum path-consistency configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["momentum_consistency"] = "momentum_consistency"
+    min_months: int = Field(default=11, ge=1)
+    variant: Literal["ir", "hitrate"] = "ir"
+
+
+class MomentumDrawdownAwareFactorSpec(BaseModel):
+    """Drawdown-aware momentum configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["momentum_drawdown_aware"] = "momentum_drawdown_aware"
+    min_months: int = Field(default=11, ge=1)
+    drawdown_penalty: float = Field(default=1.0, ge=0.0)
+
+
+class DualHorizonMomentumFactorSpec(BaseModel):
+    """Dual-horizon momentum configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["dual_horizon_momentum"] = "dual_horizon_momentum"
+    short_months: int = Field(default=6, ge=1)
+    long_months: int = Field(default=12, ge=1)
+    min_months: int = Field(default=6, ge=1)
+
+
+class MomentumExShortSpikeFactorSpec(BaseModel):
+    """Momentum excluding short-spike dependence configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["momentum_ex_short_spike"] = "momentum_ex_short_spike"
+    min_months: int = Field(default=11, ge=1)
+    recent_months: int = Field(default=3, ge=1)
+    recent_penalty: float = Field(default=1.0, ge=0.0)
+
+
+class TimeSeriesFilteredMomentumFactorSpec(BaseModel):
+    """Time-series-filtered momentum configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["time_series_filtered_momentum"] = "time_series_filtered_momentum"
+    min_months: int = Field(default=11, ge=1)
+    ma_days: int = Field(default=252, ge=1)
+    downtrend_discount: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ReversalAdjustedMomentumFactorSpec(BaseModel):
+    """Skip-month reversal-adjusted momentum configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["reversal_adjusted_momentum"] = "reversal_adjusted_momentum"
+    min_months: int = Field(default=11, ge=1)
+    reversal_penalty: float = Field(default=0.5, ge=0.0)
+
+
+class MaxDailyReturnAvoidanceFactorSpec(BaseModel):
+    """Lottery/MAX avoidance configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["max_daily_return_avoidance"] = "max_daily_return_avoidance"
+    lookback_days: int = Field(default=63, ge=1)
+    min_days: int = Field(default=42, ge=1)
+
+
+class MomentumAccelerationFactorSpec(BaseModel):
+    """Momentum acceleration configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["momentum_acceleration"] = "momentum_acceleration"
+    min_months: int = Field(default=10, ge=1)
+
+
+class EpsMomentumFactorSpec(BaseModel):
+    """EPS momentum (YoY trailing diluted EPS growth) configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["eps_momentum"] = "eps_momentum"
+
+
+class VolumeTrendFactorSpec(BaseModel):
+    """Volume trend (recent vs long-term ADV ratio) configuration."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["volume_trend"] = "volume_trend"
+    short_days: int = Field(default=20, ge=1)
+    long_days: int = Field(default=60, ge=1)
+    min_trading_days: int = Field(default=30, ge=1)
+
+
 # Discriminated union for factors (extensible for M8: value, quality, low_vol, size)
 FactorSpec = Annotated[
-    MomentumFactorSpec | LowVolatilityFactorSpec | SizeFactorSpec | DividendYieldFactorSpec | ReturnOnRiskFactorSpec | BookToMarketFactorSpec | OcfToAssetsFactorSpec,
+    MomentumFactorSpec
+    | LowVolatilityFactorSpec
+    | SizeFactorSpec
+    | DividendYieldFactorSpec
+    | ReturnOnRiskFactorSpec
+    | BookToMarketFactorSpec
+    | OcfToAssetsFactorSpec
+    | ResidualMomentumFactorSpec
+    | BetaAdjustedMomentumFactorSpec
+    | MomentumVolPenalizedFactorSpec
+    | High52WeekFactorSpec
+    | MomentumConsistencyFactorSpec
+    | MomentumDrawdownAwareFactorSpec
+    | DualHorizonMomentumFactorSpec
+    | MomentumExShortSpikeFactorSpec
+    | TimeSeriesFilteredMomentumFactorSpec
+    | ReversalAdjustedMomentumFactorSpec
+    | MaxDailyReturnAvoidanceFactorSpec
+    | MomentumAccelerationFactorSpec
+    | EpsMomentumFactorSpec
+    | VolumeTrendFactorSpec,
     Field(discriminator="kind")
 ]
 
@@ -244,6 +392,11 @@ class AnomalyFilterSpec(BaseModel):
     # is dropped to NaN so they cannot contaminate factor scores.
     # Set to 0 to disable the chronic-ticker pass.
     chronic_ticker_max_extreme_days: int = Field(default=5, ge=0)
+    # Consecutive trading days of unchanged closing price required to flag a
+    # stale-price streak.  Stale streaks indicate data-feed failure (the price
+    # is copied forward rather than genuinely flat) and produce false zero
+    # returns for momentum / return_on_risk.  Set to 0 (default) to disable.
+    stale_price_streak_days: int = Field(default=0, ge=0)
 
 
 class AdjustmentSpec(BaseModel):

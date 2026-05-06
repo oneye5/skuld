@@ -229,6 +229,7 @@ class BacktestEngine:
                     "executed_volume_nzd": turnover * nav_before_cost,
                     "deferred_volume_nzd": 0.0,
                     "excess_volume_nzd": 0.0,
+                    "cap_binding_count": 0,
                 })
                 continue
 
@@ -261,6 +262,10 @@ class BacktestEngine:
                 return_window_days=cfg.return_window_days,
                 min_return_obs=cfg.min_return_obs,
             )
+
+            # Count tickers whose weight is at or above the per-name cap.
+            # A tolerance of 1e-4 absorbs floating-point redistribution artefacts.
+            n_capped = int((target.weights >= cfg.max_position - 1e-4).sum())
 
             # Apply cash overlay (may raise cash beyond the floor)
             target = apply_cash_overlay(target, panel, self.overlay_rule, t)
@@ -382,6 +387,7 @@ class BacktestEngine:
                 "executed_volume_nzd": executed_volume_nzd,
                 "deferred_volume_nzd": deferred_volume_nzd,
                 "excess_volume_nzd": excess_volume_nzd,
+                "cap_binding_count": n_capped,
             })
 
             # Update NAV, drift weights
@@ -520,6 +526,7 @@ def _build_result(
     executed_volume_nzd = df["executed_volume_nzd"].astype(float)
     deferred_volume_nzd = df["deferred_volume_nzd"].astype(float)
     excess_volume_nzd = df["excess_volume_nzd"].astype(float)
+    cap_binding_count = df["cap_binding_count"].astype(int) if "cap_binding_count" in df.columns else pd.Series(0, index=df.index, dtype=int)
 
     return BacktestResult(
         returns=returns,
@@ -545,4 +552,5 @@ def _build_result(
         executed_volume_nzd=executed_volume_nzd,
         deferred_volume_nzd=deferred_volume_nzd,
         excess_volume_nzd=excess_volume_nzd,
+        cap_binding_count=cap_binding_count,
     )

@@ -1,0 +1,118 @@
+# Momentum+ReturnOnRisk-s9
+#
+# Promoted from mom-s8. Two data-quality parameter changes only;
+# alpha hypothesis and all construction parameters are unchanged.
+#
+# Changes vs mom-s8:
+#   1. min_history_days 126 → 180: excludes names with < 9 months of price
+#      history.  Reduces exposure to IPO-period momentum inflation on NZX.
+#   2. stale_price_streak_days: 5 (new): masks consecutive identical closing
+#      prices >= 5 trading days, flagging likely stale/illiquid price feeds.
+#
+# WS3 exploration result (flat-haircut Sharpe): 0.531 (Δ -0.001 vs mom-s8).
+# Paired annualised delta: -0.0%, 95% CI [-0.08%, +0.09%].
+# Turnover: 17.3% (vs 17.8%). Universe breadth: 69.6 mean tickers.
+#
+# n_trials_prior unchanged at 30: data quality filter is not a new alpha
+# hypothesis and does not increment the multiple-comparisons trial count.
+#
+# Read-only — create a new strategy spec instead of editing historical specs.
+name: mom-s9
+description: "Momentum + ReturnOnRisk composite, 180-day history floor, stale-price streak filter"
+asof: 2026-05-06
+master_seed: 42
+n_trials_prior: 30
+
+universe:
+  min_adv_dollars: 10000.0
+  min_market_cap_nzd: 0.0
+  min_history_days: 180
+  adv_window: 20
+  mc_ffill_days: 5
+  nzx_only: true
+
+factors:
+  - kind: momentum
+    min_months: 11
+    smoothing_months: 6
+  - kind: return_on_risk
+    lookback_months: 12
+    min_months: 6
+
+cost:
+  spread_bps: 200.0
+  sharesies_monthly_fee_nzd: 15.0
+  sharesies_coverage_nzd: 5000.0
+  sharesies_excess_bps: 190.0
+  spread_model: abdi_ranaldo
+  spread_estimator_window: 60
+  spread_estimator_min_obs: 20
+  spread_estimator_scale: 1.0
+  spread_estimator_min_bps_per_side: 5.0
+
+backtest:
+  initial_nav_nzd: 10000.0
+  cash_floor: 0.05
+  max_position: 0.25
+  max_sector: 0.25
+  min_names: 10
+  score_lambda: 0.5
+  no_trade_threshold_frac: 0.005
+  size_floor_nzd: 50.0
+  size_floor_cost_multiple: 5.0
+  return_window_days: 252
+  min_return_obs: 63
+  flat_haircut_bps: 400.0
+  risk_free_annual: 0.035
+  min_positions_per_month: 1
+  degenerate_fold_max_empty_frac: 0.5
+  turnover_budget_frac: 0.30
+
+scrubbing:
+  kind: round_trip
+  threshold: 0.30
+  reversal_tolerance: 0.10
+
+anomaly_filter:
+  kind: mask_extremes
+  daily_abs_return_threshold: 0.5
+  monthly_abs_return_threshold: 1.0
+  volume_gate_threshold: 0.20
+  require_volume_confirmation: true
+  corporate_action_buffer_days: 5
+  chronic_ticker_max_extreme_days: 5
+  stale_price_streak_days: 5
+
+adjustments:
+  kind: repair
+  policy: conservative
+
+walk_forward:
+  two_fold_enabled: true
+  rolling:
+    train_years: 5
+    oos_years: 1
+    step_years: 1
+
+survivorship:
+  monte_carlo_seeds: 500
+  delisting_csv_relpath: "src/survivorship/nzx_delistings.csv"
+
+gating:
+  alpha: 0.05
+  bootstrap_n_resamples: 2000
+  dominance_n_resamples: 2000
+  sanity_floor: 0.0
+
+benchmarks:
+  td_floor_default: 0.04
+  nzx_eq_mcap_floor_nzd: 20000000.0
+  nzx_eq_adv_floor_shares: 10000.0
+  sixty_forty_equity_proxy: "FNZ.NZ"
+  sixty_forty_bond_macro_field: "long_term_interest_rates"
+  sixty_forty_bond_duration_years: 6.0
+  sixty_forty_flat_haircut_bps: 50.0
+
+output:
+  report_dir_relpath: "reports"
+  ledger_scope: production

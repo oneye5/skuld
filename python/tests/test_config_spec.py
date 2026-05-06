@@ -465,3 +465,59 @@ def test_multi_factor_spec_round_trip():
     assert reloaded.factors[0].kind == "momentum"
     assert reloaded.factors[1].kind == "low_vol"
     assert reloaded.factors[2].kind == "size"
+
+
+def test_phase2_factor_specs_round_trip():
+    """Phase 2 exploration factor specs are accepted by the discriminated union."""
+    data = {
+        "name": "phase2-spec-test",
+        "asof": "2026-01-01",
+        "factors": [
+            {"kind": "residual_momentum", "min_months": 11, "market_ticker": "FNZ.NZ"},
+            {"kind": "momentum_vol_penalized", "min_months": 11, "vol_penalty": 0.75},
+            {"kind": "high_52_week", "lookback_days": 252, "min_days": 126},
+            {"kind": "momentum_consistency", "variant": "hitrate"},
+            {"kind": "time_series_filtered_momentum", "downtrend_discount": 0.25},
+            {"kind": "reversal_adjusted_momentum", "reversal_penalty": 0.5},
+            {"kind": "max_daily_return_avoidance", "lookback_days": 63, "min_days": 42},
+            {"kind": "momentum_acceleration", "min_months": 10},
+        ],
+    }
+
+    reloaded = BacktestSpec.model_validate(data)
+
+    assert [factor.kind for factor in reloaded.factors] == [
+        "residual_momentum",
+        "momentum_vol_penalized",
+        "high_52_week",
+        "momentum_consistency",
+        "time_series_filtered_momentum",
+        "reversal_adjusted_momentum",
+        "max_daily_return_avoidance",
+        "momentum_acceleration",
+    ]
+
+
+def test_phase2_factor_specs_reject_invalid_parameters():
+    """Phase 2 specs reject parameters that invert or disable the intended signal."""
+    with pytest.raises(ValidationError):
+        BacktestSpec.model_validate(
+            {
+                "name": "bad-phase2-spec",
+                "asof": "2026-01-01",
+                "factors": [
+                    {"kind": "time_series_filtered_momentum", "downtrend_discount": -0.1},
+                ],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        BacktestSpec.model_validate(
+            {
+                "name": "bad-phase2-spec",
+                "asof": "2026-01-01",
+                "factors": [
+                    {"kind": "momentum_vol_penalized", "vol_penalty": -1.0},
+                ],
+            }
+        )

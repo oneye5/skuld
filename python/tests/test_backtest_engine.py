@@ -767,3 +767,145 @@ def test_smoothing_weights_sum_to_one():
 
     total = result.equity_weight + result.cash_weight
     assert (total - 1.0).abs().max() < 1e-4
+
+
+# ---------------------------------------------------------------------------
+# cap_binding_count tests
+# ---------------------------------------------------------------------------
+
+
+def _make_cap_panel(n_tickers: int = 4, n_rebalance: int = 3) -> PreparedPanel:
+    """Panel where n_tickers > 1/max_position so caps can bind."""
+    tickers = [f"T{i:02d}.NZ" for i in range(n_tickers)]
+    rebalance_dates = pd.date_range("2024-01-31", periods=n_rebalance, freq="ME")
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-28")
+    monthly_dates = pd.date_range("2024-02-29", periods=n_rebalance, freq="ME")
+    rng = np.random.default_rng(99)
+    rets = pd.DataFrame(
+        rng.normal(0.005, 0.02, (n_rebalance, n_tickers)),
+        index=monthly_dates,
+        columns=tickers,
+    )
+    return PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=rets,
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-04-30"),
+    )
+
+
+def test_cap_binding_count_is_series_of_ints():
+    """cap_binding_count must be an integer Series with one value per period."""
+    panel = _make_cap_panel(n_tickers=8, n_rebalance=3)
+    cfg = BacktestConfig(
+        max_position=0.15,  # 1/0.15 ≈ 6.7, so with 8 tickers some will cap
+        cash_floor=0.0,
+        max_sector=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+    factor = _FixedScoreFactor(
+        pd.Series({f"T{i:02d}.NZ": float(i) for i in range(8)})
+    )
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+
+    assert isinstance(result.cap_binding_count, pd.Series)
+    assert result.cap_binding_count.dtype == int or result.cap_binding_count.dtype == "int64"
+    assert len(result.cap_binding_count) == len(result.returns)
+
+
+def test_cap_binding_count_positive_when_cap_binds():
+    """When max_position is tight enough to bind, at least one period should report > 0 bound tickers."""
+    panel = _make_cap_panel(n_tickers=8, n_rebalance=3)
+    cfg = BacktestConfig(
+        max_position=0.10,  # cap at 10%; 8 tickers => optimizer will cap multiple names
+        cash_floor=0.0,
+        max_sector=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+    factor = _FixedScoreFactor(
+        pd.Series({f"T{i:02d}.NZ": float(i) for i in range(8)})
+    )
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+    # With 8 equal-weight positions the EW weight is 12.5%; a 10% cap binds every ticker.
+    assert result.cap_binding_count.sum() > 0
+
+
+def test_cap_binding_count_zero_when_cap_does_not_bind():
+    """When equal-weight positions comfortably fit below max_position, cap_binding_count is zero.
+
+    We use 4 tickers with flat (zero) returns so the minimum-variance optimizer
+    produces exactly equal weights (0.25 each).  With max_position=0.30, the cap
+    threshold (0.2999) is above every position — no cap should bind.
+    """
+    n_tickers = 4
+    tickers = [f"T{i:02d}.NZ" for i in range(n_tickers)]
+    rebalance_dates = pd.date_range("2024-01-31", periods=3, freq="ME")
+    daily_dates = pd.bdate_range("2024-01-01", "2024-03-28")
+    monthly_dates = pd.date_range("2024-02-29", periods=3, freq="ME")
+    # All-zero returns → minimum-variance optimizer produces equal weights
+    panel = PreparedPanel(
+        returns_daily=pd.DataFrame(0.0, index=daily_dates, columns=tickers),
+        returns_monthly=pd.DataFrame(0.0, index=monthly_dates, columns=tickers),
+        market_cap=pd.DataFrame(1_000_000.0, index=daily_dates, columns=tickers),
+        sector=pd.Series("Unknown", index=tickers),
+        universe_mask=pd.DataFrame(True, index=rebalance_dates, columns=tickers),
+        macro=pd.DataFrame(index=daily_dates),
+        asof=pd.Timestamp("2024-04-30"),
+    )
+    cfg = BacktestConfig(
+        max_position=0.30,  # above EW weight of 0.25 → cap does not bind
+        cash_floor=0.0,
+        max_sector=1.0,
+        no_trade_threshold_frac=0.0,
+        size_floor_nzd=0.0,
+        min_return_obs=1,
+        cost_config=CostConfig(
+            spread_bps=0.0,
+            sharesies_monthly_fee_nzd=0.0,
+            sharesies_coverage_nzd=1_000_000.0,
+            sharesies_excess_bps=0.0,
+        ),
+    )
+    factor = _FixedScoreFactor(
+        pd.Series({t: 1.0 for t in tickers})  # equal scores → equal weights
+    )
+    result = BacktestEngine(factors=[factor], panel=panel, config=cfg).run()
+    assert result.cap_binding_count.sum() == 0
+
+
+def test_cap_binding_count_default_is_empty_series():
+    """BacktestResult default cap_binding_count is an empty int Series (backward compat)."""
+    from skuld_common.contracts import BacktestResult
+    r = BacktestResult(
+        returns=pd.Series([0.01]),
+        costs_nzd=pd.Series([0.0]),
+        turnover=pd.Series([0.5]),
+        drawdown=pd.Series([-0.01]),
+        sharpe_raw=0.5,
+        sharpe_flat_haircut=0.4,
+        start=pd.Timestamp("2024-01-31"),
+        end=pd.Timestamp("2024-12-31"),
+        n_periods=1,
+        avg_positions=5.0,
+    )
+    assert isinstance(r.cap_binding_count, pd.Series)
+    assert r.cap_binding_count.dtype == int or pd.api.types.is_integer_dtype(r.cap_binding_count)
